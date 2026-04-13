@@ -23,6 +23,12 @@ func runPing(args []string, env Env) int {
 		fmt.Fprintln(env.Stderr, "ping: --address is required")
 		return 2
 	}
+	resolved, err := resolveAddress(*addr)
+	if err != nil {
+		fmt.Fprintln(env.Stderr, "ping:", err)
+		return 2
+	}
+	*addr = resolved
 
 	payload := protocol.PingPayload{
 		Address:      *addr,

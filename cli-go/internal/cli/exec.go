@@ -32,6 +32,10 @@ func runExec(args []string, env Env) int {
 		writeLocalFailure(env.Stdout, "", protocol.CodeBadRequest, "read stdin request: "+err.Error())
 		return 1
 	}
+	if err := resolveEnvelopeAddress(&req); err != nil {
+		writeLocalFailure(env.Stdout, req.RequestID, protocol.CodeBadRequest, err.Error())
+		return 1
+	}
 
 	resp, err := dispatch(req, execConfig(env, *noSpawn, *jar))
 	if err != nil {

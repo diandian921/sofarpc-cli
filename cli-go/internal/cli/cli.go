@@ -33,6 +33,8 @@ func Run(args []string, env Env) int {
 		return runPing(args[1:], env)
 	case "daemon":
 		return runDaemon(args[1:], env)
+	case "server":
+		return runServer(args[1:], env)
 	case "version", "--version", "-v":
 		fmt.Fprintln(env.Stdout, env.BuildVersion)
 		return 0
@@ -54,6 +56,7 @@ Usage:
   sofarpc invoke [flags]               Build and send an invoke request.
   sofarpc ping --address host:port     Probe a target address via the daemon.
   sofarpc daemon start|stop|status     Manage the local daemon.
+  sofarpc server add|list|remove       Manage local address aliases.
   sofarpc version                      Print build version.
 `)
 }

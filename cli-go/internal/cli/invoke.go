@@ -31,6 +31,12 @@ func runInvoke(args []string, env Env) int {
 		fmt.Fprintln(env.Stderr, "invoke: --address, --service, --method are required")
 		return 2
 	}
+	resolved, err := resolveAddress(*addr)
+	if err != nil {
+		fmt.Fprintln(env.Stderr, "invoke:", err)
+		return 2
+	}
+	*addr = resolved
 
 	payload, err := buildInvokePayload(*addr, *service, *method, *argTypesCSV, *argsJSON, *assertionsJSON, *timeoutMS)
 	if err != nil {
