@@ -2,9 +2,8 @@ package com.sofarpc.cli.core;
 
 import com.alipay.sofa.rpc.api.GenericService;
 import com.alipay.sofa.rpc.config.ConsumerConfig;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +11,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Manages GenericService instances with connection caching.
- * Cache key: "serverAlias::interfaceId"
+ *
+ * Cache key: "address::interfaceId::timeout"
+ * Uses the actual address (not alias) so that alias remapping creates a new connection,
+ * and different timeouts produce separate connections.
  *
  * @author wuweihua
  */
@@ -28,14 +30,14 @@ public class RpcClientFactory {
     /**
      * Get or create a GenericService instance for the given server address and interface.
      *
-     * @param serverAlias server alias (for cache key)
+     * @param serverAlias server alias (unused in cache key, kept for API compatibility)
      * @param address     bolt address, e.g. "192.168.1.100:12200"
      * @param interfaceId full qualified interface name
      * @param timeout     timeout in milliseconds
      * @return GenericService instance
      */
     public static GenericService getOrCreate(String serverAlias, String address, String interfaceId, int timeout) {
-        String cacheKey = serverAlias + "::" + interfaceId;
+        String cacheKey = buildKey(address, interfaceId, timeout);
         return CACHE.computeIfAbsent(cacheKey, key -> {
             ConsumerConfig<GenericService> config = new ConsumerConfig<GenericService>()
                 .setInterfaceId(interfaceId)
@@ -54,7 +56,32 @@ public class RpcClientFactory {
         });
     }
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    /**
+     * Destroy cached connections for a specific address.
+     * Useful for cleaning up after batch execution or when a server is removed.
+     *
+     * @param address the server address to clean up
+     */
+    public static void destroyByAddress(String address) {
+        String prefix = address + "::";
+        Iterator<Map.Entry<String, ConsumerConfig<GenericService>>> it = CONFIG_CACHE.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, ConsumerConfig<GenericService>> entry = it.next();
+            if (entry.getKey().startsWith(prefix)) {
+                try {
+                    entry.getValue().unRefer();
+                } catch (Exception e) {
+                    // Ignore errors during cleanup
+                }
+                CACHE.remove(entry.getKey());
+                it.remove();
+            }
+        }
+    }
+
+    private static String buildKey(String address, String interfaceId, int timeout) {
+        return address + "::" + interfaceId + "::" + timeout;
+    }
 
     /**
      * Flatten the generic invocation result by:
@@ -68,8 +95,8 @@ public class RpcClientFactory {
         }
         try {
             // Serialize GenericObject -> JSON string -> Map, then unwrap
-            String json = OBJECT_MAPPER.writeValueAsString(obj);
-            Object parsed = OBJECT_MAPPER.readValue(json, Object.class);
+            String json = JacksonHolder.MAPPER.writeValueAsString(obj);
+            Object parsed = JacksonHolder.MAPPER.readValue(json, Object.class);
             return unwrap(parsed);
         } catch (Exception e) {
             return obj;

@@ -4,3 +4,5 @@ reports/
 *.jar
 .idea/
 *.iml
+cases
+sofarpc-cli-skill-workspace

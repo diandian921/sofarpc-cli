@@ -42,19 +42,36 @@ public class GlobalConfig {
                     Object defaults = root.get("defaults");
                     if (defaults instanceof Map) {
                         Map<String, Object> defaultsMap = (Map<String, Object>) defaults;
-                        if (defaultsMap.containsKey("timeout")) {
-                            instance.timeout = ((Number) defaultsMap.get("timeout")).intValue();
-                        }
-                        if (defaultsMap.containsKey("parallel")) {
-                            instance.parallel = ((Number) defaultsMap.get("parallel")).intValue();
-                        }
+                        instance.timeout = readPositiveInt(defaultsMap, "timeout", DEFAULT_TIMEOUT);
+                        instance.parallel = readPositiveInt(defaultsMap, "parallel", DEFAULT_PARALLEL);
                     }
                 } catch (IOException e) {
                     System.err.println("Warning: failed to read config.yaml, using defaults. " + e.getMessage());
+                } catch (Exception e) {
+                    System.err.println("Warning: invalid config.yaml, using defaults. " + e.getMessage());
                 }
             }
         }
         return instance;
+    }
+
+    private static int readPositiveInt(Map<String, Object> defaultsMap, String key, int fallback) {
+        if (!defaultsMap.containsKey(key)) {
+            return fallback;
+        }
+        Object raw = defaultsMap.get(key);
+        if (!(raw instanceof Number)) {
+            System.err.println("Warning: config.yaml defaults." + key
+                + " must be a number, using default: " + fallback);
+            return fallback;
+        }
+        int value = ((Number) raw).intValue();
+        if (value <= 0) {
+            System.err.println("Warning: config.yaml defaults." + key
+                + " must be positive, using default: " + fallback);
+            return fallback;
+        }
+        return value;
     }
 
     public int getTimeout() {

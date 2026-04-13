@@ -70,12 +70,22 @@ sofarpc-cli/
     ├── command/
     │   ├── ServerCommand.java             ← 服务地址管理
     │   ├── PingCommand.java               ← 冒烟测试
-    │   ├── InvokeCommand.java             ← 单次调用
-    │   ├── BatchCommand.java              ← 批量测试
+    │   ├── InvokeCommand.java             ← 单次调用（完整语法）
+    │   ├── CallCommand.java               ← 单次调用（简写语法）
+    │   ├── BatchCommand.java              ← 批量测试（递归扫描子目录）
     │   └── ReportCommand.java             ← 生成报告
     ├── core/
+    │   ├── ExitCodes.java                 ← 统一退出码常量
+    │   ├── ExceptionClassifier.java       ← 异常 → 退出码映射
+    │   ├── JacksonHolder.java             ← 共享 ObjectMapper 实例
     │   ├── RpcClientFactory.java          ← 泛化调用 + 连接缓存
-    │   └── ServerStore.java               ← 服务地址本地存储
+    │   ├── ServerStore.java               ← 服务地址存储（原子写入）
+    │   └── GlobalConfig.java              ← 全局配置
+    ├── service/
+    │   ├── RpcInvokeService.java          ← 核心调用服务
+    │   ├── ArgParser.java                 ← 参数解析
+    │   ├── AssertionEvaluator.java        ← 断言求值
+    │   └── OutputFormatter.java           ← 统一输出格式化
     └── output/
         ├── JsonPrinter.java               ← JSON 格式输出
         └── ReportGenerator.java           ← 报告生成

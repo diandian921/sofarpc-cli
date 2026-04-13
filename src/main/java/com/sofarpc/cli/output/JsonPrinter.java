@@ -1,7 +1,6 @@
 package com.sofarpc.cli.output;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import com.sofarpc.cli.core.JacksonHolder;
 
 /**
  * Utility for printing objects as formatted JSON to stdout.
@@ -10,15 +9,12 @@ import com.fasterxml.jackson.databind.SerializationFeature;
  */
 public class JsonPrinter {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-        .enable(SerializationFeature.INDENT_OUTPUT);
-
     private JsonPrinter() {
     }
 
     public static void print(Object obj) {
         try {
-            System.out.println(MAPPER.writeValueAsString(obj));
+            System.out.println(JacksonHolder.PRETTY_MAPPER.writeValueAsString(obj));
         } catch (Exception e) {
             System.err.println("JSON serialization error: " + e.getMessage());
         }
@@ -26,7 +22,7 @@ public class JsonPrinter {
 
     public static String toString(Object obj) {
         try {
-            return MAPPER.writeValueAsString(obj);
+            return JacksonHolder.PRETTY_MAPPER.writeValueAsString(obj);
         } catch (Exception e) {
             return obj != null ? obj.toString() : "null";
         }

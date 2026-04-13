@@ -8,38 +8,37 @@ import com.sofarpc.cli.service.OutputFormatter;
 import com.sofarpc.cli.service.RpcInvokeService;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
+import picocli.CommandLine.Parameters;
 
 import java.util.concurrent.Callable;
 
 /**
- * Invoke command: call a single RPC method via generic invocation.
- * Supports single object parameter, multi-parameter array, and no-arg invocation.
+ * Shorthand invoke command.
+ * Usage: sofarpc call <server> <service/method> [args-json] [options]
  *
  * @author wuweihua
  */
-@Command(name = "invoke", mixinStandardHelpOptions = true,
-    description = "Invoke a single RPC method.")
-public class InvokeCommand implements Callable<Integer> {
+@Command(name = "call", mixinStandardHelpOptions = true,
+    description = "Shorthand invoke: call <server> <service/method> [args-json]")
+public class CallCommand implements Callable<Integer> {
 
-    @Option(names = "--server", required = true, description = "Server alias.")
+    @Parameters(index = "0", description = "Server alias.")
     private String server;
 
-    @Option(names = "--service", required = true, description = "Full qualified interface name.")
-    private String service;
+    @Parameters(index = "1",
+        description = "service/method, e.g. com.example.UserService/getUser")
+    private String serviceMethod;
 
-    @Option(names = "--method", required = true, description = "Method name.")
-    private String method;
-
-    @Option(names = "--arg-types",
-        description = "Parameter types, comma separated. Required when --args is specified.")
-    private String argTypes;
-
-    @Option(names = "--args",
-        description = "JSON parameters. Single object for one param, array for multiple params.")
+    @Parameters(index = "2", arity = "0..1",
+        description = "JSON args. Object for single param, array for multi.")
     private String args;
 
+    @Option(names = "--arg-types",
+        description = "Parameter types, comma separated. Required when args is specified.")
+    private String argTypes;
+
     @Option(names = "--assert",
-        description = "JSONPath assertion expression, e.g. '$.status == \"ACTIVE\"'.")
+        description = "JSONPath assertion, e.g. '$.status == \"ACTIVE\"'.")
     private String assertExpr;
 
     @Option(names = "--timeout", description = "Timeout in milliseconds.")
@@ -50,6 +49,17 @@ public class InvokeCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        // Parse service/method — the only logic unique to CallCommand
+        int slashIdx = serviceMethod.lastIndexOf('/');
+        if (slashIdx <= 0 || slashIdx == serviceMethod.length() - 1) {
+            OutputFormatter.printError(
+                "格式错误，应为 <service/method>，例如 com.example.UserService/getUser",
+                ExitCodes.BAD_ARGS, json);
+            return ExitCodes.BAD_ARGS;
+        }
+        String service = serviceMethod.substring(0, slashIdx);
+        String method = serviceMethod.substring(slashIdx + 1);
+
         int effectiveTimeout = timeout != null
             ? timeout : GlobalConfig.getInstance().getTimeout();
         if (effectiveTimeout <= 0) {

@@ -1,13 +1,12 @@
 package com.sofarpc.cli.output;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sofarpc.cli.model.BatchResult;
+import com.sofarpc.cli.model.CaseResult;
 
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Generate test reports from batch result JSON.
@@ -17,24 +16,39 @@ import java.util.Map;
  */
 public class ReportGenerator {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
     private ReportGenerator() {
     }
 
-    @SuppressWarnings("unchecked")
-    public static String generateMarkdown(Map<String, Object> batchResult) {
+    /**
+     * Escape characters that would break a Markdown table cell:
+     * - pipe `|` is table column separator
+     * - CR/LF breaks the row
+     * - backslash escapes itself
+     */
+    private static String escapeMarkdownCell(String raw) {
+        if (raw == null) {
+            return "-";
+        }
+        return raw
+            .replace("\\", "\\\\")
+            .replace("|", "\\|")
+            .replace("\r\n", " ")
+            .replace("\n", " ")
+            .replace("\r", " ");
+    }
+
+    public static String generateMarkdown(BatchResult batchResult) {
         StringBuilder sb = new StringBuilder();
         sb.append("# SofaRPC Batch Test Report\n\n");
-        sb.append("- **执行时间**: ").append(batchResult.get("startTime")).append("\n");
-        sb.append("- **总计**: ").append(batchResult.get("total")).append("\n");
-        sb.append("- **通过**: ").append(batchResult.get("passed")).append("\n");
-        sb.append("- **失败**: ").append(batchResult.get("failed")).append("\n");
-        sb.append("- **耗时**: ").append(batchResult.get("duration")).append("\n\n");
+        sb.append("- **执行时间**: ").append(batchResult.getStartTime()).append("\n");
+        sb.append("- **总计**: ").append(batchResult.getTotal()).append("\n");
+        sb.append("- **通过**: ").append(batchResult.getPassed()).append("\n");
+        sb.append("- **失败**: ").append(batchResult.getFailed()).append("\n");
+        sb.append("- **耗时**: ").append(batchResult.getDuration()).append("\n\n");
 
         // Pass rate
-        int total = ((Number) batchResult.get("total")).intValue();
-        int passed = ((Number) batchResult.get("passed")).intValue();
+        int total = batchResult.getTotal();
+        int passed = batchResult.getPassed();
         if (total > 0) {
             double rate = (double) passed / total * 100;
             sb.append(String.format("**通过率: %.1f%%**%n%n", rate));
@@ -45,31 +59,29 @@ public class ReportGenerator {
         sb.append("| 用例 | 结果 | 耗时 | 错误 |\n");
         sb.append("|------|------|------|------|\n");
 
-        List<Map<String, Object>> results = (List<Map<String, Object>>) batchResult.get("results");
+        List<CaseResult> results = batchResult.getResults();
         if (results != null) {
             long totalLatency = 0;
             long maxLatency = Long.MIN_VALUE;
             long minLatency = Long.MAX_VALUE;
             int latencyCount = 0;
 
-            for (Map<String, Object> r : results) {
-                boolean pass = Boolean.TRUE.equals(r.get("passed"));
-                String icon = pass ? "✅ PASS" : "❌ FAIL";
+            for (CaseResult r : results) {
+                String icon = r.isPassed() ? "✅ PASS" : "❌ FAIL";
                 String latencyStr = "-";
-                if (r.containsKey("latencyMs")) {
-                    long latency = ((Number) r.get("latencyMs")).longValue();
+                if (r.getLatencyMs() != null) {
+                    long latency = r.getLatencyMs();
                     latencyStr = latency + "ms";
                     totalLatency += latency;
                     maxLatency = Math.max(maxLatency, latency);
                     minLatency = Math.min(minLatency, latency);
                     latencyCount++;
                 }
-                String error = r.containsKey("error") && r.get("error") != null
-                    ? String.valueOf(r.get("error")) : "-";
-                sb.append("| ").append(r.get("case"))
+                String error = r.getError() != null ? r.getError() : "-";
+                sb.append("| ").append(escapeMarkdownCell(r.getCaseName()))
                     .append(" | ").append(icon)
                     .append(" | ").append(latencyStr)
-                    .append(" | ").append(error)
+                    .append(" | ").append(escapeMarkdownCell(error))
                     .append(" |\n");
             }
 
@@ -87,8 +99,7 @@ public class ReportGenerator {
         return sb.toString();
     }
 
-    @SuppressWarnings("unchecked")
-    public static String generateHtml(Map<String, Object> batchResult) {
+    public static String generateHtml(BatchResult batchResult) {
         StringBuilder sb = new StringBuilder();
         sb.append("<!DOCTYPE html>\n<html>\n<head>\n");
         sb.append("<meta charset=\"UTF-8\">\n");
@@ -104,46 +115,45 @@ public class ReportGenerator {
 
         sb.append("<h1>SofaRPC Batch Test Report</h1>\n");
 
-        int total = ((Number) batchResult.get("total")).intValue();
-        int passed = ((Number) batchResult.get("passed")).intValue();
-        int failed = ((Number) batchResult.get("failed")).intValue();
+        int total = batchResult.getTotal();
+        int passed = batchResult.getPassed();
+        int failed = batchResult.getFailed();
         double rate = total > 0 ? (double) passed / total * 100 : 0;
 
         sb.append("<div class=\"summary\">\n");
-        sb.append("<p><strong>执行时间:</strong> ").append(batchResult.get("startTime")).append("</p>\n");
+        sb.append("<p><strong>执行时间:</strong> ").append(escapeHtml(batchResult.getStartTime())).append("</p>\n");
         sb.append("<p><strong>总计:</strong> ").append(total)
             .append(" | <strong>通过:</strong> <span class=\"pass\">").append(passed).append("</span>")
             .append(" | <strong>失败:</strong> <span class=\"fail\">").append(failed).append("</span>")
-            .append(" | <strong>耗时:</strong> ").append(batchResult.get("duration")).append("</p>\n");
+            .append(" | <strong>耗时:</strong> ").append(escapeHtml(batchResult.getDuration())).append("</p>\n");
         sb.append(String.format("<p><strong>通过率: %.1f%%</strong></p>%n", rate));
         sb.append("</div>\n");
 
         sb.append("<h2>用例明细</h2>\n");
         sb.append("<table>\n<tr><th>用例</th><th>结果</th><th>耗时</th><th>错误</th></tr>\n");
 
-        List<Map<String, Object>> results = (List<Map<String, Object>>) batchResult.get("results");
+        List<CaseResult> results = batchResult.getResults();
         if (results != null) {
             long totalLatency = 0;
             long maxLatency = Long.MIN_VALUE;
             long minLatency = Long.MAX_VALUE;
             int latencyCount = 0;
 
-            for (Map<String, Object> r : results) {
-                boolean pass = Boolean.TRUE.equals(r.get("passed"));
-                String cls = pass ? "pass" : "fail";
-                String label = pass ? "PASS" : "FAIL";
+            for (CaseResult r : results) {
+                String cls = r.isPassed() ? "pass" : "fail";
+                String label = r.isPassed() ? "PASS" : "FAIL";
                 String latencyStr = "-";
-                if (r.containsKey("latencyMs")) {
-                    long latency = ((Number) r.get("latencyMs")).longValue();
+                if (r.getLatencyMs() != null) {
+                    long latency = r.getLatencyMs();
                     latencyStr = latency + "ms";
                     totalLatency += latency;
                     maxLatency = Math.max(maxLatency, latency);
                     minLatency = Math.min(minLatency, latency);
                     latencyCount++;
                 }
-                String error = r.containsKey("error") && r.get("error") != null
-                    ? escapeHtml(String.valueOf(r.get("error"))) : "-";
-                sb.append("<tr><td>").append(r.get("case"))
+                String error = r.getError() != null
+                    ? escapeHtml(r.getError()) : "-";
+                sb.append("<tr><td>").append(escapeHtml(r.getCaseName()))
                     .append("</td><td class=\"").append(cls).append("\">").append(label)
                     .append("</td><td>").append(latencyStr)
                     .append("</td><td>").append(error)
@@ -175,6 +185,9 @@ public class ReportGenerator {
     }
 
     private static String escapeHtml(String text) {
+        if (text == null) {
+            return "-";
+        }
         return text.replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")

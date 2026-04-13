@@ -1,6 +1,7 @@
 package com.sofarpc.cli;
 
 import com.sofarpc.cli.command.BatchCommand;
+import com.sofarpc.cli.command.CallCommand;
 import com.sofarpc.cli.command.InvokeCommand;
 import com.sofarpc.cli.command.PingCommand;
 import com.sofarpc.cli.command.ReportCommand;
@@ -25,6 +26,7 @@ import java.util.logging.Logger;
         ServerCommand.class,
         PingCommand.class,
         InvokeCommand.class,
+        CallCommand.class,
         BatchCommand.class,
         ReportCommand.class
     }
