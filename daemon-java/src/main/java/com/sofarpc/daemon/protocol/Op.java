@@ -32,4 +32,16 @@ public enum Op {
         }
         return null;
     }
+
+    public static String allowedWireValues() {
+        StringBuilder sb = new StringBuilder();
+        Op[] all = values();
+        for (int i = 0; i < all.length; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(all[i].wire);
+        }
+        return sb.toString();
+    }
 }

@@ -38,7 +38,8 @@ public final class Dispatcher {
             return ResponseEnvelope.failure(
                     req.getRequestId(),
                     ErrorCode.BAD_REQUEST,
-                    "unknown op: " + req.getOp());
+                    "unknown op: " + req.getOp()
+                            + " (expected one of: " + Op.allowedWireValues() + "; op is case-sensitive)");
         }
         OpHandler handler = handlers.get(op);
         if (handler == null) {

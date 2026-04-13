@@ -9,6 +9,7 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -57,6 +58,28 @@ public class DispatcherTest {
 
         assertFalse(resp.isOk());
         assertEquals(ErrorCode.BAD_REQUEST.name(), resp.getCode());
+    }
+
+    @Test
+    public void unknownOpErrorListsAllowedValuesAndFlagsCaseSensitivity() {
+        Dispatcher dispatcher = new Dispatcher();
+
+        RequestEnvelope req = new RequestEnvelope();
+        req.setRequestId("r1");
+        req.setOp("HEALTH");
+
+        ResponseEnvelope resp = dispatcher.dispatch(req, (DaemonContext) null);
+
+        assertFalse(resp.isOk());
+        assertEquals(ErrorCode.BAD_REQUEST.name(), resp.getCode());
+        assertNotNull(resp.getError());
+        String msg = resp.getError().getMessage();
+        assertTrue("message should echo the offending op, got: " + msg, msg.contains("HEALTH"));
+        assertTrue("message should list invoke, got: " + msg, msg.contains("invoke"));
+        assertTrue("message should list ping, got: " + msg, msg.contains("ping"));
+        assertTrue("message should list health, got: " + msg, msg.contains("health"));
+        assertTrue("message should list shutdown, got: " + msg, msg.contains("shutdown"));
+        assertTrue("message should call out case sensitivity, got: " + msg, msg.contains("case-sensitive"));
     }
 
     @Test
