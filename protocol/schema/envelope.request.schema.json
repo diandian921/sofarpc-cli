@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sofarpc.local/protocol/envelope.request.schema.json",
+  "title": "RequestEnvelope",
+  "type": "object",
+  "required": ["requestId", "op", "payload"],
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Client-generated, unique per request within a connection lifetime."
+    },
+    "op": {
+      "type": "string",
+      "enum": ["invoke", "ping", "health", "shutdown"]
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Cross-cutting fields (traceId, tags, ...). Optional."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Op-specific body. See <op>.request.schema.json."
+    }
+  },
+  "additionalProperties": false
+}

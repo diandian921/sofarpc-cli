@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sofarpc.local/protocol/ping.request.schema.json",
+  "title": "PingPayload",
+  "type": "object",
+  "required": ["address"],
+  "properties": {
+    "address": {
+      "type": "string",
+      "minLength": 1
+    },
+    "service": {
+      "type": "string",
+      "description": "Optional. If provided, daemon checks provider reachability for this interface."
+    },
+    "rpcTimeoutMs": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false
+}

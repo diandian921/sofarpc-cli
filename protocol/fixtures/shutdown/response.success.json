@@ -1,0 +1,11 @@
+{
+  "requestId": "req-shutdown-0001",
+  "ok": true,
+  "code": "SUCCESS",
+  "data": {
+    "accepted": true,
+    "graceMs": 500
+  },
+  "error": null,
+  "meta": {}
+}

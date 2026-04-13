@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sofarpc.local/protocol/health.response.schema.json",
+  "title": "HealthResponseData",
+  "type": "object",
+  "required": ["pid", "buildVersion", "startedAtMs"],
+  "properties": {
+    "pid": {"type": "integer", "minimum": 1},
+    "buildVersion": {"type": "string", "minLength": 1},
+    "startedAtMs": {"type": "integer", "minimum": 0},
+    "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+    "connections": {"type": "integer", "minimum": 0, "description": "Current live inbound TCP connections"},
+    "cachedRpcTargets": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": false
+}

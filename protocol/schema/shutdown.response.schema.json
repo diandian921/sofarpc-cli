@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sofarpc.local/protocol/shutdown.response.schema.json",
+  "title": "ShutdownResponseData",
+  "type": "object",
+  "required": ["accepted"],
+  "properties": {
+    "accepted": {"type": "boolean"},
+    "graceMs": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": false
+}

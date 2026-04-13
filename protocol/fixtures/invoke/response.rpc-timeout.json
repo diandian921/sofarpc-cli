@@ -1,0 +1,16 @@
+{
+  "requestId": "req-invoke-0001",
+  "ok": false,
+  "code": "RPC_TIMEOUT",
+  "data": null,
+  "error": {
+    "message": "rpc call exceeded 5000ms",
+    "details": {
+      "address": "10.74.194.40:12200",
+      "service": "com.example.UserService",
+      "method": "getUser",
+      "rpcTimeoutMs": 5000
+    }
+  },
+  "meta": {}
+}

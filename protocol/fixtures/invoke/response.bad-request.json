@@ -1,0 +1,10 @@
+{
+  "requestId": "req-invoke-0099",
+  "ok": false,
+  "code": "BAD_REQUEST",
+  "data": null,
+  "error": {
+    "message": "argTypes length (1) does not match args length (2)"
+  },
+  "meta": {}
+}

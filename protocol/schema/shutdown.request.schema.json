@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sofarpc.local/protocol/shutdown.request.schema.json",
+  "title": "ShutdownPayload",
+  "type": "object",
+  "properties": {
+    "graceMs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How long daemon should wait for in-flight requests before exiting."
+    }
+  },
+  "additionalProperties": false
+}
