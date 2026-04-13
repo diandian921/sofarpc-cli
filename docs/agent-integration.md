@@ -95,6 +95,8 @@ echo '<REQUEST_ENVELOPE_JSON>' | sofarpc exec --stdin [--jar /path/to/sofarpcd.j
 
 断言支持 `equals`（值严格相等）和 `exists`（true 要求路径有值、false 要求没有）。更复杂的匹配让 agent 自己解析 `data` 做。
 
+> **断言 path 的根是 RPC 原始返回对象**，不是整个响应信封。例如 RPC 返回 `{success: true, data: {...}}`，那么 `$.success` 直接指向顶层 `success` 字段；不要写成 `$.result.success`。
+
 ### 3.2 `op: "ping"` — 连通性探测
 
 只 dial + 握手，不做真实业务调用。用来判断"地址通不通"。
@@ -140,6 +142,26 @@ echo '<REQUEST_ENVELOPE_JSON>' | sofarpc exec --stdin [--jar /path/to/sofarpcd.j
 - `code`：稳定枚举（见下），`ok=true` 时恒为 `SUCCESS`
 - `data`：成功时的返回数据，shape 随 op 变化
 - `error`：失败时的结构化错误 `{"message": "..."}`
+
+### 4.1 ⚠ `ok` 只代表 RPC 过程，不代表业务结果
+
+对于 `op: "invoke"`，`ok=true` 仅说明 **RPC 调用完成**——连接成功、请求被接收、服务端返回了一个对象。业务自身是否成功，要看 `data.result` 里业务模型自己定义的字段（通常是 `success` / `code` / `status`）。
+
+```json
+{
+  "ok": true,            // ← RPC 过程 OK
+  "code": "SUCCESS",
+  "data": {
+    "result": {
+      "success": false,  // ← 业务校验失败
+      "message": "组合代码不能为空"
+    },
+    "elapsedMs": 69
+  }
+}
+```
+
+agent 必须做**双层判断**：外层 `ok` → 内层 `data.result.*`。或者：用 `assertions` 把内层校验声明出来（`{"path":"$.success","equals":true}`），让 daemon 帮你把失败归类到 `ASSERTION_FAILED`。
 
 ### ErrorCode 完整列表
 
