@@ -70,6 +70,18 @@ echo '{
 
 完整的信封字段、错误码含义、断言语义见 **[docs/agent-integration.md](docs/agent-integration.md)**。
 
+### 地址别名
+
+把常用地址起名，`address` 字段直接填别名：
+
+```bash
+sofarpc server add user-test 10.74.194.40:12200 --desc "测试环境"
+sofarpc server list
+sofarpc server remove user-test
+```
+
+别名表在 `~/.sofarpc/servers.json`，纯客户端，daemon 无感知。含端口的字面地址直接透传不走查表。
+
 ### 辅助命令
 
 ```bash
@@ -78,7 +90,7 @@ sofarpc daemon stop     # 优雅退出
 sofarpc version         # 打印构建版本
 ```
 
-运行态文件在 `~/.sofarpc/daemon/`：`state.json`（pid/端口）、`daemon.log`（日志）、`daemon.lock`（启动锁）。
+运行态文件在 `~/.sofarpc/daemon/`：`state.json`（pid/端口）、`daemon.log`（日志）、`daemon.lock`（启动锁）。别名表在 `~/.sofarpc/servers.json`。
 
 ### 测试
 
@@ -170,6 +182,18 @@ echo '{
 
 Full envelope schema, error-code semantics, and assertion behavior: **[docs/agent-integration.md](docs/agent-integration.md)**.
 
+### Address Aliases
+
+Name your frequent endpoints so envelopes stay short:
+
+```bash
+sofarpc server add user-test 10.74.194.40:12200 --desc "test env"
+sofarpc server list
+sofarpc server remove user-test
+```
+
+Aliases live in `~/.sofarpc/servers.json` (client-side only — daemon never sees them). Literal `host:port` passes through without a lookup.
+
 ### Ancillary Commands
 
 ```bash
@@ -178,7 +202,7 @@ sofarpc daemon stop     # graceful shutdown
 sofarpc version         # print build version
 ```
 
-Runtime files live in `~/.sofarpc/daemon/`: `state.json` (pid/port), `daemon.log`, `daemon.lock`.
+Runtime files live in `~/.sofarpc/daemon/`: `state.json` (pid/port), `daemon.log`, `daemon.lock`. Aliases at `~/.sofarpc/servers.json`.
 
 ### Testing
 

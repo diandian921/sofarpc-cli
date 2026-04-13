@@ -204,7 +204,47 @@ echo '{
 
 ---
 
-## 6. 辅助命令（agent 一般用不到）
+## 6. 地址别名（可选）
+
+`address` 字段支持填写本地别名。别名表在客户端 `~/.sofarpc/servers.json`，daemon 无感知，解析完全在 Go 客户端侧完成。
+
+```bash
+# 注册
+sofarpc server add user-test 10.74.194.40:12200 --desc "测试环境用户服务"
+
+# 查看
+sofarpc server list            # 表格
+sofarpc server list --json     # 机读格式
+
+# 删除
+sofarpc server remove user-test
+```
+
+使用时把 `address` 写成别名即可：
+
+```json
+{
+  "op": "invoke",
+  "payload": {
+    "address": "user-test",
+    "service": "com.example.UserService",
+    ...
+  }
+}
+```
+
+规则：
+
+- 含冒号+端口（如 `host:port`）视为字面地址，**不**查表直接透传
+- 否则按别名查 `~/.sofarpc/servers.json`，找不到返回 `BAD_REQUEST` 并列出已有别名
+- 别名合法字符：小写字母、数字、`. _ -`，长度 1..64
+- 仓库共享 = 把 `~/.sofarpc/servers.json` 拷到同事那里即可；没有 import/export 子命令
+
+> Agent 使用约定：当用户给出新 `host:port` 但没说是什么服务时，agent 应主动询问"要不要存成别名，叫 X 可以吗？"——确认后 `sofarpc server add` 落盘。详见 skill 定义。
+
+---
+
+## 7. 辅助命令（agent 一般用不到）
 
 ```bash
 sofarpc daemon status   # 查看当前 daemon 状态
@@ -212,4 +252,4 @@ sofarpc daemon stop     # 优雅退出 daemon
 sofarpc version         # 打印构建版本
 ```
 
-运行态文件全部在 `~/.sofarpc/daemon/`：`state.json` 当前 pid/端口，`daemon.log` 日志，`daemon.lock` 启动互斥锁。
+运行态文件全部在 `~/.sofarpc/daemon/`：`state.json` 当前 pid/端口，`daemon.log` 日志，`daemon.lock` 启动互斥锁。别名表在 `~/.sofarpc/servers.json`。
