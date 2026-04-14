@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"flag"
 	"fmt"
 	"io"
 )
@@ -48,13 +49,33 @@ func Run(args []string, env Env) int {
 	}
 }
 
+// parseMixed parses args into flags and positionals allowing any order.
+// Stdlib flag.Parse stops at the first non-flag token, which forces users to
+// put all flags before positionals. parseMixed loops over the remaining
+// tokens after each Parse, peeling one positional at a time.
+func parseMixed(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positional []string
+	rest := args
+	for len(rest) > 0 {
+		if err := fs.Parse(rest); err != nil {
+			return nil, err
+		}
+		if fs.NArg() == 0 {
+			break
+		}
+		positional = append(positional, fs.Arg(0))
+		rest = fs.Args()[1:]
+	}
+	return positional, nil
+}
+
 func printUsage(w io.Writer) {
 	fmt.Fprint(w, `sofarpc — agent-first SOFARPC CLI
 
 Usage:
   sofarpc exec --stdin                 Read one envelope from stdin, write one to stdout.
   sofarpc invoke [flags]               Build and send an invoke request.
-  sofarpc ping --address host:port     Probe a target address via the daemon.
+  sofarpc ping <host:port|alias>       Probe a target address via the daemon.
   sofarpc daemon start|stop|status     Manage the local daemon.
   sofarpc server add|list|remove       Manage local address aliases.
   sofarpc version                      Print build version.

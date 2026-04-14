@@ -71,7 +71,7 @@ func TestPingSubcommandSendsEnvelope(t *testing.T) {
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	code := runPing([]string{"--address", "127.0.0.1:9999", "--no-spawn"},
+	code := runPing([]string{"127.0.0.1:9999", "--no-spawn"},
 		Env{BuildVersion: "test", Stdout: stdout, Stderr: stderr})
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
@@ -82,6 +82,43 @@ func TestPingSubcommandSendsEnvelope(t *testing.T) {
 	}
 	if !resp.OK {
 		t.Fatalf("bad resp: %+v", resp)
+	}
+}
+
+func TestPingAcceptsFlagsAfterPositional(t *testing.T) {
+	dir, cleanup := tempHome(t)
+	defer cleanup()
+
+	srv, port := startFakeDaemon(t)
+	defer srv.Close()
+	writeState(t, filepath.Join(dir, "daemon", "state.json"), port)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := runPing([]string{"127.0.0.1:9999", "--service", "com.x.Foo", "--no-spawn"},
+		Env{BuildVersion: "test", Stdout: stdout, Stderr: stderr})
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+}
+
+func TestServerAddAcceptsFlagAfterPositionals(t *testing.T) {
+	_, cleanup := tempHome(t)
+	defer cleanup()
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := runServerAdd([]string{"user-test", "10.0.0.1:12200", "--desc", "test env"},
+		Env{BuildVersion: "test", Stdout: stdout, Stderr: stderr})
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out["alias"] != "user-test" || out["description"] != "test env" {
+		t.Fatalf("unexpected output: %+v", out)
 	}
 }
 

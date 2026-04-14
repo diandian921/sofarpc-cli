@@ -34,10 +34,10 @@ func runServerAdd(args []string, env Env) int {
 	fs := flag.NewFlagSet("server add", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
 	desc := fs.String("desc", "", "human description (optional)")
-	if err := fs.Parse(args); err != nil {
+	rest, err := parseMixed(fs, args)
+	if err != nil {
 		return 2
 	}
-	rest := fs.Args()
 	if len(rest) != 2 {
 		fmt.Fprintln(env.Stderr, "usage: sofarpc server add <alias> <host:port> [--desc <text>]")
 		return 2
@@ -103,10 +103,10 @@ func runServerList(args []string, env Env) int {
 func runServerRemove(args []string, env Env) int {
 	fs := flag.NewFlagSet("server remove", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
-	if err := fs.Parse(args); err != nil {
+	rest, err := parseMixed(fs, args)
+	if err != nil {
 		return 2
 	}
-	rest := fs.Args()
 	if len(rest) != 1 {
 		fmt.Fprintln(env.Stderr, "usage: sofarpc server remove <alias>")
 		return 2

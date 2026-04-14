@@ -10,28 +10,27 @@ import (
 func runPing(args []string, env Env) int {
 	fs := flag.NewFlagSet("ping", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
-	addr := fs.String("address", "", "target bolt address, e.g. 127.0.0.1:12200")
 	service := fs.String("service", "", "optional service hint for richer errors")
 	timeoutMS := fs.Int("timeout-ms", 0, "dial timeout (ms); 0 uses daemon default")
 	noSpawn := fs.Bool("no-spawn", false, "fail instead of spawning the daemon")
 	jar := fs.String("jar", "", "path to sofarpcd.jar (overrides autodiscovery)")
 
-	if err := fs.Parse(args); err != nil {
+	rest, err := parseMixed(fs, args)
+	if err != nil {
 		return 2
 	}
-	if *addr == "" {
-		fmt.Fprintln(env.Stderr, "ping: --address is required")
+	if len(rest) != 1 {
+		fmt.Fprintln(env.Stderr, "usage: sofarpc ping <host:port|alias> [--service <name>] [--timeout-ms <ms>]")
 		return 2
 	}
-	resolved, err := resolveAddress(*addr)
+	addr, err := resolveAddress(rest[0])
 	if err != nil {
 		fmt.Fprintln(env.Stderr, "ping:", err)
 		return 2
 	}
-	*addr = resolved
 
 	payload := protocol.PingPayload{
-		Address:      *addr,
+		Address:      addr,
 		Service:      *service,
 		RPCTimeoutMS: *timeoutMS,
 	}
