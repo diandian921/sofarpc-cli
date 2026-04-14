@@ -6,3 +6,4 @@ reports/
 *.iml
 cases
 sofarpc-cli-skill-workspace
+cli/sofarpc

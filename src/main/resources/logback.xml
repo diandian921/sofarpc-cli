@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<configuration>
-    <!-- Suppress all framework logs to keep stdout clean for CLI JSON output -->
-    <statusListener class="ch.qos.logback.core.status.NopStatusListener"/>
-    <root level="OFF">
-    </root>
-</configuration>

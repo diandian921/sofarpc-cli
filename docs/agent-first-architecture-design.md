@@ -95,8 +95,8 @@ V1 明确不做：
 - 不在旧的 Java CLI 架构上继续打补丁
 - 不要求新架构兼容旧目录结构
 - 新实现统一落到：
-  - `cli-go/`
-  - `daemon-java/`
+  - `cli/`
+  - `daemon/`
   - `protocol/`
   - `docs/`
 
@@ -517,7 +517,7 @@ ready 判定建议采用双保险：
 V1 不做重模块化，只保留最小必要边界：
 
 ```text
-daemon-java/
+daemon/
 ├── server/      # TCP server, accept loop, framing
 ├── handler/     # 按 op 分发
 ├── engine/      # invoke/ping 执行逻辑
@@ -582,7 +582,7 @@ daemon 必须按 `op` 分发，而不是把当前流程写死成“只处理 inv
 ### 11.1 最小模块划分
 
 ```text
-cli-go/
+cli/
 ├── cmd/         # invoke/ping/exec/daemon 子命令
 ├── protocol/    # 请求响应结构
 ├── ipc/         # TCP client
@@ -862,11 +862,11 @@ sofarpc --profile legacy-5x invoke ...
 sofarpc/
 ├── docs/
 │   └── agent-first-architecture-design.md
-├── cli-go/
+├── cli/
 │   ├── cmd/
 │   ├── internal/
 │   └── go.mod
-├── daemon-java/
+├── daemon/
 │   ├── src/main/java/
 │   └── pom.xml
 ├── protocol/
@@ -874,7 +874,8 @@ sofarpc/
 │   └── fixtures/
 ├── testdata/
 │   └── golden/
-└── install.sh
+└── scripts/
+    └── install.sh
 ```
 
 V1 不需要更多目录层次。
@@ -919,18 +920,18 @@ V1 不需要更多目录层次。
 | 编号 | 任务 | 主要产出 | 位置 | 依赖 | 优先级 |
 |---|---|---|---|---|---|
 | P1 | 定义协议 schema 与 fixtures | 请求/响应 JSON schema、golden fixtures | `protocol/schema` `protocol/fixtures` | 无 | P0 |
-| P2 | 搭 daemon TCP server 骨架 | 长度前缀收发、请求解码、响应编码 | `daemon-java/server` | P1 | P0 |
-| P3 | 实现 daemon handler dispatcher | `op -> handler` 路由、基础错误返回 | `daemon-java/handler` | P2 | P0 |
-| P4 | 实现 `rpc` 层最小封装 | `SofaRpcGateway`、`ConnectionManager` | `daemon-java/rpc` | P2 | P0 |
-| P5 | 实现 `invoke` 执行链路 | 参数校验、GenericService 调用、结果 flatten、断言 | `daemon-java/engine` | P3 P4 | P0 |
-| P6 | 实现 `ping` / `health` / `shutdown` | 基础健康检查与停机路径 | `daemon-java/engine` `daemon-java/handler` | P3 P4 | P0 |
-| P7 | 搭 Go protocol 与 TCP client | 请求编码、响应解码、超时与错误处理 | `cli-go/protocol` `cli-go/ipc` | P1 | P0 |
-| P8 | 实现 launcher | `state.json` 读写、stale 清理、`daemon.lock`、spawn、版本检查 | `cli-go/launcher` | P6 P7 | P0 |
-| P9 | 实现 `exec --stdin` | stdin 读请求、发给 daemon、stdout 输出结果 | `cli-go/cmd` | P7 P8 | P0 |
-| P10 | 实现 `invoke` / `ping` 命令 | 人类命令转协议请求 | `cli-go/cmd` | P7 P8 | P1 |
-| P11 | 实现 `daemon start/stop/status` | 管理命令与冷启动等待预算 | `cli-go/cmd` `cli-go/launcher` | P8 | P1 |
-| P12 | 增加 idle TTL 与 ready 双保险 | TTL、spawn 长等待预算、`health` ready 校验 | `daemon-java` `cli-go/launcher` | P6 P8 | P1 |
-| P13 | 契约测试 | Go/Java 共用 fixtures 的协议测试 | `protocol` `cli-go` `daemon-java` | P1 P7 | P1 |
+| P2 | 搭 daemon TCP server 骨架 | 长度前缀收发、请求解码、响应编码 | `daemon/server` | P1 | P0 |
+| P3 | 实现 daemon handler dispatcher | `op -> handler` 路由、基础错误返回 | `daemon/handler` | P2 | P0 |
+| P4 | 实现 `rpc` 层最小封装 | `SofaRpcGateway`、`ConnectionManager` | `daemon/rpc` | P2 | P0 |
+| P5 | 实现 `invoke` 执行链路 | 参数校验、GenericService 调用、结果 flatten、断言 | `daemon/engine` | P3 P4 | P0 |
+| P6 | 实现 `ping` / `health` / `shutdown` | 基础健康检查与停机路径 | `daemon/engine` `daemon/handler` | P3 P4 | P0 |
+| P7 | 搭 Go protocol 与 TCP client | 请求编码、响应解码、超时与错误处理 | `cli/protocol` `cli/ipc` | P1 | P0 |
+| P8 | 实现 launcher | `state.json` 读写、stale 清理、`daemon.lock`、spawn、版本检查 | `cli/launcher` | P6 P7 | P0 |
+| P9 | 实现 `exec --stdin` | stdin 读请求、发给 daemon、stdout 输出结果 | `cli/cmd` | P7 P8 | P0 |
+| P10 | 实现 `invoke` / `ping` 命令 | 人类命令转协议请求 | `cli/cmd` | P7 P8 | P1 |
+| P11 | 实现 `daemon start/stop/status` | 管理命令与冷启动等待预算 | `cli/cmd` `cli/launcher` | P8 | P1 |
+| P12 | 增加 idle TTL 与 ready 双保险 | TTL、spawn 长等待预算、`health` ready 校验 | `daemon` `cli/launcher` | P6 P8 | P1 |
+| P13 | 契约测试 | Go/Java 共用 fixtures 的协议测试 | `protocol` `cli` `daemon` | P1 P7 | P1 |
 | P14 | 端到端联调 | 从 `exec --stdin` 到真实 daemon 的集成测试 | 集成测试目录或脚本 | P5 P6 P9 P12 | P1 |
 | P15 | 基准验证 | cold/warm 调用耗时对比 | 基准脚本 | P14 | P1 |
 

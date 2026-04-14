@@ -14,12 +14,12 @@ Agent 只需关心三件事：
 
 ```bash
 # 打 Java daemon（shaded JAR，不需要业务 API 依赖）
-mvn -f daemon-java/pom.xml package -DskipTests
-# 产物：daemon-java/target/sofarpcd.jar
+mvn -f daemon/pom.xml package -DskipTests
+# 产物：daemon/target/sofarpcd.jar
 
 # 编 Go 客户端
-cd cli-go && go build -o sofarpc ./cmd/sofarpc
-# 产物：cli-go/sofarpc
+cd cli && go build -o sofarpc ./cmd/sofarpc
+# 产物：cli/sofarpc
 ```
 
 两份产物放到 agent 可访问的路径即可。没有其他运行时依赖（Go 纯 stdlib，Java 只要 JDK 8+）。
