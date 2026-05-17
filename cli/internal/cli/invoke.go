@@ -19,10 +19,10 @@ func runInvoke(args []string, env Env) int {
 	method := fs.String("method", "", "method name")
 	argTypesCSV := fs.String("arg-types", "", "comma-separated Java argument types")
 	argsJSON := fs.String("args-json", "[]", "JSON array of arguments")
-	timeoutMS := fs.Int("timeout-ms", 0, "per-call RPC timeout (ms); 0 uses daemon default")
+	timeoutMS := fs.Int("timeout-ms", 0, "per-call RPC timeout (ms); 0 uses Engine default")
 	assertionsJSON := fs.String("assertions-json", "", "JSON array of assertion specs (optional)")
-	noSpawn := fs.Bool("no-spawn", false, "fail instead of spawning the daemon")
-	jar := fs.String("jar", "", "path to sofarpcd.jar (overrides autodiscovery)")
+	noSpawn := fs.Bool("no-spawn", false, "fail instead of spawning the Engine")
+	jar := fs.String("jar", "", "path to sofarpc-engine.jar (overrides autodiscovery)")
 
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -52,7 +52,7 @@ func runInvoke(args []string, env Env) int {
 
 	resp, err := dispatch(req, execConfig(env, *noSpawn, *jar))
 	if err != nil {
-		writeLocalFailure(env.Stdout, req.RequestID, protocol.CodeDaemonUnavailable, err.Error())
+		writeDispatchFailure(env.Stdout, req.RequestID, err)
 		return 1
 	}
 	if err := writeResponse(env.Stdout, resp); err != nil {

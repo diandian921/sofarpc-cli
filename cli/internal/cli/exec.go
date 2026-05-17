@@ -5,7 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
+	"time"
 
+	"github.com/sofarpc/cli/internal/appconfig"
 	"github.com/sofarpc/cli/internal/launcher"
 	"github.com/sofarpc/cli/internal/protocol"
 )
@@ -17,8 +20,8 @@ func runExec(args []string, env Env) int {
 	fs := flag.NewFlagSet("exec", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
 	useStdin := fs.Bool("stdin", false, "read one request envelope from stdin")
-	noSpawn := fs.Bool("no-spawn", false, "fail instead of spawning the daemon")
-	jar := fs.String("jar", "", "path to sofarpcd.jar (overrides autodiscovery)")
+	noSpawn := fs.Bool("no-spawn", false, "fail instead of spawning the Engine")
+	jar := fs.String("jar", "", "path to sofarpc-engine.jar (overrides autodiscovery)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -39,7 +42,7 @@ func runExec(args []string, env Env) int {
 
 	resp, err := dispatch(req, execConfig(env, *noSpawn, *jar))
 	if err != nil {
-		writeLocalFailure(env.Stdout, req.RequestID, protocol.CodeDaemonUnavailable, err.Error())
+		writeDispatchFailure(env.Stdout, req.RequestID, err)
 		return 1
 	}
 	if err := writeResponse(env.Stdout, resp); err != nil {
@@ -84,13 +87,41 @@ func writeResponse(w io.Writer, resp *protocol.Response) error {
 // writeLocalFailure emits a daemon-shaped error envelope on stdout when the client fails
 // before ever reaching the daemon. Agents that only parse stdout get a consistent shape.
 func writeLocalFailure(w io.Writer, requestID, code, message string) {
+	writeLocalFailureWithDetails(w, requestID, code, message, nil)
+}
+
+func writeLocalFailureWithDetails(w io.Writer, requestID, code, message string, details map[string]interface{}) {
 	resp := &protocol.Response{
 		RequestID: requestID,
 		OK:        false,
 		Code:      code,
-		Error:     &protocol.ResponseError{Message: message},
+		Error: &protocol.ResponseError{
+			Message: message,
+			Details: details,
+		},
 	}
 	_ = writeResponse(w, resp)
+}
+
+func writeDispatchFailure(w io.Writer, requestID string, err error) {
+	writeLocalFailureWithDetails(w, requestID, protocol.CodeDaemonUnavailable, err.Error(), diagnosticDetails(err))
+}
+
+func diagnosticDetails(err error) map[string]interface{} {
+	diag, ok := launcher.AsDiagnostic(err)
+	if !ok {
+		return nil
+	}
+	details := map[string]interface{}{
+		"reason": diag.Reason,
+	}
+	for key, value := range diag.Details {
+		if key == "reason" {
+			continue
+		}
+		details[key] = value
+	}
+	return details
 }
 
 func dispatch(req protocol.Request, cfg launcher.Config) (*protocol.Response, error) {
@@ -110,6 +141,29 @@ func execConfig(env Env, noSpawn bool, jar string) launcher.Config {
 	if jar != "" {
 		cfg.JarPath = jar
 	}
+	applyEngineConfig(&cfg)
 	return cfg
 }
 
+func applyEngineConfig(cfg *launcher.Config) {
+	path, err := appconfig.DefaultPath()
+	if err != nil {
+		return
+	}
+	appCfg, err := appconfig.Load(path)
+	if err != nil {
+		return
+	}
+	if appCfg.Engine.Port > 0 {
+		cfg.Port = appCfg.Engine.Port
+	}
+	if appCfg.Engine.StartTimeoutMS > 0 {
+		cfg.SpawnBudget = time.Duration(appCfg.Engine.StartTimeoutMS) * time.Millisecond
+	}
+	if idle, err := time.ParseDuration(appCfg.Engine.IdleTTL); err == nil && idle > 0 {
+		cfg.IdleTTLMS = idle.Milliseconds()
+	}
+	if appCfg.Engine.JavaHome != nil && *appCfg.Engine.JavaHome != "" {
+		cfg.JavaBin = filepath.Join(*appCfg.Engine.JavaHome, "bin", "java")
+	}
+}

@@ -85,11 +85,14 @@ func TestResolveEnvelopeAddressNonAddressableOp(t *testing.T) {
 }
 
 func TestServerAddListRemove(t *testing.T) {
-	_, cleanup := tempHome(t)
+	base, cleanup := tempHome(t)
 	defer cleanup()
 
 	env := Env{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
-	if code := runServer([]string{"add", "--desc", "test env", "user-test", "10.74.194.40:12200"}, env); code != 0 {
+	if code := runProject([]string{"add", "user", filepath.Dir(base)}, env); code != 0 {
+		t.Fatalf("project add exit=%d stderr=%s", code, env.Stderr.(*bytes.Buffer).String())
+	}
+	if code := runServer([]string{"add", "user-test", "10.74.194.40:12200", "--project", "user"}, env); code != 0 {
 		t.Fatalf("add exit=%d stderr=%s", code, env.Stderr.(*bytes.Buffer).String())
 	}
 
@@ -103,12 +106,12 @@ func TestServerAddListRemove(t *testing.T) {
 	}
 
 	rmEnv := Env{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
-	if code := runServer([]string{"remove", "user-test"}, rmEnv); code != 0 {
+	if code := runServer([]string{"remove", "user-test", "--confirm"}, rmEnv); code != 0 {
 		t.Fatalf("remove exit=%d stderr=%s", code, rmEnv.Stderr.(*bytes.Buffer).String())
 	}
 
 	rmMissingEnv := Env{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
-	if code := runServer([]string{"remove", "user-test"}, rmMissingEnv); code == 0 {
+	if code := runServer([]string{"remove", "user-test", "--confirm"}, rmMissingEnv); code == 0 {
 		t.Fatal("expected non-zero exit when removing missing alias")
 	}
 }

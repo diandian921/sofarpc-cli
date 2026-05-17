@@ -28,7 +28,7 @@ func TestExecStdinRoundTrip(t *testing.T) {
 	srv, port := startFakeDaemon(t)
 	defer srv.Close()
 
-	writeState(t, filepath.Join(dir, "daemon", "state.json"), port)
+	writeState(t, filepath.Join(dir, "state", "engine.json"), port)
 
 	reqBody := protocol.Request{
 		RequestID: "exec-test-1",
@@ -83,6 +83,9 @@ func TestExecStdinNoSpawnWithoutDaemon(t *testing.T) {
 	if resp.OK || resp.Code != protocol.CodeDaemonUnavailable {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
+	if resp.Error == nil || resp.Error.Details["reason"] != launcher.ReasonNoSpawn {
+		t.Fatalf("missing no_spawn diagnostic details: %+v", resp.Error)
+	}
 }
 
 // tempHome redirects launcher.DefaultPaths to a throwaway directory by overriding HOME.
@@ -96,8 +99,10 @@ func tempHome(t *testing.T) (string, func()) {
 	if err := os.Setenv("HOME", dir); err != nil {
 		t.Fatalf("setenv HOME: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, ".sofarpc", "daemon"), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+	for _, subdir := range []string{"state", "logs"} {
+		if err := os.MkdirAll(filepath.Join(dir, ".sofarpc", subdir), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", subdir, err)
+		}
 	}
 	// Rewrite the caller-visible HOME subdir so writeState can find it with the same root.
 	return filepath.Join(dir, ".sofarpc"), func() {

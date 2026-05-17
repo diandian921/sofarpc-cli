@@ -7,3 +7,8 @@ reports/
 cases
 sofarpc-cli-skill-workspace
 cli/sofarpc
+cli/sofarpc-cli
+cli/sofarpc-mcp
+dist/
+.claude/
+.codex-pet-runs/

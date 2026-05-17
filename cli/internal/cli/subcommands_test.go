@@ -18,7 +18,7 @@ func TestInvokeSubcommandSendsEnvelope(t *testing.T) {
 
 	srv, port := startFakeDaemon(t)
 	defer srv.Close()
-	writeState(t, filepath.Join(dir, "daemon", "state.json"), port)
+	writeState(t, filepath.Join(dir, "state", "engine.json"), port)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -67,7 +67,7 @@ func TestPingSubcommandSendsEnvelope(t *testing.T) {
 
 	srv, port := startFakeDaemon(t)
 	defer srv.Close()
-	writeState(t, filepath.Join(dir, "daemon", "state.json"), port)
+	writeState(t, filepath.Join(dir, "state", "engine.json"), port)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -91,7 +91,7 @@ func TestPingAcceptsFlagsAfterPositional(t *testing.T) {
 
 	srv, port := startFakeDaemon(t)
 	defer srv.Close()
-	writeState(t, filepath.Join(dir, "daemon", "state.json"), port)
+	writeState(t, filepath.Join(dir, "state", "engine.json"), port)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -103,12 +103,20 @@ func TestPingAcceptsFlagsAfterPositional(t *testing.T) {
 }
 
 func TestServerAddAcceptsFlagAfterPositionals(t *testing.T) {
-	_, cleanup := tempHome(t)
+	dir, cleanup := tempHome(t)
 	defer cleanup()
+
+	projectOut := &bytes.Buffer{}
+	projectErr := &bytes.Buffer{}
+	projectCode := runProject([]string{"add", "user", filepath.Dir(dir), "--prefix", "com.example"},
+		Env{BuildVersion: "test", Stdout: projectOut, Stderr: projectErr})
+	if projectCode != 0 {
+		t.Fatalf("project add exit = %d; stderr=%s", projectCode, projectErr.String())
+	}
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	code := runServerAdd([]string{"user-test", "10.0.0.1:12200", "--desc", "test env"},
+	code := runServerAdd([]string{"user-test", "10.0.0.1:12200", "--project", "user", "--timeout-ms", "3000"},
 		Env{BuildVersion: "test", Stdout: stdout, Stderr: stderr})
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
@@ -117,7 +125,7 @@ func TestServerAddAcceptsFlagAfterPositionals(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &out); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if out["alias"] != "user-test" || out["description"] != "test env" {
+	if out["name"] != "user-test" {
 		t.Fatalf("unexpected output: %+v", out)
 	}
 }
@@ -147,7 +155,7 @@ func TestDaemonStatusReportsRunning(t *testing.T) {
 
 	srv, port := startFakeDaemon(t)
 	defer srv.Close()
-	writeState(t, filepath.Join(dir, "daemon", "state.json"), port)
+	writeState(t, filepath.Join(dir, "state", "engine.json"), port)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}

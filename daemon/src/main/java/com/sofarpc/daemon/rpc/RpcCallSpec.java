@@ -53,7 +53,7 @@ public final class RpcCallSpec {
     }
 
     public RpcTargetKey toTargetKey() {
-        return new RpcTargetKey(address, interfaceId, timeoutMs);
+        return new RpcTargetKey(address, interfaceId);
     }
 
     @Override

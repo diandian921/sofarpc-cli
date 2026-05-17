@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
-	"github.com/sofarpc/cli/internal/alias"
+	"github.com/sofarpc/cli/internal/appconfig"
 )
 
-// runServer manages the local alias registry under ~/.sofarpc/servers.json.
-// The registry is pure client state; the daemon never reads it.
+// runServer manages configured RPC servers in ~/.sofarpc/config.json.
+// The Java Engine never reads this file; Go resolves servers before calling Engine.
 func runServer(args []string, env Env) int {
 	if len(args) == 0 {
 		fmt.Fprintln(env.Stderr, "server: subcommand required (add|list|remove)")
@@ -33,42 +34,59 @@ func runServer(args []string, env Env) int {
 func runServerAdd(args []string, env Env) int {
 	fs := flag.NewFlagSet("server add", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
-	desc := fs.String("desc", "", "human description (optional)")
+	project := fs.String("project", "", "bound project name")
+	protocol := fs.String("protocol", appconfig.DefaultServerProtocol, "rpc protocol")
+	timeoutMS := fs.Int("timeout-ms", appconfig.DefaultServerTimeoutMS, "default total timeout in milliseconds")
+	appName := fs.String("app-name", appconfig.DefaultServerAppName, "SofaRPC consumer app name")
+	overwrite := fs.Bool("overwrite", false, "replace an existing server")
+	var attachments repeatedString
+	fs.Var(&attachments, "attachment", "attachment as key=value; may be repeated")
+	_ = fs.String("desc", "", "legacy alias description; ignored")
 	rest, err := parseMixed(fs, args)
 	if err != nil {
 		return 2
 	}
 	if len(rest) != 2 {
-		fmt.Fprintln(env.Stderr, "usage: sofarpc server add <alias> <host:port> [--desc <text>]")
+		fmt.Fprintln(env.Stderr, "usage: sofarpc-cli server add <name> <host:port> --project <project> [--timeout-ms <ms>] [--attachment k=v]")
 		return 2
 	}
 	name, addr := rest[0], rest[1]
 
-	path, err := alias.DefaultPath()
-	if err != nil {
-		fmt.Fprintln(env.Stderr, "server add:", err)
-		return 1
+	if *project == "" {
+		fmt.Fprintln(env.Stderr, "server add: --project is required")
+		return 2
 	}
-	reg, err := alias.Load(path)
+	attachmentMap, err := parseAttachments(attachments)
 	if err != nil {
-		fmt.Fprintln(env.Stderr, "server add:", err)
-		return 1
-	}
-	if err := reg.Add(name, addr, *desc); err != nil {
 		fmt.Fprintln(env.Stderr, "server add:", err)
 		return 2
 	}
-	if err := alias.Save(path, reg); err != nil {
+	path, lock, err := configPaths()
+	if err != nil {
+		fmt.Fprintln(env.Stderr, "server add:", err)
+		return 1
+	}
+	var server appconfig.Server
+	_, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
+		var addErr error
+		server, addErr = cfg.AddServer(name, appconfig.Server{
+			Address:     addr,
+			Project:     *project,
+			Protocol:    *protocol,
+			TimeoutMS:   *timeoutMS,
+			AppName:     *appName,
+			Attachments: attachmentMap,
+		}, *overwrite)
+		return addErr
+	})
+	if err != nil {
 		fmt.Fprintln(env.Stderr, "server add:", err)
 		return 1
 	}
 	out := map[string]interface{}{
-		"ok":      true,
-		"alias":   name,
-		"address": addr,
-	}
-	if *desc != "" {
-		out["description"] = *desc
+		"ok":     true,
+		"name":   name,
+		"server": server,
 	}
 	emitJSON(env.Stdout, out)
 	return 0
@@ -81,53 +99,48 @@ func runServerList(args []string, env Env) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	path, err := alias.DefaultPath()
+	path, err := appconfig.DefaultPath()
 	if err != nil {
 		fmt.Fprintln(env.Stderr, "server list:", err)
 		return 1
 	}
-	reg, err := alias.Load(path)
+	cfg, err := appconfig.Load(path)
 	if err != nil {
 		fmt.Fprintln(env.Stderr, "server list:", err)
 		return 1
 	}
 	if *asJSON {
-		body, _ := json.Marshal(reg)
+		body, _ := json.Marshal(map[string]interface{}{"ok": true, "servers": serversList(cfg)})
 		fmt.Fprintln(env.Stdout, string(body))
 		return 0
 	}
-	printAliasTable(env.Stdout, reg)
+	printServerTable(env.Stdout, cfg)
 	return 0
 }
 
 func runServerRemove(args []string, env Env) int {
 	fs := flag.NewFlagSet("server remove", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
+	confirm := fs.Bool("confirm", false, "required to remove the server")
 	rest, err := parseMixed(fs, args)
 	if err != nil {
 		return 2
 	}
 	if len(rest) != 1 {
-		fmt.Fprintln(env.Stderr, "usage: sofarpc server remove <alias>")
+		fmt.Fprintln(env.Stderr, "usage: sofarpc-cli server remove <name> --confirm")
 		return 2
 	}
 	name := rest[0]
 
-	path, err := alias.DefaultPath()
+	path, lock, err := configPaths()
 	if err != nil {
 		fmt.Fprintln(env.Stderr, "server remove:", err)
 		return 1
 	}
-	reg, err := alias.Load(path)
+	_, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
+		return cfg.RemoveServer(name, *confirm)
+	})
 	if err != nil {
-		fmt.Fprintln(env.Stderr, "server remove:", err)
-		return 1
-	}
-	if err := reg.Remove(name); err != nil {
-		fmt.Fprintln(env.Stderr, "server remove:", err)
-		return 1
-	}
-	if err := alias.Save(path, reg); err != nil {
 		fmt.Fprintln(env.Stderr, "server remove:", err)
 		return 1
 	}
@@ -135,26 +148,50 @@ func runServerRemove(args []string, env Env) int {
 	return 0
 }
 
-func printAliasTable(w io.Writer, reg *alias.Registry) {
-	names := reg.Names()
+func printServerTable(w io.Writer, cfg appconfig.Config) {
+	names := cfg.ServerNames()
 	if len(names) == 0 {
-		fmt.Fprintln(w, "(no aliases registered)")
+		fmt.Fprintln(w, "(no servers configured)")
 		return
 	}
 	sort.Strings(names)
-	maxName, maxAddr := len("ALIAS"), len("ADDRESS")
+	maxName, maxAddr, maxProject := len("SERVER"), len("ADDRESS"), len("PROJECT")
 	for _, n := range names {
 		if len(n) > maxName {
 			maxName = len(n)
 		}
-		if a := reg.Servers[n].Address; len(a) > maxAddr {
+		s := cfg.Servers[n]
+		if a := s.Address; len(a) > maxAddr {
 			maxAddr = len(a)
 		}
+		if len(s.Project) > maxProject {
+			maxProject = len(s.Project)
+		}
 	}
-	format := fmt.Sprintf("%%-%ds  %%-%ds  %%s\n", maxName, maxAddr)
-	fmt.Fprintf(w, format, "ALIAS", "ADDRESS", "DESCRIPTION")
+	format := fmt.Sprintf("%%-%ds  %%-%ds  %%-%ds  %%s\n", maxName, maxAddr, maxProject)
+	fmt.Fprintf(w, format, "SERVER", "ADDRESS", "PROJECT", "TIMEOUT")
 	for _, n := range names {
-		s := reg.Servers[n]
-		fmt.Fprintf(w, format, n, s.Address, s.Description)
+		s := cfg.Servers[n]
+		fmt.Fprintf(w, format, n, s.Address, s.Project, fmt.Sprintf("%dms", s.TimeoutMS))
 	}
+}
+
+func serversList(cfg appconfig.Config) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(cfg.Servers))
+	for _, name := range cfg.ServerNames() {
+		out = append(out, map[string]interface{}{"name": name, "server": cfg.Servers[name]})
+	}
+	return out
+}
+
+func parseAttachments(values []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, value := range values {
+		key, val, ok := strings.Cut(value, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("invalid attachment %q: expected key=value", value)
+		}
+		out[strings.TrimSpace(key)] = val
+	}
+	return out, nil
 }

@@ -1,259 +1,221 @@
-# SofaRPC CLI
+# SofaRPC MCP
 
-[中文](#中文) | [English](#english)
+MCP-first SofaRPC testing toolkit for agents.
 
-Agent-first 的 SofaRPC 调用工具：**Go 瘦客户端 + Java 常驻 daemon**，一条 JSON 信封进、一条 JSON 信封出。为 LLM agent、脚本、CI 步骤而造。
+The primary entrypoint is `sofarpc-mcp`, a stdio MCP server. `sofarpc-cli` is kept for human configuration, diagnostics, and exact reproduction. A shared Java Engine performs SofaRPC generic invocation through `GenericService`.
 
----
+## What Gets Installed
 
-## 中文
-
-### 设计要点
-
-- **单行 JSON 信封协议**：`echo '{...}' | sofarpc exec --stdin` 读一条、写一条
-- **冷启一次、之后全暖**：首次调用启动 daemon（~6s，JVM 冷启），随后同机调用 p50 < 1ms；空闲 15 分钟自动回收
-- **泛化调用**：基于 SOFARPC 5.12 `GenericService` + bolt 直连，不需要业务 API jar
-- **稳定错误码**：8 个 `ErrorCode` 精确分类（`CONNECT_FAILED` / `RPC_TIMEOUT` / `INVOKE_FAILED` / `ASSERTION_FAILED` / …），agent 可根据 code 决定重试策略
-- **纯 stdlib**：Go 客户端零三方依赖，Java daemon 只要 JDK 8+
-
-### 仓库布局
-
-```
-sofarpc-cli/
-├── cli/          # Go 瘦客户端（sofarpc 二进制）
-├── daemon/       # Java 常驻 daemon（sofarpcd.jar）
-├── protocol/     # JSON Schema + fixtures（双端共用契约）
-├── scripts/      # 安装脚本
-└── docs/
-    ├── agent-integration.md               # ← Agent 接入唯一入口文档
-    ├── agent-first-architecture-design.md # 架构设计细节
-    └── daemon-design.md                   # daemon 进程模型设计笔记
+```text
+~/.sofarpc/
+  bin/
+    sofarpc-mcp
+    sofarpc-cli
+  lib/
+    sofarpc-engine.jar
+  config.json
+  state/
+    token
+    engine.json
+    engine.lock
+    config.lock
+  logs/
+    engine.log
+  cache/
+    schema/
 ```
 
-### 安装
+`config.json`, token, logs, state, and cache are not overwritten on upgrade.
+
+## Install
+
+From source:
 
 ```bash
-# 一键安装：构建 + 拷贝到 ~/.sofarpc/
 ./scripts/install.sh
-
-# 加入 PATH 后即可使用
-export PATH="$HOME/.sofarpc:$PATH"
-
-# 卸载
-./scripts/install.sh --uninstall
+export PATH="$HOME/.sofarpc/bin:$PATH"
 ```
 
-`scripts/install.sh` 会同时构建 Go 客户端和 daemon jar，拷贝到 `~/.sofarpc/sofarpc` 和 `~/.sofarpc/sofarpcd.jar`。如果检测到 daemon 正在跑，会给 3s 宽限后停掉（下次调用自动拉起新 jar）。
-
-### 单独构建
+Build a release package:
 
 ```bash
-# Java daemon：产出 daemon/target/sofarpcd.jar
-mvn -f daemon/pom.xml package -DskipTests
-
-# Go 客户端：产出 cli/sofarpc
-cd cli && go build -o sofarpc ./cmd/sofarpc
+./scripts/package.sh
 ```
 
-Go 1.19+，JDK 8+，Maven 3.6+。macOS / Linux 已测试（Windows 未支持）。
+The package contains:
 
-### 最小示例
+```text
+sofarpc-mcp
+sofarpc-cli
+sofarpc-engine.jar
+install.sh
+install.ps1
+```
 
-```bash
-JAR=daemon/target/sofarpcd.jar
+Requirements: Go 1.19+, Maven 3.6+, Java 8+.
 
-# daemon 自检（冷启 ~6s）
-echo '{"op":"health","payload":{}}' | ./sofarpc exec --stdin --jar $JAR
+## MCP Configuration
 
-# 连通性探测
-echo '{"op":"ping","payload":{"address":"10.0.0.1:12200","service":"com.example.UserService"}}' \
-  | ./sofarpc exec --stdin
+Example MCP server command:
 
-# 业务调用（暖复用，p50 < 1ms）
-echo '{
-  "op":"invoke",
-  "payload":{
-    "address":"10.0.0.1:12200",
-    "service":"com.example.UserService",
-    "method":"getUser",
-    "argTypes":["com.example.GetUserRequest"],
-    "args":[{"userId":123}]
+```json
+{
+  "mcpServers": {
+    "sofarpc": {
+      "command": "~/.sofarpc/bin/sofarpc-mcp"
+    }
   }
-}' | ./sofarpc exec --stdin
+}
 ```
 
-完整的信封字段、错误码含义、断言语义见 **[docs/agent-integration.md](docs/agent-integration.md)**。
+To hide config write tools:
 
-### 地址别名
-
-把常用地址起名，`address` 字段直接填别名：
-
-```bash
-sofarpc server add user-test 10.74.194.40:12200 --desc "测试环境"
-sofarpc server list
-sofarpc server remove user-test
-```
-
-别名表在 `~/.sofarpc/servers.json`，纯客户端，daemon 无感知。含端口的字面地址直接透传不走查表。
-
-### 辅助命令
-
-```bash
-sofarpc daemon status   # 查看 daemon 状态
-sofarpc daemon stop     # 优雅退出
-sofarpc version         # 打印构建版本
-```
-
-运行态文件在 `~/.sofarpc/daemon/`：`state.json`（pid/端口）、`daemon.log`（日志）、`daemon.lock`（启动锁）。别名表在 `~/.sofarpc/servers.json`。
-
-### 测试
-
-```bash
-# Java daemon（23 个单元测试）
-mvn -f daemon/pom.xml test
-
-# Go 客户端（单元 + 契约）
-cd cli && go test ./...
-
-# E2E（会真实起 JVM daemon，tag 隔离）
-cd cli && go test -tags=e2e ./internal/e2e/...
-```
-
-### 开发参考
-
-- 架构设计：[docs/agent-first-architecture-design.md](docs/agent-first-architecture-design.md)
-- Daemon 进程模型：[docs/daemon-design.md](docs/daemon-design.md)
-- 协议 Schema：[protocol/schema/](protocol/schema/)
-- 双端契约样本：[protocol/fixtures/](protocol/fixtures/)
-
-修协议 → 改 `protocol/schema/` 并同步 fixtures，两侧 contract test 会自动发现。
-
----
-
-## English
-
-Agent-first SofaRPC invocation tool: **Go thin client + resident Java daemon**. One JSON envelope in, one JSON envelope out. Built for LLM agents, scripts, and CI pipelines.
-
-### Highlights
-
-- **Single-line JSON envelope protocol**: `echo '{...}' | sofarpc exec --stdin` reads one, writes one
-- **Cold start once, warm thereafter**: first call boots the daemon (~6s JVM cold start); subsequent same-host calls p50 < 1ms; 15-minute idle auto-reaper
-- **Generic invocation** via SOFARPC 5.12 `GenericService` over bolt — no business API jar required
-- **Stable error codes**: 8 `ErrorCode` values precisely classify failures (`CONNECT_FAILED` / `RPC_TIMEOUT` / `INVOKE_FAILED` / `ASSERTION_FAILED` / …), so agents can decide retry strategy from `code` alone
-- **Stdlib-only**: Go client has zero third-party deps; Java daemon needs only JDK 8+
-
-### Layout
-
-```
-sofarpc-cli/
-├── cli/          # Go thin client (sofarpc binary)
-├── daemon/       # Java resident daemon (sofarpcd.jar)
-├── protocol/     # JSON Schema + fixtures (shared wire contract)
-├── scripts/      # install scripts
-└── docs/
-    ├── agent-integration.md                # ← THE entry point for agents
-    ├── agent-first-architecture-design.md  # architecture deep dive
-    └── daemon-design.md                    # daemon process model notes
-```
-
-### Install
-
-```bash
-# One-shot: build + copy to ~/.sofarpc/
-./scripts/install.sh
-
-# Add to PATH
-export PATH="$HOME/.sofarpc:$PATH"
-
-# Uninstall
-./scripts/install.sh --uninstall
-```
-
-`scripts/install.sh` builds both the Go client and the daemon jar, then copies them to `~/.sofarpc/sofarpc` and `~/.sofarpc/sofarpcd.jar`. If a daemon is already running, it stops it after a 3-second grace window so the next call spawns a fresh JVM with the new jar.
-
-### Manual build
-
-```bash
-# Java daemon → daemon/target/sofarpcd.jar
-mvn -f daemon/pom.xml package -DskipTests
-
-# Go client → cli/sofarpc
-cd cli && go build -o sofarpc ./cmd/sofarpc
-```
-
-Go 1.19+, JDK 8+, Maven 3.6+. macOS / Linux tested (Windows not supported).
-
-### Minimal Example
-
-```bash
-JAR=daemon/target/sofarpcd.jar
-
-# daemon self-check (~6s cold start)
-echo '{"op":"health","payload":{}}' | ./sofarpc exec --stdin --jar $JAR
-
-# connectivity probe
-echo '{"op":"ping","payload":{"address":"10.0.0.1:12200","service":"com.example.UserService"}}' \
-  | ./sofarpc exec --stdin
-
-# business invocation (warm reuse, p50 < 1ms)
-echo '{
-  "op":"invoke",
-  "payload":{
-    "address":"10.0.0.1:12200",
-    "service":"com.example.UserService",
-    "method":"getUser",
-    "argTypes":["com.example.GetUserRequest"],
-    "args":[{"userId":123}]
+```json
+{
+  "mcpServers": {
+    "sofarpc": {
+      "command": "~/.sofarpc/bin/sofarpc-mcp",
+      "args": ["--disable-config-write"]
+    }
   }
-}' | ./sofarpc exec --stdin
+}
 ```
 
-Full envelope schema, error-code semantics, and assertion behavior: **[docs/agent-integration.md](docs/agent-integration.md)**.
+## MCP Tools
 
-### Address Aliases
+Config and context:
 
-Name your frequent endpoints so envelopes stay short:
+- `list_projects`
+- `add_project`
+- `remove_project`
+- `set_current_project`
+- `list_servers`
+- `add_server`
+- `remove_server`
 
-```bash
-sofarpc server add user-test 10.74.194.40:12200 --desc "test env"
-sofarpc server list
-sofarpc server remove user-test
+Runtime and RPC:
+
+- `engine_status`
+- `ping_service`
+- `search_interface`
+- `describe_interface`
+- `invoke_method`
+
+`ping_service` checks the configured transport path. It does not prove the remote interface, method, or business behavior exists.
+
+`invoke_method` supports either exact low-level arguments:
+
+```json
+{
+  "server": "user-test",
+  "service": "com.example.UserService",
+  "method": "getUser",
+  "paramTypes": ["java.lang.String"],
+  "orderedArguments": ["u001"]
+}
 ```
 
-Aliases live in `~/.sofarpc/servers.json` (client-side only — daemon never sees them). Literal `host:port` passes through without a lookup.
+or named arguments when local source can resolve the method signature:
 
-### Ancillary Commands
-
-```bash
-sofarpc daemon status   # inspect daemon state
-sofarpc daemon stop     # graceful shutdown
-sofarpc version         # print build version
+```json
+{
+  "server": "user-test",
+  "service": "com.example.UserService",
+  "method": "getUser",
+  "arguments": {
+    "userId": "u001"
+  }
+}
 ```
 
-Runtime files live in `~/.sofarpc/daemon/`: `state.json` (pid/port), `daemon.log`, `daemon.lock`. Aliases at `~/.sofarpc/servers.json`.
+## Config File
 
-### Testing
+`~/.sofarpc/config.json` is stable and user-editable:
+
+```json
+{
+  "projects": {
+    "user": {
+      "workspaceRoot": "/Users/me/workspace/user-service",
+      "servicePrefixes": ["com.company.user."]
+    }
+  },
+  "servers": {
+    "user-test": {
+      "address": "10.0.0.1:12200",
+      "project": "user",
+      "protocol": "bolt",
+      "timeoutMs": 5000,
+      "appName": "sofarpc-agent",
+      "attachments": {}
+    }
+  },
+  "engine": {
+    "host": "127.0.0.1",
+    "port": 37651,
+    "javaHome": null,
+    "idleTTL": "30m",
+    "startTimeoutMs": 20000,
+    "maxConcurrentInvokes": 8
+  }
+}
+```
+
+## CLI
+
+Use CLI for setup and diagnostics:
 
 ```bash
-# Java daemon (23 unit tests)
+sofarpc-cli project add user /Users/me/workspace/user-service --prefix com.company.user
+sofarpc-cli server add user-test 10.0.0.1:12200 --project user
+sofarpc-cli server list --json
+sofarpc-cli daemon status
+sofarpc-cli daemon stop
+```
+
+The legacy `exec --stdin`, `ping`, and `invoke` commands remain available for reproduction.
+
+## Local Source Schema
+
+The MCP server parses local Java source only. It does not download Git repos, source jars, Maven dependencies, or load project classes.
+
+Scanned roots:
+
+- `src/main/java`
+- `*/src/main/java`
+
+Ignored:
+
+- `src/test/java`
+- `target`
+- `build`
+- `.git`
+- `.idea`
+- `node_modules`
+
+Schema cache is stored under `~/.sofarpc/cache/schema/` and invalidated by source-set fingerprint. Entries unused for 7 days may be cleaned.
+
+## Troubleshooting
+
+- `java_not_found`: install Java 8+ or fix `PATH`.
+- `java_version_unsupported`: use Java 8 or newer.
+- `engine_jar_not_found`: run `./scripts/install.sh` or set `SOFARPCD_JAR`.
+- `port_occupied`: port `37651` is already used by a non-reusable local process.
+- `engine_start_timeout`: inspect `~/.sofarpc/logs/engine.log`; the MCP/CLI error includes a bounded log tail when available.
+- `CONFIG_INVALID`: fix `~/.sofarpc/config.json`; the tool will not overwrite broken JSON.
+- unresolved external DTO fields: local source parsing cannot see external jar parents. Exact `paramTypes + orderedArguments` remains available.
+
+## Test
+
+```bash
 mvn -f daemon/pom.xml test
-
-# Go client (unit + contract)
 cd cli && go test ./...
-
-# E2E — boots a real JVM daemon, isolated by build tag
-cd cli && go test -tags=e2e ./internal/e2e/...
 ```
 
-### References
+Some tests open loopback ports. In restricted sandboxes, they need permission to bind `127.0.0.1`.
 
-- Architecture: [docs/agent-first-architecture-design.md](docs/agent-first-architecture-design.md)
-- Daemon process model: [docs/daemon-design.md](docs/daemon-design.md)
-- Protocol schema: [protocol/schema/](protocol/schema/)
-- Contract fixtures: [protocol/fixtures/](protocol/fixtures/)
+## Design Docs
 
-Protocol changes go in `protocol/schema/` with matching fixtures — both sides' contract tests will pick them up automatically.
-
-### License
-
-MIT
+- [MCP-first design](docs/mcp-first-sofarpc-agent-design.md)
+- [Implementation plan](docs/mcp-first-implementation-plan.md)
+- [Design review](docs/mcp-first-sofarpc-agent-design-review.md)

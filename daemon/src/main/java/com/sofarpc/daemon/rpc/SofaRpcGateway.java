@@ -1,6 +1,7 @@
 package com.sofarpc.daemon.rpc;
 
 import com.alipay.sofa.rpc.api.GenericService;
+import com.alipay.sofa.rpc.context.RpcInvokeContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,9 +23,19 @@ public final class SofaRpcGateway {
 
     public RpcCallResult call(RpcCallSpec spec) {
         long start = System.currentTimeMillis();
-        try {
-            GenericService svc = connectionManager.getOrCreate(spec.toTargetKey());
-            Object raw = svc.$genericInvoke(spec.getMethod(), spec.getArgTypes(), spec.getArgs());
+        int connectTimeoutMs = remainingTimeoutMs(spec, start);
+        if (connectTimeoutMs <= 0) {
+            return timeoutBeforeInvoke(start);
+        }
+        try (ConsumerLease lease = connectionManager.acquire(spec.toTargetKey(), connectTimeoutMs)) {
+            int rpcTimeoutMs = remainingTimeoutMs(spec, start);
+            if (rpcTimeoutMs <= 0) {
+                return timeoutBeforeInvoke(start);
+            }
+            GenericService svc = lease.service();
+            RpcInvokeContext.getContext().setTimeout(rpcTimeoutMs);
+            Object[] args = GenericArgumentConverter.convert(spec.getArgTypes(), spec.getArgs());
+            Object raw = svc.$genericInvoke(spec.getMethod(), spec.getArgTypes(), args);
             Object flattened = ResultFlattener.flatten(raw);
             long elapsed = System.currentTimeMillis() - start;
             return RpcCallResult.success(flattened, elapsed);
@@ -32,10 +43,29 @@ public final class SofaRpcGateway {
             long elapsed = System.currentTimeMillis() - start;
             LOG.debug("rpc call failed: {}", spec, t);
             return RpcCallResult.failure(t, elapsed);
+        } finally {
+            RpcInvokeContext.removeContext();
         }
     }
 
     public ConnectionManager getConnectionManager() {
         return connectionManager;
+    }
+
+    private int remainingTimeoutMs(RpcCallSpec spec, long start) {
+        if (spec.getTimeoutMs() <= 0) {
+            return 0;
+        }
+        long elapsed = System.currentTimeMillis() - start;
+        long remaining = (long) spec.getTimeoutMs() - elapsed;
+        if (remaining <= 0L) {
+            return 0;
+        }
+        return remaining > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) remaining;
+    }
+
+    private RpcCallResult timeoutBeforeInvoke(long start) {
+        return RpcCallResult.failure(new RuntimeException("connect timed out before rpc invoke"),
+                System.currentTimeMillis() - start);
     }
 }

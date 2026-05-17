@@ -13,24 +13,30 @@ type Paths struct {
 	StateFile string
 	LockFile  string
 	LogFile   string
+	TokenFile string
 }
 
-// DefaultPaths resolves to ~/.sofarpc/daemon/.
+// DefaultPaths resolves to the MCP-first engine runtime layout under ~/.sofarpc/.
 func DefaultPaths() (Paths, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return Paths{}, err
 	}
-	base := filepath.Join(home, ".sofarpc", "daemon")
+	root := filepath.Join(home, ".sofarpc")
+	state := filepath.Join(root, "state")
 	return Paths{
-		BaseDir:   base,
-		StateFile: filepath.Join(base, "state.json"),
-		LockFile:  filepath.Join(base, "daemon.lock"),
-		LogFile:   filepath.Join(base, "daemon.log"),
+		BaseDir:   state,
+		StateFile: filepath.Join(state, "engine.json"),
+		LockFile:  filepath.Join(state, "engine.lock"),
+		LogFile:   filepath.Join(root, "logs", "engine.log"),
+		TokenFile: filepath.Join(state, "token"),
 	}, nil
 }
 
-// EnsureBaseDir creates the base directory if missing.
+// EnsureBaseDir creates the state and log directories if missing.
 func (p Paths) EnsureBaseDir() error {
-	return os.MkdirAll(p.BaseDir, 0o755)
+	if err := os.MkdirAll(p.BaseDir, 0o755); err != nil {
+		return err
+	}
+	return os.MkdirAll(filepath.Dir(p.LogFile), 0o755)
 }

@@ -33,7 +33,7 @@ func runDaemon(args []string, env Env) int {
 func runDaemonStart(args []string, env Env) int {
 	fs := flag.NewFlagSet("daemon start", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
-	jar := fs.String("jar", "", "path to sofarpcd.jar (overrides autodiscovery)")
+	jar := fs.String("jar", "", "path to sofarpc-engine.jar (overrides autodiscovery)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}

@@ -5,17 +5,28 @@ import (
 	"fmt"
 
 	"github.com/sofarpc/cli/internal/alias"
+	"github.com/sofarpc/cli/internal/appconfig"
 	"github.com/sofarpc/cli/internal/protocol"
 )
 
 // resolveAddress turns input into a concrete host:port using the user's
-// alias registry. Raw host:port values pass through untouched; aliases are
-// looked up in ~/.sofarpc/servers.json. A nil/missing registry is tolerated
-// for raw addresses so alias resolution is a pure add-on — agents that
-// always pass literals never touch the file.
+// config server registry. Raw host:port values pass through untouched. New
+// MCP-first servers are read from ~/.sofarpc/config.json; the legacy
+// ~/.sofarpc/servers.json alias file remains a fallback for old users.
 func resolveAddress(input string) (string, error) {
 	if alias.IsHostPort(input) {
 		return input, nil
+	}
+	configPath, err := appconfig.DefaultPath()
+	if err != nil {
+		return "", err
+	}
+	cfg, err := appconfig.Load(configPath)
+	if err != nil {
+		return "", err
+	}
+	if server, ok := cfg.Servers[input]; ok {
+		return server.Address, nil
 	}
 	path, err := alias.DefaultPath()
 	if err != nil {

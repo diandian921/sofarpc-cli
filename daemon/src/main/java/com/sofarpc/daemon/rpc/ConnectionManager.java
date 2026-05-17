@@ -1,17 +1,19 @@
 package com.sofarpc.daemon.rpc;
 
 import com.alipay.sofa.rpc.api.GenericService;
-import com.alipay.sofa.rpc.config.ConsumerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Objects;
 
 /**
- * Caches GenericService instances per target. All performance gains of the daemon
- * depend on this cache staying warm across requests.
+ * Bounded warm cache of SOFARPC generic consumers, one per stable target
+ * (address + interface). The cap and LRU eviction prevent the unbounded
+ * connection growth that previously caused long-run OOM; the call timeout is
+ * applied per invocation via RpcInvokeContext, never baked into the key.
  *
  * @author wuwh
  */
@@ -19,64 +21,171 @@ public final class ConnectionManager {
 
     private static final Logger LOG = LoggerFactory.getLogger(ConnectionManager.class);
 
-    private static final String PROTOCOL_BOLT = "bolt";
-    private static final String DIRECT_URL_PREFIX = "bolt://";
-    private static final int CONNECTION_NUM = 1;
-    private static final int RECONNECT_PERIOD = 0;
+    private static final int DEFAULT_MAX_CONSUMERS = 256;
+    private static final int CREATE_LOCK_STRIPES = 64;
 
-    private final Map<RpcTargetKey, ConsumerConfig<GenericService>> configs = new ConcurrentHashMap<>();
-    private final Map<RpcTargetKey, GenericService> services = new ConcurrentHashMap<>();
+    private final ConsumerFactory factory;
+    private final int maxConsumers;
+    private final Map<RpcTargetKey, CacheEntry> cache;
+    private final Object[] createLocks = new Object[CREATE_LOCK_STRIPES];
 
-    public GenericService getOrCreate(RpcTargetKey key) {
-        return services.computeIfAbsent(key, this::createConsumer);
+    public ConnectionManager() {
+        this(DEFAULT_MAX_CONSUMERS, new SofaConsumerFactory());
     }
 
-    public int size() {
-        return services.size();
-    }
-
-    public void destroyAll() {
-        for (Map.Entry<RpcTargetKey, ConsumerConfig<GenericService>> entry : configs.entrySet()) {
-            try {
-                entry.getValue().unRefer();
-            } catch (RuntimeException e) {
-                LOG.debug("unRefer failed for {}: {}", entry.getKey(), e.getMessage());
-            }
+    ConnectionManager(int maxConsumers, ConsumerFactory factory) {
+        if (maxConsumers <= 0) {
+            throw new IllegalArgumentException("maxConsumers must be > 0");
         }
-        configs.clear();
-        services.clear();
+        this.maxConsumers = maxConsumers;
+        this.factory = Objects.requireNonNull(factory, "factory");
+        for (int i = 0; i < createLocks.length; i++) {
+            createLocks[i] = new Object();
+        }
+        this.cache = new LinkedHashMap<RpcTargetKey, CacheEntry>(16, 0.75f, true);
     }
 
-    public void destroyByAddress(String address) {
-        Iterator<Map.Entry<RpcTargetKey, ConsumerConfig<GenericService>>> it = configs.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry<RpcTargetKey, ConsumerConfig<GenericService>> entry = it.next();
-            if (entry.getKey().getAddress().equals(address)) {
-                try {
-                    entry.getValue().unRefer();
-                } catch (RuntimeException e) {
-                    LOG.debug("unRefer failed for {}: {}", entry.getKey(), e.getMessage());
+    public ConsumerLease acquire(RpcTargetKey key, int connectTimeoutMs) {
+        ConsumerLease lease = tryAcquireCached(key);
+        if (lease != null) {
+            return lease;
+        }
+        synchronized (createLock(key)) {
+            lease = tryAcquireCached(key);
+            if (lease != null) {
+                return lease;
+            }
+            ManagedConsumer consumer = factory.create(key, connectTimeoutMs);
+            synchronized (this) {
+                CacheEntry existing = cache.get(key);
+                if (existing != null) {
+                    safeClose(key, consumer);
+                    return existing.acquire();
                 }
-                services.remove(entry.getKey());
-                it.remove();
+                CacheEntry created = new CacheEntry(key, consumer);
+                cache.put(key, created);
+                evictOverflow();
+                return created.acquire();
             }
         }
     }
 
-    private GenericService createConsumer(RpcTargetKey key) {
-        ConsumerConfig<GenericService> config = new ConsumerConfig<GenericService>()
-                .setInterfaceId(key.getInterfaceId())
-                .setGeneric(true)
-                .setProtocol(PROTOCOL_BOLT)
-                .setDirectUrl(DIRECT_URL_PREFIX + key.getAddress())
-                .setRegister(false)
-                .setSubscribe(false)
-                .setTimeout(key.getTimeoutMs())
-                .setConnectTimeout(key.getTimeoutMs())
-                .setConnectionNum(CONNECTION_NUM)
-                .setLazy(false)
-                .setReconnectPeriod(RECONNECT_PERIOD);
-        configs.put(key, config);
-        return config.refer();
+    public synchronized int size() {
+        return cache.size();
+    }
+
+    public synchronized void destroyAll() {
+        for (Map.Entry<RpcTargetKey, CacheEntry> entry : cache.entrySet()) {
+            entry.getValue().evict();
+        }
+        cache.clear();
+    }
+
+    public synchronized void destroyByAddress(String address) {
+        int removed = 0;
+        Iterator<Map.Entry<RpcTargetKey, CacheEntry>> it = cache.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<RpcTargetKey, CacheEntry> entry = it.next();
+            if (entry.getKey().getAddress().equals(address)) {
+                entry.getValue().evict();
+                it.remove();
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            LOG.debug("destroyed {} consumer(s) for address {}", removed, address);
+        }
+    }
+
+    private synchronized ConsumerLease tryAcquireCached(RpcTargetKey key) {
+        CacheEntry entry = cache.get(key);
+        if (entry == null) {
+            return null;
+        }
+        return entry.acquire();
+    }
+
+    private void evictOverflow() {
+        Iterator<Map.Entry<RpcTargetKey, CacheEntry>> it = cache.entrySet().iterator();
+        while (cache.size() > maxConsumers && it.hasNext()) {
+            Map.Entry<RpcTargetKey, CacheEntry> eldest = it.next();
+            eldest.getValue().evict();
+            it.remove();
+        }
+    }
+
+    private Object createLock(RpcTargetKey key) {
+        return createLocks[(key.hashCode() & 0x7fffffff) % createLocks.length];
+    }
+
+    private void safeClose(RpcTargetKey key, ManagedConsumer consumer) {
+        try {
+            consumer.close();
+        } catch (RuntimeException e) {
+            LOG.debug("close failed for {}: {}", key, e.getMessage());
+        }
+    }
+
+    private final class CacheEntry {
+        private final RpcTargetKey key;
+        private final ManagedConsumer consumer;
+        private int activeLeases;
+        private boolean evicted;
+        private boolean closed;
+
+        private CacheEntry(RpcTargetKey key, ManagedConsumer consumer) {
+            this.key = key;
+            this.consumer = consumer;
+        }
+
+        private ConsumerLease acquire() {
+            activeLeases++;
+            return new Lease(this);
+        }
+
+        private void release() {
+            synchronized (ConnectionManager.this) {
+                activeLeases--;
+                if (activeLeases == 0 && evicted) {
+                    closeIfNeeded();
+                }
+            }
+        }
+
+        private void evict() {
+            evicted = true;
+            if (activeLeases == 0) {
+                closeIfNeeded();
+            }
+        }
+
+        private void closeIfNeeded() {
+            if (!closed) {
+                closed = true;
+                safeClose(key, consumer);
+            }
+        }
+    }
+
+    private static final class Lease implements ConsumerLease {
+        private final CacheEntry entry;
+        private boolean closed;
+
+        private Lease(CacheEntry entry) {
+            this.entry = entry;
+        }
+
+        @Override
+        public GenericService service() {
+            return entry.consumer.service();
+        }
+
+        @Override
+        public void close() {
+            if (!closed) {
+                closed = true;
+                entry.release();
+            }
+        }
     }
 }

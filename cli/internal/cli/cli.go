@@ -34,6 +34,10 @@ func Run(args []string, env Env) int {
 		return runPing(args[1:], env)
 	case "daemon":
 		return runDaemon(args[1:], env)
+	case "engine":
+		return runEngine(args[1:], env)
+	case "project":
+		return runProject(args[1:], env)
 	case "server":
 		return runServer(args[1:], env)
 	case "version", "--version", "-v":
@@ -70,14 +74,15 @@ func parseMixed(fs *flag.FlagSet, args []string) ([]string, error) {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprint(w, `sofarpc — agent-first SOFARPC CLI
+	fmt.Fprint(w, `sofarpc-cli — MCP-first SofaRPC CLI
 
 Usage:
-  sofarpc exec --stdin                 Read one envelope from stdin, write one to stdout.
-  sofarpc invoke [flags]               Build and send an invoke request.
-  sofarpc ping <host:port|alias>       Probe a target address via the daemon.
-  sofarpc daemon start|stop|status     Manage the local daemon.
-  sofarpc server add|list|remove       Manage local address aliases.
-  sofarpc version                      Print build version.
+  sofarpc-cli exec --stdin                 Read one legacy envelope from stdin, write one to stdout.
+  sofarpc-cli invoke [flags]               Build and send a legacy invoke request.
+  sofarpc-cli ping <host:port|server>      Probe a target address via the Engine.
+  sofarpc-cli engine start|stop|status     Manage the local Engine.
+  sofarpc-cli project add|list|remove      Manage local source projects.
+  sofarpc-cli server add|list|remove       Manage configured RPC servers.
+  sofarpc-cli version                      Print build version.
 `)
 }

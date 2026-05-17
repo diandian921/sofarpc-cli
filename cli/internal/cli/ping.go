@@ -11,16 +11,16 @@ func runPing(args []string, env Env) int {
 	fs := flag.NewFlagSet("ping", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
 	service := fs.String("service", "", "optional service hint for richer errors")
-	timeoutMS := fs.Int("timeout-ms", 0, "dial timeout (ms); 0 uses daemon default")
-	noSpawn := fs.Bool("no-spawn", false, "fail instead of spawning the daemon")
-	jar := fs.String("jar", "", "path to sofarpcd.jar (overrides autodiscovery)")
+	timeoutMS := fs.Int("timeout-ms", 0, "dial timeout (ms); 0 uses Engine default")
+	noSpawn := fs.Bool("no-spawn", false, "fail instead of spawning the Engine")
+	jar := fs.String("jar", "", "path to sofarpc-engine.jar (overrides autodiscovery)")
 
 	rest, err := parseMixed(fs, args)
 	if err != nil {
 		return 2
 	}
 	if len(rest) != 1 {
-		fmt.Fprintln(env.Stderr, "usage: sofarpc ping <host:port|alias> [--service <name>] [--timeout-ms <ms>]")
+		fmt.Fprintln(env.Stderr, "usage: sofarpc-cli ping <host:port|server> [--service <name>] [--timeout-ms <ms>]")
 		return 2
 	}
 	addr, err := resolveAddress(rest[0])
@@ -42,7 +42,7 @@ func runPing(args []string, env Env) int {
 
 	resp, err := dispatch(req, execConfig(env, *noSpawn, *jar))
 	if err != nil {
-		writeLocalFailure(env.Stdout, req.RequestID, protocol.CodeDaemonUnavailable, err.Error())
+		writeDispatchFailure(env.Stdout, req.RequestID, err)
 		return 1
 	}
 	if err := writeResponse(env.Stdout, resp); err != nil {

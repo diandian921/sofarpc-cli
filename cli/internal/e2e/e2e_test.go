@@ -101,6 +101,8 @@ func resolveJar(t *testing.T) string {
 		t.Fatalf("getwd: %v", err)
 	}
 	candidates := []string{
+		filepath.Join(cwd, "..", "..", "..", "daemon", "target", "sofarpc-engine.jar"),
+		filepath.Join(cwd, "..", "..", "daemon", "target", "sofarpc-engine.jar"),
 		filepath.Join(cwd, "..", "..", "..", "daemon", "target", "sofarpcd.jar"),
 		filepath.Join(cwd, "..", "..", "daemon", "target", "sofarpcd.jar"),
 	}
@@ -110,7 +112,7 @@ func resolveJar(t *testing.T) string {
 			return abs
 		}
 	}
-	t.Skipf("sofarpcd.jar not found; run `mvn -DskipTests package` in daemon (tried %v)", candidates)
+	t.Skipf("sofarpc-engine.jar not found; run `mvn -DskipTests package` in daemon (tried %v)", candidates)
 	return ""
 }
 

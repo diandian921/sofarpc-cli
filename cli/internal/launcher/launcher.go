@@ -17,10 +17,10 @@ import (
 const (
 	DefaultDialTimeout    = 1 * time.Second
 	DefaultRequestTimeout = 30 * time.Second
-	DefaultSpawnBudget    = 30 * time.Second
+	DefaultSpawnBudget    = 20 * time.Second
 	DefaultPollInterval   = 100 * time.Millisecond
+	DefaultEnginePort     = 37651
 	loopbackHost          = "127.0.0.1"
-	defaultPickPort       = 0
 )
 
 // Config drives Connect. Most fields have sensible defaults via DefaultConfig.
@@ -31,6 +31,7 @@ type Config struct {
 	JavaBin        string
 	JVMArgs        []string
 	Paths          Paths
+	Port           int
 	DialTimeout    time.Duration
 	RequestTimeout time.Duration
 	SpawnBudget    time.Duration
@@ -38,7 +39,7 @@ type Config struct {
 	NoSpawn        bool
 }
 
-// DefaultConfig returns a Config wired to the default ~/.sofarpc/daemon/ paths.
+// DefaultConfig returns a Config wired to the default ~/.sofarpc/ state/log layout.
 func DefaultConfig(buildVersion string) (Config, error) {
 	paths, err := DefaultPaths()
 	if err != nil {
@@ -46,9 +47,10 @@ func DefaultConfig(buildVersion string) (Config, error) {
 	}
 	return Config{
 		BuildVersion:   buildVersion,
-		IdleTTLMS:      int64((15 * time.Minute) / time.Millisecond),
+		IdleTTLMS:      int64((30 * time.Minute) / time.Millisecond),
 		JavaBin:        ResolveJavaBin(),
 		Paths:          paths,
+		Port:           DefaultEnginePort,
 		DialTimeout:    DefaultDialTimeout,
 		RequestTimeout: DefaultRequestTimeout,
 		SpawnBudget:    DefaultSpawnBudget,
@@ -84,7 +86,8 @@ func Connect(cfg Config) (*Connection, error) {
 		return conn, nil
 	}
 	if cfg.NoSpawn {
-		return nil, errors.New("daemon not available and --no-spawn was set")
+		return nil, NewDiagnosticError(ReasonNoSpawn, "Engine is not running and spawning is disabled", nil).
+			WithDetail("stateFile", cfg.Paths.StateFile)
 	}
 
 	lock, gotLock, err := TryLock(cfg.Paths.LockFile)
@@ -99,6 +102,9 @@ func Connect(cfg Config) (*Connection, error) {
 		}
 		if conn != nil {
 			return conn, nil
+		}
+		if err := checkFixedPortAvailable(cfg.Port); err != nil {
+			return nil, err
 		}
 		if err := spawnDaemon(cfg); err != nil {
 			return nil, err
@@ -120,6 +126,9 @@ func tryReuse(cfg Config) (*Connection, error) {
 	}
 	if !IsPIDAlive(state.PID) {
 		_ = DeleteState(cfg.Paths.StateFile)
+		return nil, nil
+	}
+	if !cfg.NoSpawn && cfg.Port != 0 && state.Port != cfg.Port {
 		return nil, nil
 	}
 	client := buildClient(cfg, state.Port)
@@ -153,7 +162,11 @@ func waitForReady(cfg Config) (*Connection, error) {
 	if lastErr == nil {
 		lastErr = errors.New("daemon failed to become ready within spawn budget")
 	}
-	return nil, fmt.Errorf("waiting for daemon: %w", lastErr)
+	return nil, NewDiagnosticError(ReasonEngineStartTimeout, "Engine did not become ready before the startup timeout", lastErr).
+		WithDetail("spawnBudgetMs", cfg.SpawnBudget.Milliseconds()).
+		WithDetail("stateFile", cfg.Paths.StateFile).
+		WithDetail("logFile", cfg.Paths.LogFile).
+		WithLogTail(cfg.Paths.LogFile, 8192)
 }
 
 func spawnDaemon(cfg Config) error {
@@ -161,13 +174,20 @@ func spawnDaemon(cfg Config) error {
 	if err != nil {
 		return err
 	}
+	if _, err := EnsureToken(cfg.Paths.TokenFile); err != nil {
+		return err
+	}
+	if err := ValidateJava(cfg.JavaBin); err != nil {
+		return err
+	}
 	_, err = Spawn(SpawnConfig{
 		JavaBin:   cfg.JavaBin,
 		JarPath:   jar,
-		Port:      defaultPickPort,
+		Port:      cfg.Port,
 		IdleTTLMS: cfg.IdleTTLMS,
 		StateFile: cfg.Paths.StateFile,
 		LogFile:   cfg.Paths.LogFile,
+		TokenFile: cfg.Paths.TokenFile,
 		JVMArgs:   cfg.JVMArgs,
 		BuildVer:  cfg.BuildVersion,
 	})
@@ -198,6 +218,20 @@ func buildClient(cfg Config, port int) *ipc.Client {
 		DialTimeout:    cfg.DialTimeout,
 		RequestTimeout: cfg.RequestTimeout,
 	}
+}
+
+func checkFixedPortAvailable(port int) error {
+	if port == 0 {
+		return nil
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(loopbackHost, strconv.Itoa(port)), 200*time.Millisecond)
+	if err != nil {
+		return nil
+	}
+	_ = conn.Close()
+	return NewDiagnosticError(ReasonPortOccupied, "Engine port is already occupied by a non-reusable process", nil).
+		WithDetail("host", loopbackHost).
+		WithDetail("port", port)
 }
 
 func probeHealth(client *ipc.Client) (*protocol.HealthData, error) {

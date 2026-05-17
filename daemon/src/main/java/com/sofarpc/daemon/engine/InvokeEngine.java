@@ -12,6 +12,8 @@ import com.sofarpc.daemon.rpc.RpcCallSpec;
 import com.sofarpc.daemon.rpc.RpcErrorClassifier;
 import com.sofarpc.daemon.rpc.SofaRpcGateway;
 
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -137,9 +139,53 @@ public final class InvokeEngine {
         JsonNode arr = node.get("args");
         Object[] out = new Object[arr.size()];
         for (int i = 0; i < arr.size(); i++) {
-            out[i] = mapper.convertValue(arr.get(i), Object.class);
+            out[i] = jsonValue(arr.get(i));
         }
         return out;
+    }
+
+    static Object jsonValue(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (node.isTextual()) {
+            return node.asText();
+        }
+        if (node.isBoolean()) {
+            return node.booleanValue();
+        }
+        if (node.isIntegralNumber()) {
+            if (node.canConvertToInt()) {
+                return node.intValue();
+            }
+            if (node.canConvertToLong()) {
+                return node.longValue();
+            }
+            return node.bigIntegerValue();
+        }
+        if (node.isFloatingPointNumber()) {
+            if (node.isFloat() || node.isDouble()) {
+                return node.doubleValue();
+            }
+            return node.decimalValue();
+        }
+        if (node.isArray()) {
+            List<Object> values = new ArrayList<Object>();
+            for (JsonNode item : node) {
+                values.add(jsonValue(item));
+            }
+            return values;
+        }
+        if (node.isObject()) {
+            Map<String, Object> values = new LinkedHashMap<String, Object>();
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> field = fields.next();
+                values.put(field.getKey(), jsonValue(field.getValue()));
+            }
+            return values;
+        }
+        return node.asText();
     }
 
     @SuppressWarnings("unchecked")

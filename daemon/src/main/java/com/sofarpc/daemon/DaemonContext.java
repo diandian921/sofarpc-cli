@@ -15,6 +15,7 @@ public final class DaemonContext {
 
     private final long startedAtMs;
     private final String buildVersion;
+    private final String token;
     private final long pid;
     private final SofaRpcGateway rpcGateway;
     private final DaemonLifecycle lifecycle;
@@ -26,11 +27,13 @@ public final class DaemonContext {
 
     public DaemonContext(long startedAtMs,
                          String buildVersion,
+                         String token,
                          long pid,
                          SofaRpcGateway rpcGateway,
                          DaemonLifecycle lifecycle) {
         this.startedAtMs = startedAtMs;
         this.buildVersion = buildVersion;
+        this.token = token;
         this.pid = pid;
         this.rpcGateway = rpcGateway;
         this.lifecycle = lifecycle;
@@ -43,6 +46,10 @@ public final class DaemonContext {
 
     public String getBuildVersion() {
         return buildVersion;
+    }
+
+    public boolean acceptsToken(String candidate) {
+        return token == null || token.equals(candidate);
     }
 
     public long getPid() {

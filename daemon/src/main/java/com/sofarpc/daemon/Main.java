@@ -17,6 +17,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.management.ManagementFactory;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.TimeUnit;
@@ -39,10 +41,11 @@ public final class Main {
 
         long startedAtMs = System.currentTimeMillis();
         long pid = currentPid();
+        String token = readToken(opts.tokenFile);
         ConnectionManager connectionManager = new ConnectionManager();
         SofaRpcGateway gateway = new SofaRpcGateway(connectionManager);
         DaemonLifecycle lifecycle = new DaemonLifecycle();
-        DaemonContext ctx = new DaemonContext(startedAtMs, opts.buildVersion, pid, gateway, lifecycle);
+        DaemonContext ctx = new DaemonContext(startedAtMs, opts.buildVersion, token, pid, gateway, lifecycle);
 
         Dispatcher dispatcher = new Dispatcher()
                 .register(Op.INVOKE, new InvokeHandler(new InvokeEngine(gateway)))
@@ -93,11 +96,23 @@ public final class Main {
         }
     }
 
+    private static String readToken(Path tokenFile) {
+        if (tokenFile == null) {
+            return null;
+        }
+        try {
+            return new String(Files.readAllBytes(tokenFile), StandardCharsets.UTF_8).trim();
+        } catch (Exception e) {
+            throw new IllegalArgumentException("cannot read token file: " + tokenFile, e);
+        }
+    }
+
     private static final class DaemonOptions {
         int port;
         long idleTtlMs = DEFAULT_IDLE_TTL_MS;
         String buildVersion = DEFAULT_BUILD_VERSION;
         Path stateFile;
+        Path tokenFile;
 
         static DaemonOptions parse(String[] args) {
             DaemonOptions opts = new DaemonOptions();
@@ -110,6 +125,21 @@ public final class Main {
                         break;
                     case "--state-file":
                         opts.stateFile = Paths.get(args[++i]);
+                        break;
+                    case "--token-file":
+                        opts.tokenFile = Paths.get(args[++i]);
+                        break;
+                    case "--host":
+                        ++i;
+                        break;
+                    case "--log-file":
+                        ++i;
+                        break;
+                    case "--cache-dir":
+                        ++i;
+                        break;
+                    case "--max-concurrent-invokes":
+                        ++i;
                         break;
                     case "--idle-ttl-ms":
                         opts.idleTtlMs = Long.parseLong(args[++i]);
