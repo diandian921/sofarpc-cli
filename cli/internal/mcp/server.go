@@ -567,7 +567,15 @@ func (s *Server) invokeMethod(args map[string]interface{}) toolResult {
 		mode = normalizeMCPInvokeEngineMode(cfg.Engine.Mode)
 	}
 	if mode == appconfig.EngineModeGo || mode == appconfig.EngineModeAuto {
-		resp = invoker.DirectPayload(payload)
+		req, err := protocol.NewRequest(protocol.OpInvoke, payload)
+		if err != nil {
+			return toolErr("invoke_method failed", err)
+		}
+		directResp, err := invoker.DirectRequest(req)
+		if err != nil {
+			return toolErr("invoke_method failed", err)
+		}
+		resp = *directResp
 	} else {
 		if err := callEngine("sofarpc.invoke", map[string]interface{}{
 			"address":      payload.Address,
