@@ -21,6 +21,7 @@ func runInvoke(args []string, env Env) int {
 	argsJSON := fs.String("args-json", "[]", "JSON array of arguments")
 	timeoutMS := fs.Int("timeout-ms", 0, "per-call RPC timeout (ms); 0 uses Engine default")
 	assertionsJSON := fs.String("assertions-json", "", "JSON array of assertion specs (optional)")
+	engineMode := fs.String("engine", "", "invoke engine: java, go, or auto; empty uses config")
 	noSpawn := fs.Bool("no-spawn", false, "fail instead of spawning the Engine")
 	jar := fs.String("jar", "", "path to sofarpc-engine.jar (overrides autodiscovery)")
 
@@ -49,6 +50,9 @@ func runInvoke(args []string, env Env) int {
 		fmt.Fprintln(env.Stderr, "invoke: build request:", err)
 		return 1
 	}
+	if strings.TrimSpace(*engineMode) != "" {
+		req.Meta = map[string]interface{}{"engine": strings.TrimSpace(*engineMode)}
+	}
 
 	resp, err := dispatch(req, execConfig(env, *noSpawn, *jar))
 	if err != nil {
@@ -74,7 +78,9 @@ func buildInvokePayload(addr, service, method, argTypesCSV, argsJSON, assertions
 		RPCTimeoutMS: timeoutMS,
 	}
 	var argsArr []interface{}
-	if err := json.Unmarshal([]byte(argsJSON), &argsArr); err != nil {
+	dec := json.NewDecoder(strings.NewReader(argsJSON))
+	dec.UseNumber()
+	if err := dec.Decode(&argsArr); err != nil {
 		return payload, fmt.Errorf("invalid --args-json: %w", err)
 	}
 	payload.Args = argsArr

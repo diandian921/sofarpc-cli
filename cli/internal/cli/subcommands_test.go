@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/sofarpc/cli/internal/protocol"
@@ -58,6 +59,29 @@ func TestInvokeRejectsArgTypeMismatch(t *testing.T) {
 
 	if code != 2 {
 		t.Fatalf("expected exit 2, got %d; stderr=%s", code, stderr.String())
+	}
+}
+
+func TestBuildInvokePayloadPreservesLargeJSONNumbers(t *testing.T) {
+	payload, err := buildInvokePayload(
+		"127.0.0.1:12200",
+		"com.example.UserService",
+		"getUser",
+		"com.example.QueryRequest",
+		`[{"mpCode":433905635109773312}]`,
+		"",
+		0,
+	)
+	if err != nil {
+		t.Fatalf("buildInvokePayload: %v", err)
+	}
+	arg := payload.Args[0].(map[string]interface{})
+	number, ok := arg["mpCode"].(json.Number)
+	if !ok {
+		t.Fatalf("mpCode type = %T", arg["mpCode"])
+	}
+	if number.String() != strconv.FormatInt(433905635109773312, 10) {
+		t.Fatalf("mpCode = %s", number.String())
 	}
 }
 

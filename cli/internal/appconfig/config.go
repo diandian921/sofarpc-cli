@@ -16,6 +16,9 @@ import (
 )
 
 const (
+	EngineModeJava              = "java"
+	EngineModeGo                = "go"
+	EngineModeAuto              = "auto"
 	DefaultHost                 = "127.0.0.1"
 	DefaultPort                 = 37651
 	DefaultIdleTTL              = "30m"
@@ -53,6 +56,7 @@ type Server struct {
 }
 
 type Engine struct {
+	Mode                 string  `json:"mode"`
 	Host                 string  `json:"host"`
 	Port                 int     `json:"port"`
 	JavaHome             *string `json:"javaHome"`
@@ -102,6 +106,7 @@ func DefaultConfig() Config {
 		Projects: map[string]Project{},
 		Servers:  map[string]Server{},
 		Engine: Engine{
+			Mode:                 EngineModeJava,
 			Host:                 DefaultHost,
 			Port:                 DefaultPort,
 			IdleTTL:              DefaultIdleTTL,
@@ -344,6 +349,9 @@ func applyDefaults(c *Config) {
 	}
 	if c.Engine.Host == "" {
 		c.Engine.Host = DefaultHost
+	}
+	if c.Engine.Mode == "" {
+		c.Engine.Mode = EngineModeJava
 	}
 	if c.Engine.Port == 0 {
 		c.Engine.Port = DefaultPort

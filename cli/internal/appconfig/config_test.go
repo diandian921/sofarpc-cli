@@ -12,7 +12,7 @@ func TestLoadMissingReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Engine.Port != DefaultPort || cfg.Engine.IdleTTL != DefaultIdleTTL {
+	if cfg.Engine.Port != DefaultPort || cfg.Engine.IdleTTL != DefaultIdleTTL || cfg.Engine.Mode != EngineModeJava {
 		t.Fatalf("defaults not applied: %+v", cfg.Engine)
 	}
 	if len(cfg.Projects) != 0 || len(cfg.Servers) != 0 {

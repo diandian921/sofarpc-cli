@@ -2,7 +2,7 @@
 
 MCP-first SofaRPC testing toolkit for agents.
 
-The primary entrypoint is `sofarpc-mcp`, a stdio MCP server. `sofarpc-cli` is kept for human configuration, diagnostics, and exact reproduction. A shared Java Engine performs SofaRPC generic invocation through `GenericService`.
+The primary entrypoint is `sofarpc-mcp`, a stdio MCP server. `sofarpc-cli` is kept for human configuration, diagnostics, and exact reproduction. Invocation can run through the stable Java Engine, or through the experimental pure-Go direct BOLT/Hessian2 engine for lower-latency direct calls.
 
 ## What Gets Installed
 
@@ -110,6 +110,7 @@ Runtime and RPC:
   "server": "user-test",
   "service": "com.example.UserService",
   "method": "getUser",
+  "engine": "go",
   "paramTypes": ["java.lang.String"],
   "orderedArguments": ["u001"]
 }
@@ -151,6 +152,7 @@ or named arguments when local source can resolve the method signature:
     }
   },
   "engine": {
+    "mode": "java",
     "host": "127.0.0.1",
     "port": 37651,
     "javaHome": null,
@@ -160,6 +162,12 @@ or named arguments when local source can resolve the method signature:
   }
 }
 ```
+
+`engine.mode` accepts:
+
+- `java`: use the shared Java Engine. This is the default compatibility path.
+- `go`: use the pure-Go direct BOLT/Hessian2 path for invoke.
+- `auto`: try the pure-Go direct path for invoke, then fall back to Java when the direct route cannot produce a response.
 
 ## CLI
 
@@ -174,6 +182,17 @@ sofarpc-cli daemon stop
 ```
 
 The legacy `exec --stdin`, `ping`, and `invoke` commands remain available for reproduction.
+
+For direct invoke reproduction without starting the Java Engine:
+
+```bash
+sofarpc-cli invoke --engine go \
+  --address 10.0.0.1:12200 \
+  --service com.example.UserService \
+  --method getUser \
+  --arg-types com.example.GetUserRequest \
+  --args-json '[{"userId":"u001"}]'
+```
 
 ## Local Source Schema
 

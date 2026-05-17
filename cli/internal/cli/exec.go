@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sofarpc/cli/internal/appconfig"
+	"github.com/sofarpc/cli/internal/invoker"
 	"github.com/sofarpc/cli/internal/launcher"
 	"github.com/sofarpc/cli/internal/protocol"
 )
@@ -125,11 +127,44 @@ func diagnosticDetails(err error) map[string]interface{} {
 }
 
 func dispatch(req protocol.Request, cfg launcher.Config) (*protocol.Response, error) {
+	mode := effectiveEngineMode(req)
+	if req.Op == protocol.OpInvoke && (mode == appconfig.EngineModeGo || mode == appconfig.EngineModeAuto) {
+		resp, err := invoker.DirectRequest(req)
+		if err == nil || mode == appconfig.EngineModeGo {
+			return resp, err
+		}
+	}
 	conn, err := launcher.Connect(cfg)
 	if err != nil {
 		return nil, err
 	}
 	return conn.Client.Call(req)
+}
+
+func effectiveEngineMode(req protocol.Request) string {
+	if req.Meta != nil {
+		if v, ok := req.Meta["engine"].(string); ok && v != "" {
+			return normalizeEngineMode(v)
+		}
+	}
+	path, err := appconfig.DefaultPath()
+	if err == nil {
+		if cfg, loadErr := appconfig.Load(path); loadErr == nil {
+			return normalizeEngineMode(cfg.Engine.Mode)
+		}
+	}
+	return appconfig.EngineModeJava
+}
+
+func normalizeEngineMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case appconfig.EngineModeGo:
+		return appconfig.EngineModeGo
+	case appconfig.EngineModeAuto:
+		return appconfig.EngineModeAuto
+	default:
+		return appconfig.EngineModeJava
+	}
 }
 
 func execConfig(env Env, noSpawn bool, jar string) launcher.Config {

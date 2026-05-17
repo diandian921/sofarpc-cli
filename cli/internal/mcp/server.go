@@ -14,6 +14,7 @@ import (
 
 	"github.com/sofarpc/cli/internal/appconfig"
 	"github.com/sofarpc/cli/internal/engine"
+	"github.com/sofarpc/cli/internal/invoker"
 	"github.com/sofarpc/cli/internal/launcher"
 	"github.com/sofarpc/cli/internal/protocol"
 	"github.com/sofarpc/cli/internal/schema"
@@ -159,6 +160,7 @@ func (s *Server) tools() []tool {
 			"server":           stringSchema("Configured server name."),
 			"service":          stringSchema("Service interface FQN."),
 			"method":           stringSchema("Method name."),
+			"engine":           stringSchema("Optional invoke engine: java, go, or auto. Defaults to config engine.mode."),
 			"paramTypes":       arraySchema("Optional Java parameter type FQNs for overload disambiguation."),
 			"orderedArguments": arraySchema("Arguments in method parameter order."),
 			"arguments":        objectSchema(nil),
@@ -547,16 +549,36 @@ func (s *Server) invokeMethod(args map[string]interface{}) toolResult {
 		return toolErr("argument resolution failed", err)
 	}
 	timeoutMS := intArgDefault(args, "timeoutMs", server.TimeoutMS)
+	engineMode, err := stringArg(args, "engine", false)
+	if err != nil {
+		return toolErr("bad arguments", err)
+	}
+	payload := protocol.InvokePayload{
+		Address:      server.Address,
+		Service:      service,
+		Method:       method,
+		ArgTypes:     paramTypes,
+		Args:         ordered,
+		RPCTimeoutMS: timeoutMS,
+	}
 	var resp protocol.Response
-	if err := callEngine("sofarpc.invoke", map[string]interface{}{
-		"address":      server.Address,
-		"service":      service,
-		"method":       method,
-		"argTypes":     paramTypes,
-		"args":         ordered,
-		"rpcTimeoutMs": timeoutMS,
-	}, &resp, s.BuildVersion); err != nil {
-		return toolErr("invoke_method failed", err)
+	mode := normalizeMCPInvokeEngineMode(engineMode)
+	if strings.TrimSpace(engineMode) == "" {
+		mode = normalizeMCPInvokeEngineMode(cfg.Engine.Mode)
+	}
+	if mode == appconfig.EngineModeGo || mode == appconfig.EngineModeAuto {
+		resp = invoker.DirectPayload(payload)
+	} else {
+		if err := callEngine("sofarpc.invoke", map[string]interface{}{
+			"address":      payload.Address,
+			"service":      payload.Service,
+			"method":       payload.Method,
+			"argTypes":     payload.ArgTypes,
+			"args":         payload.Args,
+			"rpcTimeoutMs": payload.RPCTimeoutMS,
+		}, &resp, s.BuildVersion); err != nil {
+			return toolErr("invoke_method failed", err)
+		}
 	}
 	return toolOK("Invoke completed.", map[string]interface{}{"server": serverName, "service": service, "method": method, "engineResponse": resp})
 }
@@ -777,6 +799,17 @@ func rpcParamType(typ string) string {
 		return "java.util.Set"
 	default:
 		return typ
+	}
+}
+
+func normalizeMCPInvokeEngineMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case appconfig.EngineModeGo:
+		return appconfig.EngineModeGo
+	case appconfig.EngineModeAuto:
+		return appconfig.EngineModeAuto
+	default:
+		return appconfig.EngineModeJava
 	}
 }
 
