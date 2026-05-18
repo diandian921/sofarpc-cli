@@ -23,8 +23,6 @@ type Server struct {
 	Stdout             io.Writer
 	Stderr             io.Writer
 	DisableConfigWrite bool
-
-	currentProject string
 }
 
 type request struct {
@@ -132,66 +130,62 @@ func (s *Server) handle(req request) (response, bool) {
 }
 
 func (s *Server) tools() []tool {
-	tools := []tool{
-		{Name: "list_projects", Description: "List configured local source projects.", InputSchema: objectSchema(nil)},
-		{Name: "set_current_project", Description: "Set the session-only current project.", InputSchema: objectSchema(map[string]interface{}{"project": stringSchema("Project name.")}, "project")},
-		{Name: "list_servers", Description: "List configured SofaRPC servers.", InputSchema: objectSchema(map[string]interface{}{"project": stringSchema("Optional project filter.")})},
-		{Name: "ping_service", Description: "Check a configured server/service transport path; this does not prove the remote method exists.", InputSchema: objectSchema(map[string]interface{}{
-			"server":    stringSchema("Configured server name."),
-			"service":   stringSchema("Service interface FQN."),
+	return []tool{
+		{Name: "sofarpc_config", Description: "List or update ~/.sofarpc/config.json. Mutating actions fail when config writes are disabled.", InputSchema: objectSchema(map[string]interface{}{
+			"action":          enumStringSchema("Action: list, save_project, remove_project, save_server, or remove_server.", "list", "save_project", "remove_project", "save_server", "remove_server"),
+			"name":            stringSchema("Project or server name for save/remove actions."),
+			"project":         stringSchema("Project filter for list, or bound project for save_server."),
+			"workspaceRoot":   stringSchema("Absolute or ~-relative local source root for save_project."),
+			"servicePrefixes": arraySchema("Optional Java service package prefixes for save_project."),
+			"address":         stringSchema("host:port for save_server."),
+			"protocol":        stringSchema("Protocol for save_server; default bolt."),
+			"timeoutMs":       numberSchema("Default total timeout in milliseconds."),
+			"appName":         stringSchema("SofaRPC consumer app name."),
+			"attachments":     stringMapSchema("Optional static SofaRPC attachments for save_server."),
+			"overwrite":       boolSchema("Allow replacing an existing project or server."),
+			"confirm":         boolSchema("Must be true for remove actions."),
+			"cascade":         boolSchema("When removing a project, also remove servers bound to it."),
+		})},
+		{Name: "sofarpc_resolve", Description: "Resolve the configured project, server, and invocation endpoint without touching the network.", InputSchema: objectSchema(map[string]interface{}{
+			"project":   stringSchema("Optional configured project name."),
+			"server":    stringSchema("Optional configured server name."),
+			"timeoutMs": numberSchema("Optional timeout override to show on the resolved endpoint."),
+		})},
+		{Name: "sofarpc_probe", Description: "Probe TCP reachability for a configured server or explicit address; this does not prove an interface or method exists.", InputSchema: objectSchema(map[string]interface{}{
+			"server":    stringSchema("Optional configured server name."),
+			"address":   stringSchema("Optional explicit host:port. Used when server is omitted."),
+			"service":   stringSchema("Optional service FQN for labeling diagnostics."),
 			"timeoutMs": numberSchema("Optional total timeout in milliseconds."),
-		}, "server", "service")},
-		{Name: "search_interface", Description: "Search local Java source for SofaRPC service/method candidates.", InputSchema: objectSchema(map[string]interface{}{
-			"project":            stringSchema("Optional project name; defaults to current project when set."),
-			"query":              stringSchema("Natural language or identifier query."),
-			"limit":              numberSchema("Max candidates; default 5, max 20."),
+		})},
+		{Name: "sofarpc_describe", Description: "Search local Java source or describe methods and DTO fields for a service FQN.", InputSchema: objectSchema(map[string]interface{}{
+			"project":            stringSchema("Optional project name. Required when multiple projects are configured and server is omitted."),
+			"server":             stringSchema("Optional server name used to infer the bound project."),
+			"query":              stringSchema("Natural language or identifier query for search mode."),
+			"service":            stringSchema("Service interface FQN for describe mode."),
+			"method":             stringSchema("Optional method filter for describe mode."),
+			"limit":              numberSchema("Max search candidates; default 5, max 20."),
 			"includeOutOfPrefix": boolSchema("Include services outside configured servicePrefixes."),
-		}, "query")},
-		{Name: "describe_interface", Description: "Describe methods and visible DTO fields for a service FQN from local Java source.", InputSchema: objectSchema(map[string]interface{}{
-			"project": stringSchema("Optional project name; defaults to current project when set."),
-			"service": stringSchema("Service interface FQN."),
-			"method":  stringSchema("Optional method filter."),
-		}, "service")},
-		{Name: "invoke_method", Description: "Invoke a SofaRPC method with explicit parameter types and ordered arguments, or named arguments when source schema can resolve the method.", InputSchema: objectSchema(map[string]interface{}{
-			"server":           stringSchema("Configured server name."),
+		})},
+		{Name: "sofarpc_invoke", Description: "Invoke a SofaRPC method, or return the planned request when dryRun=true.", InputSchema: objectSchema(map[string]interface{}{
+			"server":           stringSchema("Configured server name. Optional only when exactly one matching server can be inferred."),
+			"project":          stringSchema("Optional project name used to infer a single bound server."),
 			"service":          stringSchema("Service interface FQN."),
 			"method":           stringSchema("Method name."),
 			"paramTypes":       arraySchema("Optional Java parameter type FQNs for overload disambiguation."),
+			"types":            arraySchema("Alias for paramTypes."),
 			"orderedArguments": arraySchema("Arguments in method parameter order."),
-			"arguments":        objectSchema(nil),
+			"args":             arraySchema("Alias for orderedArguments."),
+			"arguments":        freeObjectSchema("Named arguments keyed by Java parameter name, or a single DTO object when the method has one parameter."),
 			"timeoutMs":        numberSchema("Optional total timeout in milliseconds."),
-		}, "server", "service", "method")},
+			"dryRun":           boolSchema("When true, return the resolved plan without sending a SofaRPC request."),
+		}, "service", "method")},
+		{Name: "sofarpc_doctor", Description: "Run structured diagnostics for config, project source schema, and invocation prerequisites.", InputSchema: objectSchema(map[string]interface{}{
+			"project": stringSchema("Optional project name."),
+			"server":  stringSchema("Optional server name."),
+			"service": stringSchema("Optional service interface FQN."),
+			"method":  stringSchema("Optional method filter."),
+		})},
 	}
-	if !s.DisableConfigWrite {
-		tools = append(tools,
-			tool{Name: "add_project", Description: "Add or replace a project in ~/.sofarpc/config.json.", InputSchema: objectSchema(map[string]interface{}{
-				"name":            stringSchema("Project name."),
-				"workspaceRoot":   stringSchema("Absolute or ~-relative local source root."),
-				"servicePrefixes": arraySchema("Optional Java service package prefixes."),
-				"overwrite":       boolSchema("Allow replacing an existing project."),
-			}, "name", "workspaceRoot")},
-			tool{Name: "remove_project", Description: "Remove a project from ~/.sofarpc/config.json.", InputSchema: objectSchema(map[string]interface{}{
-				"name":    stringSchema("Project name."),
-				"confirm": boolSchema("Must be true."),
-				"cascade": boolSchema("Also remove servers bound to the project."),
-			}, "name", "confirm")},
-			tool{Name: "add_server", Description: "Add or replace a SofaRPC server in ~/.sofarpc/config.json.", InputSchema: objectSchema(map[string]interface{}{
-				"name":        stringSchema("Server name."),
-				"address":     stringSchema("host:port."),
-				"project":     stringSchema("Bound project name."),
-				"protocol":    stringSchema("Protocol; default bolt."),
-				"timeoutMs":   numberSchema("Default total timeout in milliseconds."),
-				"appName":     stringSchema("SofaRPC consumer app name."),
-				"attachments": objectSchema(nil),
-				"overwrite":   boolSchema("Allow replacing an existing server."),
-			}, "name", "address", "project")},
-			tool{Name: "remove_server", Description: "Remove a server from ~/.sofarpc/config.json.", InputSchema: objectSchema(map[string]interface{}{
-				"name":    stringSchema("Server name."),
-				"confirm": boolSchema("Must be true."),
-			}, "name", "confirm")},
-		)
-	}
-	return tools
 }
 
 func (s *Server) handleToolCall(raw json.RawMessage) toolResult {
@@ -206,64 +200,181 @@ func (s *Server) handleToolCall(raw json.RawMessage) toolResult {
 		params.Arguments = map[string]interface{}{}
 	}
 	switch params.Name {
-	case "list_projects":
-		return s.listProjects()
-	case "set_current_project":
-		return s.setCurrentProject(params.Arguments)
-	case "list_servers":
-		return s.listServers(params.Arguments)
-	case "add_project":
-		return s.addProject(params.Arguments)
-	case "remove_project":
-		return s.removeProject(params.Arguments)
-	case "add_server":
-		return s.addServer(params.Arguments)
-	case "remove_server":
-		return s.removeServer(params.Arguments)
-	case "ping_service":
-		return s.pingService(params.Arguments)
-	case "search_interface":
-		return s.searchInterface(params.Arguments)
-	case "describe_interface":
-		return s.describeInterface(params.Arguments)
-	case "invoke_method":
-		return s.invokeMethod(params.Arguments)
+	case "sofarpc_config":
+		return s.config(params.Arguments)
+	case "sofarpc_resolve":
+		return s.resolve(params.Arguments)
+	case "sofarpc_probe":
+		return s.probe(params.Arguments)
+	case "sofarpc_describe":
+		return s.describe(params.Arguments)
+	case "sofarpc_invoke":
+		return s.invoke(params.Arguments)
+	case "sofarpc_doctor":
+		return s.doctor(params.Arguments)
 	default:
 		return toolErr("unknown tool", fmt.Errorf("%s", params.Name))
 	}
 }
 
-func (s *Server) listProjects() toolResult {
+func (s *Server) config(args map[string]interface{}) toolResult {
+	action := stringArgDefault(args, "action", "list")
+	switch action {
+	case "list":
+		return s.listConfig(args)
+	case "save_project":
+		return s.saveProject(args)
+	case "remove_project":
+		return s.removeProject(args)
+	case "save_server":
+		return s.saveServer(args)
+	case "remove_server":
+		return s.removeServer(args)
+	default:
+		return toolErr("bad arguments", fmt.Errorf("unknown config action %q", action))
+	}
+}
+
+func (s *Server) listConfig(args map[string]interface{}) toolResult {
 	cfg, err := loadConfig()
 	if err != nil {
 		return toolErr("config read failed", err)
+	}
+	path, pathErr := appconfig.DefaultPath()
+	if pathErr != nil {
+		return toolErr("config path failed", pathErr)
+	}
+	projectFilter, err := stringArg(args, "project", false)
+	if err != nil {
+		return toolErr("bad arguments", err)
 	}
 	projects := make([]map[string]interface{}, 0, len(cfg.Projects))
 	for _, name := range cfg.ProjectNames() {
+		if projectFilter != "" && name != projectFilter {
+			continue
+		}
 		projects = append(projects, map[string]interface{}{"name": name, "project": cfg.Projects[name]})
 	}
-	return toolOK(fmt.Sprintf("%d project(s) configured.", len(projects)), map[string]interface{}{"projects": projects, "currentProject": s.currentProject})
-}
-
-func (s *Server) listServers(args map[string]interface{}) toolResult {
-	cfg, err := loadConfig()
-	if err != nil {
-		return toolErr("config read failed", err)
-	}
-	project, _ := stringArg(args, "project", false)
 	servers := make([]map[string]interface{}, 0, len(cfg.Servers))
 	for _, name := range cfg.ServerNames() {
 		server := cfg.Servers[name]
-		if project != "" && server.Project != project {
+		if projectFilter != "" && server.Project != projectFilter {
 			continue
 		}
 		servers = append(servers, map[string]interface{}{"name": name, "server": server})
 	}
-	return toolOK(fmt.Sprintf("%d server(s) configured.", len(servers)), map[string]interface{}{"servers": servers})
+	return toolOK("Config loaded.", map[string]interface{}{
+		"configPath":    path,
+		"writeEnabled":  !s.DisableConfigWrite,
+		"projects":      projects,
+		"servers":       servers,
+		"projectFilter": projectFilter,
+	})
 }
 
-func (s *Server) setCurrentProject(args map[string]interface{}) toolResult {
-	project, err := stringArg(args, "project", true)
+func (s *Server) resolve(args map[string]interface{}) toolResult {
+	cfg, err := loadConfig()
+	if err != nil {
+		return toolErr("config read failed", err)
+	}
+	serverName, server, hasServer, err := s.resolveServer(cfg, args, false)
+	if err != nil {
+		return toolErr("server resolution failed", err)
+	}
+	if hasServer {
+		project, ok := cfg.Projects[server.Project]
+		if !ok {
+			return toolErr("project resolution failed", fmt.Errorf("server %q references missing project %q", serverName, server.Project))
+		}
+		timeoutMS := intArgDefault(args, "timeoutMs", server.TimeoutMS)
+		return toolOK("Endpoint resolved.", map[string]interface{}{
+			"project":     server.Project,
+			"projectInfo": project,
+			"server":      serverName,
+			"endpoint":    endpointData(server, timeoutMS),
+			"network":     "not_probed",
+		})
+	}
+	projectName, project, err := s.resolveProject(cfg, args, "")
+	if err != nil {
+		return toolErr("project resolution failed", err)
+	}
+	servers := boundServers(cfg, projectName)
+	return toolOK("Project resolved; no single endpoint was selected.", map[string]interface{}{
+		"project":     projectName,
+		"projectInfo": project,
+		"servers":     servers,
+		"network":     "not_probed",
+	})
+}
+
+func (s *Server) probe(args map[string]interface{}) toolResult {
+	address, err := stringArg(args, "address", false)
+	if err != nil {
+		return toolErr("bad arguments", err)
+	}
+	service, err := stringArg(args, "service", false)
+	if err != nil {
+		return toolErr("bad arguments", err)
+	}
+	serverName := ""
+	projectName := ""
+	timeoutMS := intArgDefault(args, "timeoutMs", appconfig.DefaultServerTimeoutMS)
+	if address == "" {
+		cfg, err := loadConfig()
+		if err != nil {
+			return toolErr("config read failed", err)
+		}
+		var server appconfig.Server
+		var hasServer bool
+		serverName, server, hasServer, err = s.resolveServer(cfg, args, true)
+		if err != nil {
+			return toolErr("server resolution failed", err)
+		}
+		if !hasServer {
+			return toolErr("server resolution failed", fmt.Errorf("server or address is required"))
+		}
+		address = server.Address
+		projectName = server.Project
+		timeoutMS = intArgDefault(args, "timeoutMs", server.TimeoutMS)
+	}
+	payload := protocol.PingPayload{
+		Address:      address,
+		Service:      service,
+		RPCTimeoutMS: timeoutMS,
+	}
+	req, err := protocol.NewRequest(protocol.OpPing, payload)
+	if err != nil {
+		return toolErr("sofarpc_probe failed", err)
+	}
+	directResp, err := invoker.DirectRequest(req)
+	if err != nil {
+		return toolErr("sofarpc_probe failed", err)
+	}
+	resp := *directResp
+	return toolOK("Probe completed. Success only means the TCP transport path was reachable; it does not prove the remote interface or method exists.", map[string]interface{}{
+		"server":    serverName,
+		"project":   projectName,
+		"address":   address,
+		"service":   service,
+		"timeoutMs": timeoutMS,
+		"response":  resp,
+	})
+}
+
+func (s *Server) describe(args map[string]interface{}) toolResult {
+	query, err := stringArg(args, "query", false)
+	if err != nil {
+		return toolErr("bad arguments", err)
+	}
+	service, err := stringArg(args, "service", false)
+	if err != nil {
+		return toolErr("bad arguments", err)
+	}
+	if query == "" && service == "" {
+		return toolErr("bad arguments", fmt.Errorf("query or service is required"))
+	}
+	serverName, err := stringArg(args, "server", false)
 	if err != nil {
 		return toolErr("bad arguments", err)
 	}
@@ -271,14 +382,182 @@ func (s *Server) setCurrentProject(args map[string]interface{}) toolResult {
 	if err != nil {
 		return toolErr("config read failed", err)
 	}
-	if _, ok := cfg.Projects[project]; !ok {
-		return toolErr("project not found", fmt.Errorf("%q", project))
+	projectName, project, err := s.resolveProject(cfg, args, serverName)
+	if err != nil {
+		return toolErr("project resolution failed", err)
 	}
-	s.currentProject = project
-	return toolOK("Current project set for this MCP session.", map[string]interface{}{"currentProject": project})
+	idx, err := schema.LoadOrBuildIndex(schema.Project{
+		Name:            projectName,
+		WorkspaceRoot:   project.WorkspaceRoot,
+		ServicePrefixes: project.ServicePrefixes,
+	})
+	if err != nil {
+		return toolErr("source index failed", err)
+	}
+	data := map[string]interface{}{"project": projectName}
+	var summary []string
+	if query != "" {
+		limit := intArgDefault(args, "limit", 5)
+		results := schema.Search(idx, query, limit, boolArg(args, "includeOutOfPrefix"))
+		data["query"] = query
+		data["candidates"] = publicMethods(results)
+		summary = append(summary, fmt.Sprintf("%d candidate(s) found", len(results)))
+	}
+	if service != "" {
+		method, err := stringArg(args, "method", false)
+		if err != nil {
+			return toolErr("bad arguments", err)
+		}
+		desc, err := schema.Describe(idx, service, method)
+		if err != nil {
+			return toolErr("sofarpc_describe failed", err)
+		}
+		data["description"] = publicDescription(desc)
+		summary = append(summary, fmt.Sprintf("%d method(s) described", len(desc.Methods)))
+	}
+	return toolOK(strings.Join(summary, "; ")+".", data)
 }
 
-func (s *Server) addProject(args map[string]interface{}) toolResult {
+func (s *Server) invoke(args map[string]interface{}) toolResult {
+	service, err := stringArg(args, "service", true)
+	if err != nil {
+		return toolErr("bad arguments", err)
+	}
+	method, err := stringArg(args, "method", true)
+	if err != nil {
+		return toolErr("bad arguments", err)
+	}
+	paramTypes, err := stringSliceArg(args, "paramTypes")
+	if err != nil {
+		return toolErr("bad arguments", err)
+	}
+	if len(paramTypes) == 0 {
+		paramTypes, err = stringSliceArg(args, "types")
+		if err != nil {
+			return toolErr("bad arguments", err)
+		}
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return toolErr("config read failed", err)
+	}
+	serverName, server, hasServer, err := s.resolveServer(cfg, args, true)
+	if err != nil {
+		return toolErr("server resolution failed", err)
+	}
+	if !hasServer {
+		return toolErr("server resolution failed", fmt.Errorf("server is required"))
+	}
+	ordered, paramTypes, err := s.resolveInvokeArguments(cfg, serverName, service, method, args, paramTypes)
+	if err != nil {
+		return toolErr("argument resolution failed", err)
+	}
+	timeoutMS := intArgDefault(args, "timeoutMs", server.TimeoutMS)
+	payload := protocol.InvokePayload{
+		Address:      server.Address,
+		Service:      service,
+		Method:       method,
+		ArgTypes:     paramTypes,
+		Args:         ordered,
+		RPCTimeoutMS: timeoutMS,
+	}
+	req, err := protocol.NewRequest(protocol.OpInvoke, payload)
+	if err != nil {
+		return toolErr("sofarpc_invoke failed", err)
+	}
+	plan := map[string]interface{}{
+		"requestId":        req.RequestID,
+		"server":           serverName,
+		"project":          server.Project,
+		"endpoint":         endpointData(server, timeoutMS),
+		"service":          service,
+		"method":           method,
+		"paramTypes":       paramTypes,
+		"orderedArguments": ordered,
+		"payload":          payload,
+	}
+	if boolArg(args, "dryRun") {
+		return toolOK("Invoke dry run completed.", map[string]interface{}{"dryRun": true, "plan": plan})
+	}
+	directResp, err := invoker.DirectRequest(req)
+	if err != nil {
+		return toolErr("sofarpc_invoke failed", err)
+	}
+	resp := *directResp
+	return toolOK("Invoke completed.", map[string]interface{}{"plan": plan, "response": resp})
+}
+
+func (s *Server) doctor(args map[string]interface{}) toolResult {
+	checks := []map[string]interface{}{}
+	addCheck := func(name, status string, details map[string]interface{}) {
+		if details == nil {
+			details = map[string]interface{}{}
+		}
+		details["name"] = name
+		details["status"] = status
+		checks = append(checks, details)
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		addCheck("config", "failed", map[string]interface{}{"error": err.Error()})
+		return toolResult{Content: []content{{Type: "text", Text: "Doctor found configuration errors."}}, StructuredContent: map[string]interface{}{"ok": false, "checks": checks}, IsError: true}
+	}
+	path, _ := appconfig.DefaultPath()
+	addCheck("config", "ok", map[string]interface{}{"configPath": path, "projectCount": len(cfg.Projects), "serverCount": len(cfg.Servers), "writeEnabled": !s.DisableConfigWrite})
+
+	serverName, server, hasServer, err := s.resolveServer(cfg, args, false)
+	if err != nil {
+		addCheck("server", "failed", map[string]interface{}{"error": err.Error()})
+	} else if hasServer {
+		addCheck("server", "ok", map[string]interface{}{"server": serverName, "endpoint": endpointData(server, server.TimeoutMS)})
+	} else {
+		addCheck("server", "skipped", map[string]interface{}{"reason": "no single server resolved"})
+	}
+
+	projectName := ""
+	var project appconfig.Project
+	if hasServer {
+		projectName, project, err = s.resolveProject(cfg, args, serverName)
+	} else {
+		projectName, project, err = s.resolveProject(cfg, args, "")
+	}
+	if err != nil {
+		addCheck("project", "failed", map[string]interface{}{"error": err.Error()})
+	} else {
+		addCheck("project", "ok", map[string]interface{}{"project": projectName, "workspaceRoot": project.WorkspaceRoot, "servicePrefixes": project.ServicePrefixes})
+		idx, idxErr := schema.LoadOrBuildIndex(schema.Project{Name: projectName, WorkspaceRoot: project.WorkspaceRoot, ServicePrefixes: project.ServicePrefixes})
+		if idxErr != nil {
+			addCheck("source_schema", "failed", map[string]interface{}{"error": idxErr.Error()})
+		} else {
+			addCheck("source_schema", "ok", map[string]interface{}{"methodCount": len(idx.Methods), "typeCount": len(idx.Types)})
+			service, _ := stringArg(args, "service", false)
+			if service != "" {
+				method, _ := stringArg(args, "method", false)
+				desc, descErr := schema.Describe(idx, service, method)
+				if descErr != nil {
+					addCheck("describe", "failed", map[string]interface{}{"service": service, "method": method, "error": descErr.Error()})
+				} else {
+					addCheck("describe", "ok", map[string]interface{}{"service": service, "method": method, "methodCount": len(desc.Methods)})
+				}
+			}
+		}
+	}
+
+	ok := true
+	for _, check := range checks {
+		if check["status"] == "failed" {
+			ok = false
+			break
+		}
+	}
+	text := "Doctor completed."
+	if !ok {
+		text = "Doctor found issues."
+	}
+	return toolResult{Content: []content{{Type: "text", Text: text}}, StructuredContent: map[string]interface{}{"ok": ok, "checks": checks}, IsError: !ok}
+}
+
+func (s *Server) saveProject(args map[string]interface{}) toolResult {
 	if s.DisableConfigWrite {
 		return toolErr("config write tools are disabled", nil)
 	}
@@ -306,7 +585,7 @@ func (s *Server) addProject(args map[string]interface{}) toolResult {
 		return addErr
 	})
 	if err != nil {
-		return toolErr("add_project failed", err)
+		return toolErr("save_project failed", err)
 	}
 	return toolOK("Project saved to config.json.", map[string]interface{}{"name": name, "project": project})
 }
@@ -329,13 +608,10 @@ func (s *Server) removeProject(args map[string]interface{}) toolResult {
 	if err != nil {
 		return toolErr("remove_project failed", err)
 	}
-	if s.currentProject == name {
-		s.currentProject = ""
-	}
 	return toolOK("Project removed from config.json.", map[string]interface{}{"removed": name})
 }
 
-func (s *Server) addServer(args map[string]interface{}) toolResult {
+func (s *Server) saveServer(args map[string]interface{}) toolResult {
 	if s.DisableConfigWrite {
 		return toolErr("config write tools are disabled", nil)
 	}
@@ -374,7 +650,7 @@ func (s *Server) addServer(args map[string]interface{}) toolResult {
 		return addErr
 	})
 	if err != nil {
-		return toolErr("add_server failed", err)
+		return toolErr("save_server failed", err)
 	}
 	return toolOK("Server saved to config.json.", map[string]interface{}{"name": name, "server": saved})
 }
@@ -400,154 +676,15 @@ func (s *Server) removeServer(args map[string]interface{}) toolResult {
 	return toolOK("Server removed from config.json.", map[string]interface{}{"removed": name})
 }
 
-func (s *Server) pingService(args map[string]interface{}) toolResult {
-	serverName, err := stringArg(args, "server", true)
-	if err != nil {
-		return toolErr("bad arguments", err)
-	}
-	service, err := stringArg(args, "service", true)
-	if err != nil {
-		return toolErr("bad arguments", err)
-	}
-	_, server, err := serverConfig(serverName)
-	if err != nil {
-		return toolErr("server resolution failed", err)
-	}
-	timeoutMS := intArgDefault(args, "timeoutMs", server.TimeoutMS)
-	payload := protocol.PingPayload{
-		Address:      server.Address,
-		Service:      service,
-		RPCTimeoutMS: timeoutMS,
-	}
-	req, err := protocol.NewRequest(protocol.OpPing, payload)
-	if err != nil {
-		return toolErr("ping_service failed", err)
-	}
-	directResp, err := invoker.DirectRequest(req)
-	if err != nil {
-		return toolErr("ping_service failed", err)
-	}
-	resp := *directResp
-	data := map[string]interface{}{"server": serverName, "project": server.Project, "service": service, "response": resp}
-	return toolOK("Ping completed. Success only means the local transport path was usable; it does not prove the remote interface or method exists.", data)
-}
-
-func (s *Server) searchInterface(args map[string]interface{}) toolResult {
-	query, err := stringArg(args, "query", true)
-	if err != nil {
-		return toolErr("bad arguments", err)
-	}
-	cfg, err := loadConfig()
-	if err != nil {
-		return toolErr("config read failed", err)
-	}
-	projectName, project, err := s.resolveProject(cfg, args, "")
-	if err != nil {
-		return toolErr("project resolution failed", err)
-	}
-	idx, err := schema.LoadOrBuildIndex(schema.Project{
-		Name:            projectName,
-		WorkspaceRoot:   project.WorkspaceRoot,
-		ServicePrefixes: project.ServicePrefixes,
-	})
-	if err != nil {
-		return toolErr("source index failed", err)
-	}
-	limit := intArgDefault(args, "limit", 5)
-	results := schema.Search(idx, query, limit, boolArg(args, "includeOutOfPrefix"))
-	return toolOK(fmt.Sprintf("%d candidate(s) found.", len(results)), map[string]interface{}{
-		"project":    projectName,
-		"query":      query,
-		"candidates": publicMethods(results),
-	})
-}
-
-func (s *Server) describeInterface(args map[string]interface{}) toolResult {
-	service, err := stringArg(args, "service", true)
-	if err != nil {
-		return toolErr("bad arguments", err)
-	}
-	method, err := stringArg(args, "method", false)
-	if err != nil {
-		return toolErr("bad arguments", err)
-	}
-	cfg, err := loadConfig()
-	if err != nil {
-		return toolErr("config read failed", err)
-	}
-	projectName, project, err := s.resolveProject(cfg, args, "")
-	if err != nil {
-		return toolErr("project resolution failed", err)
-	}
-	idx, err := schema.LoadOrBuildIndex(schema.Project{
-		Name:            projectName,
-		WorkspaceRoot:   project.WorkspaceRoot,
-		ServicePrefixes: project.ServicePrefixes,
-	})
-	if err != nil {
-		return toolErr("source index failed", err)
-	}
-	desc, err := schema.Describe(idx, service, method)
-	if err != nil {
-		return toolErr("describe_interface failed", err)
-	}
-	return toolOK(fmt.Sprintf("%d method(s) described.", len(desc.Methods)), map[string]interface{}{
-		"project":     projectName,
-		"description": publicDescription(desc),
-	})
-}
-
-func (s *Server) invokeMethod(args map[string]interface{}) toolResult {
-	serverName, err := stringArg(args, "server", true)
-	if err != nil {
-		return toolErr("bad arguments", err)
-	}
-	service, err := stringArg(args, "service", true)
-	if err != nil {
-		return toolErr("bad arguments", err)
-	}
-	method, err := stringArg(args, "method", true)
-	if err != nil {
-		return toolErr("bad arguments", err)
-	}
-	paramTypes, err := stringSliceArg(args, "paramTypes")
-	if err != nil {
-		return toolErr("bad arguments", err)
-	}
-	cfg, server, err := serverConfig(serverName)
-	if err != nil {
-		return toolErr("server resolution failed", err)
-	}
-	ordered, paramTypes, err := s.resolveInvokeArguments(cfg, serverName, service, method, args, paramTypes)
-	if err != nil {
-		return toolErr("argument resolution failed", err)
-	}
-	timeoutMS := intArgDefault(args, "timeoutMs", server.TimeoutMS)
-	payload := protocol.InvokePayload{
-		Address:      server.Address,
-		Service:      service,
-		Method:       method,
-		ArgTypes:     paramTypes,
-		Args:         ordered,
-		RPCTimeoutMS: timeoutMS,
-	}
-	req, err := protocol.NewRequest(protocol.OpInvoke, payload)
-	if err != nil {
-		return toolErr("invoke_method failed", err)
-	}
-	directResp, err := invoker.DirectRequest(req)
-	if err != nil {
-		return toolErr("invoke_method failed", err)
-	}
-	resp := *directResp
-	return toolOK("Invoke completed.", map[string]interface{}{"server": serverName, "service": service, "method": method, "response": resp})
-}
-
 func (s *Server) resolveInvokeArguments(cfg appconfig.Config, serverName, service, method string, args map[string]interface{}, paramTypes []string) ([]interface{}, []string, error) {
-	if raw, ok := args["orderedArguments"]; ok && raw != nil {
+	raw, ok := args["orderedArguments"]
+	if !ok || raw == nil {
+		raw, ok = args["args"]
+	}
+	if ok && raw != nil {
 		ordered, ok := raw.([]interface{})
 		if !ok {
-			return nil, nil, fmt.Errorf("orderedArguments must be an array")
+			return nil, nil, fmt.Errorf("orderedArguments/args must be an array")
 		}
 		if len(paramTypes) == 0 {
 			resolvedTypes, err := s.resolveParamTypes(cfg, serverName, service, method, len(ordered), nil)
@@ -642,6 +779,15 @@ func (s *Server) resolveProject(cfg appconfig.Config, args map[string]interface{
 		return "", appconfig.Project{}, err
 	}
 	if explicit != "" {
+		if serverName != "" {
+			server, ok := cfg.Servers[serverName]
+			if !ok {
+				return "", appconfig.Project{}, fmt.Errorf("server %q not found", serverName)
+			}
+			if server.Project != explicit {
+				return "", appconfig.Project{}, fmt.Errorf("server %q is bound to project %q, not %q", serverName, server.Project, explicit)
+			}
+		}
 		project, ok := cfg.Projects[explicit]
 		if !ok {
 			return "", appconfig.Project{}, fmt.Errorf("project %q not found", explicit)
@@ -659,13 +805,77 @@ func (s *Server) resolveProject(cfg appconfig.Config, args map[string]interface{
 		}
 		return server.Project, project, nil
 	}
-	if s.currentProject != "" {
-		project, ok := cfg.Projects[s.currentProject]
-		if ok {
-			return s.currentProject, project, nil
+	if len(cfg.Projects) == 1 {
+		for name, project := range cfg.Projects {
+			return name, project, nil
 		}
 	}
 	return "", appconfig.Project{}, fmt.Errorf("project is required")
+}
+
+func (s *Server) resolveServer(cfg appconfig.Config, args map[string]interface{}, required bool) (string, appconfig.Server, bool, error) {
+	explicit, err := stringArg(args, "server", false)
+	if err != nil {
+		return "", appconfig.Server{}, false, err
+	}
+	project, err := stringArg(args, "project", false)
+	if err != nil {
+		return "", appconfig.Server{}, false, err
+	}
+	if explicit != "" {
+		server, ok := cfg.Servers[explicit]
+		if !ok {
+			return "", appconfig.Server{}, false, fmt.Errorf("server %q not found", explicit)
+		}
+		if project != "" && server.Project != project {
+			return "", appconfig.Server{}, false, fmt.Errorf("server %q is bound to project %q, not %q", explicit, server.Project, project)
+		}
+		return explicit, server, true, nil
+	}
+
+	var names []string
+	for _, name := range cfg.ServerNames() {
+		server := cfg.Servers[name]
+		if project == "" || server.Project == project {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 1 {
+		name := names[0]
+		return name, cfg.Servers[name], true, nil
+	}
+	if !required {
+		return "", appconfig.Server{}, false, nil
+	}
+	if project != "" {
+		return "", appconfig.Server{}, false, fmt.Errorf("server is required because project %q has %d configured servers", project, len(names))
+	}
+	return "", appconfig.Server{}, false, fmt.Errorf("server is required because %d servers are configured", len(names))
+}
+
+func endpointData(server appconfig.Server, timeoutMS int) map[string]interface{} {
+	if timeoutMS <= 0 {
+		timeoutMS = server.TimeoutMS
+	}
+	return map[string]interface{}{
+		"address":     server.Address,
+		"protocol":    server.Protocol,
+		"timeoutMs":   timeoutMS,
+		"appName":     server.AppName,
+		"attachments": server.Attachments,
+	}
+}
+
+func boundServers(cfg appconfig.Config, project string) []map[string]interface{} {
+	servers := []map[string]interface{}{}
+	for _, name := range cfg.ServerNames() {
+		server := cfg.Servers[name]
+		if server.Project != project {
+			continue
+		}
+		servers = append(servers, map[string]interface{}{"name": name, "server": server})
+	}
+	return servers
 }
 
 func nilSafeArgs(args map[string]interface{}) map[string]interface{} {
@@ -778,18 +988,6 @@ func isPrimitiveRPCType(typ string) bool {
 	default:
 		return false
 	}
-}
-
-func serverConfig(name string) (appconfig.Config, appconfig.Server, error) {
-	cfg, err := loadConfig()
-	if err != nil {
-		return cfg, appconfig.Server{}, err
-	}
-	server, ok := cfg.Servers[name]
-	if !ok {
-		return cfg, appconfig.Server{}, fmt.Errorf("server %q not found", name)
-	}
-	return cfg, server, nil
 }
 
 func loadConfig() (appconfig.Config, error) {
@@ -959,8 +1157,30 @@ func objectSchema(properties map[string]interface{}, required ...string) map[str
 	return schema
 }
 
+func freeObjectSchema(description string) map[string]interface{} {
+	return map[string]interface{}{"type": "object", "description": description, "additionalProperties": true}
+}
+
+func stringMapSchema(description string) map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "object",
+		"description": description,
+		"additionalProperties": map[string]interface{}{
+			"type": "string",
+		},
+	}
+}
+
 func stringSchema(description string) map[string]interface{} {
 	return map[string]interface{}{"type": "string", "description": description}
+}
+
+func enumStringSchema(description string, values ...string) map[string]interface{} {
+	enum := make([]interface{}, 0, len(values))
+	for _, value := range values {
+		enum = append(enum, value)
+	}
+	return map[string]interface{}{"type": "string", "description": description, "enum": enum}
 }
 
 func numberSchema(description string) map[string]interface{} {

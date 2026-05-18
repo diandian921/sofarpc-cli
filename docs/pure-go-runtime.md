@@ -28,19 +28,29 @@ The direct runtime sends a SofaRPC generic invocation over BOLT:
 
 Agents should prefer MCP:
 
-- `search_interface`
-- `describe_interface`
-- `invoke_method`
-- `ping_service`
+- `sofarpc_config`
+- `sofarpc_resolve`
+- `sofarpc_probe`
+- `sofarpc_describe`
+- `sofarpc_invoke`
+- `sofarpc_doctor`
 
-`invoke_method` accepts either:
+`sofarpc_resolve` is read-only and explains which configured project, server,
+and endpoint will be used. `sofarpc_probe` is the only reachability check and
+does not prove service or method existence.
+
+`sofarpc_describe` accepts either a `query` for source search or a `service`
+FQN plus optional `method` for schema description.
+
+`sofarpc_invoke` accepts either:
 
 - `paramTypes + orderedArguments` for exact invocation.
 - `arguments` for schema-guided named arguments when local source can resolve the method.
+- `dryRun=true` to return the resolved plan without sending a SofaRPC request.
 
 ## Known Limits
 
 - Only direct BOLT/Hessian2 is implemented.
 - Schema discovery uses local Java source only.
 - External jar parents and generated DTO fields are not loaded.
-- `ping_service` is a TCP reachability check; it does not prove service or method existence.
+- `sofarpc_probe` is a TCP reachability check; it does not prove service or method existence.

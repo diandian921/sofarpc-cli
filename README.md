@@ -74,26 +74,20 @@ To hide config write tools:
 
 ## MCP Tools
 
-Config and context:
+The MCP surface is intentionally small and workflow-oriented:
 
-- `list_projects`
-- `add_project`
-- `remove_project`
-- `set_current_project`
-- `list_servers`
-- `add_server`
-- `remove_server`
+- `sofarpc_config`: list or update `~/.sofarpc/config.json`.
+- `sofarpc_resolve`: resolve the project, server, and endpoint without touching the network.
+- `sofarpc_probe`: probe TCP reachability for a configured server or explicit address.
+- `sofarpc_describe`: search local Java source or describe a service/method schema.
+- `sofarpc_invoke`: invoke a method, or return the planned request when `dryRun=true`.
+- `sofarpc_doctor`: run structured diagnostics for config, source schema, and invoke prerequisites.
 
-Runtime and RPC:
+`sofarpc_probe` checks the configured transport path. It does not prove the remote interface, method, or business behavior exists.
 
-- `ping_service`
-- `search_interface`
-- `describe_interface`
-- `invoke_method`
+`sofarpc_config` uses an `action` field for mutations. `--disable-config-write` keeps the tool visible but rejects mutating actions such as `save_project`, `save_server`, `remove_project`, and `remove_server`.
 
-`ping_service` checks the configured transport path. It does not prove the remote interface, method, or business behavior exists.
-
-`invoke_method` supports either exact low-level arguments:
+`sofarpc_invoke` supports either exact low-level arguments:
 
 ```json
 {
@@ -117,6 +111,8 @@ or named arguments when local source can resolve the method signature:
   }
 }
 ```
+
+Use `dryRun=true` to inspect the endpoint, parameter types, ordered arguments, and protocol payload without sending a SofaRPC request.
 
 ## Config File
 

@@ -12,7 +12,7 @@ var BuildVersion = "dev"
 
 func main() {
 	fs := flag.NewFlagSet("sofarpc-mcp", flag.ExitOnError)
-	disableConfigWrite := fs.Bool("disable-config-write", false, "do not expose MCP tools that modify ~/.sofarpc/config.json")
+	disableConfigWrite := fs.Bool("disable-config-write", false, "reject MCP config actions that modify ~/.sofarpc/config.json")
 	_ = fs.Parse(os.Args[1:])
 
 	server := &mcp.Server{
