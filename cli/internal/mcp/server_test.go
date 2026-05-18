@@ -13,8 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/sofarpc/cli/internal/schema"
 )
 
 type frameWriter struct {
@@ -318,104 +316,6 @@ func TestResolveAndInvokeDryRunUseWorkflowTools(t *testing.T) {
 	}
 	if !strings.Contains(lines[3], `"dryRun":true`) || !strings.Contains(lines[3], `"argTypes":["java.lang.String"]`) {
 		t.Fatalf("dry run response missing plan: %s", lines[3])
-	}
-}
-
-func TestRPCParamTypeForMethodExpandsImportedDTO(t *testing.T) {
-	method := schema.Method{
-		Package: "com.example.facade",
-		Imports: map[string]string{
-			"UserRequest": "com.example.model.UserRequest",
-		},
-		Parameters: []schema.Parameter{{Name: "request", Type: "UserRequest"}},
-	}
-
-	if got := rpcParamTypeForMethod("UserRequest", method); got != "com.example.model.UserRequest" {
-		t.Fatalf("rpcParamTypeForMethod imported DTO = %q", got)
-	}
-	if got := rpcParamTypeForMethod("SamePackageRequest", method); got != "com.example.facade.SamePackageRequest" {
-		t.Fatalf("rpcParamTypeForMethod same package DTO = %q", got)
-	}
-	if got := rpcParamTypeForMethod("Long", method); got != "java.lang.Long" {
-		t.Fatalf("rpcParamTypeForMethod Long = %q", got)
-	}
-	if !sameParamTypes(method, []string{"com.example.model.UserRequest"}) {
-		t.Fatalf("sameParamTypes should match FQN parameter")
-	}
-}
-
-func TestMethodSignaturesIncludesOverloadCandidates(t *testing.T) {
-	methods := []schema.Method{
-		{
-			Package:    "com.example",
-			Method:     "query",
-			Parameters: []schema.Parameter{{Name: "id", Type: "String"}},
-		},
-		{
-			Package:    "com.example",
-			Method:     "query",
-			Parameters: []schema.Parameter{{Name: "request", Type: "QueryRequest"}},
-		},
-	}
-	got := methodSignatures(methods)
-	if !strings.Contains(got, "query(java.lang.String id)") || !strings.Contains(got, "query(com.example.QueryRequest request)") {
-		t.Fatalf("signatures = %q", got)
-	}
-}
-
-func TestAnnotateArgumentForParamAddsDTOFieldTypes(t *testing.T) {
-	method := schema.Method{
-		Package: "com.example.api",
-		Imports: map[string]string{
-			"UserRequest": "com.example.model.UserRequest",
-		},
-		Parameters: []schema.Parameter{{Name: "request", Type: "UserRequest"}},
-	}
-	desc := schema.Description{Types: map[string]schema.TypeSchema{
-		"com.example.model.UserRequest": {
-			Type: "com.example.model.UserRequest",
-			Kind: "class",
-			Fields: []schema.Field{
-				{Name: "id", Type: "Long"},
-				{Name: "ratio", Type: "Double"},
-			},
-		},
-	}}
-	annotated := annotateArgumentForParam(map[string]interface{}{"id": json.Number("5"), "ratio": json.Number("2.0")}, "UserRequest", method, desc)
-	m, ok := annotated.(map[string]interface{})
-	if !ok {
-		t.Fatalf("annotated type = %T", annotated)
-	}
-	if m["@type"] != "com.example.model.UserRequest" {
-		t.Fatalf("@type = %#v", m["@type"])
-	}
-	fieldTypes, ok := m["__fieldTypes"].(map[string]string)
-	if !ok {
-		t.Fatalf("__fieldTypes = %#v", m["__fieldTypes"])
-	}
-	if fieldTypes["id"] != "java.lang.Long" || fieldTypes["ratio"] != "java.lang.Double" {
-		t.Fatalf("fieldTypes = %#v", fieldTypes)
-	}
-}
-
-func TestAnnotateValueForJavaTypeHasDepthGuard(t *testing.T) {
-	types := map[string]schema.TypeSchema{
-		"com.example.Node": {
-			Type:   "com.example.Node",
-			Kind:   "class",
-			Fields: []schema.Field{{Name: "next", Type: "Node"}},
-		},
-	}
-	root := map[string]interface{}{}
-	current := root
-	for i := 0; i < maxTypeAnnotationDepth+16; i++ {
-		next := map[string]interface{}{}
-		current["next"] = next
-		current = next
-	}
-	got := annotateValueForJavaType(root, "com.example.Node", types)
-	if _, ok := got.(map[string]interface{}); !ok {
-		t.Fatalf("annotated type = %T", got)
 	}
 }
 

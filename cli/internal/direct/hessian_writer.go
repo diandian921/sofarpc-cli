@@ -8,22 +8,17 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/sofarpc/cli/internal/javavalue"
 )
 
-const (
-	javaTypeKey       = "@type"
-	javaFieldTypesKey = "__fieldTypes"
-	maxHessianDepth   = 128
-)
+const maxHessianDepth = 128
 
 type typedObject struct {
 	name       string
 	fields     map[string]interface{}
 	fieldTypes map[string]string
 }
-
-type javaList []interface{}
-type javaMap map[string]interface{}
 
 type writer struct {
 	buf     []byte
@@ -52,6 +47,16 @@ func (w *writer) writeValueWithType(javaType string, v interface{}) error {
 	if v == nil {
 		w.buf = append(w.buf, 'N')
 		return nil
+	}
+	switch x := v.(type) {
+	case javavalue.TypedValue:
+		return w.writeTypedValue(x)
+	case *javavalue.TypedValue:
+		if x == nil {
+			w.buf = append(w.buf, 'N')
+			return nil
+		}
+		return w.writeTypedValue(*x)
 	}
 	if handled, err := w.writeJavaScalar(javaType, v); handled || err != nil {
 		return err
@@ -104,34 +109,62 @@ func (w *writer) writeValueWithType(javaType string, v interface{}) error {
 			items[i] = x[i]
 		}
 		return w.writeList("[string]", items)
-	case []interface{}:
-		items, err := normalizeList(x)
-		if err != nil {
-			return err
-		}
-		return w.writeList("java.util.ArrayList", items)
-	case javaList:
-		return w.writeList("java.util.ArrayList", []interface{}(x))
 	case map[string]interface{}:
-		values, err := normalizePlainMap(x)
-		if err != nil {
-			return err
-		}
-		return w.writeMap("", values)
+		return w.writeMap("", x)
 	case map[string]string:
 		m := make(map[string]interface{}, len(x))
 		for k, v := range x {
 			m[k] = v
 		}
 		return w.writeMap("", m)
-	case javaMap:
-		return w.writeMap("java.util.LinkedHashMap", map[string]interface{}(x))
 	case typedObject:
 		return w.writeTypedObject(x)
 	default:
 		return fmt.Errorf("unsupported hessian value %T", v)
 	}
 	return nil
+}
+
+func (w *writer) writeTypedValue(value javavalue.TypedValue) error {
+	switch value.Kind {
+	case javavalue.KindObject:
+		class := eraseJavaType(value.JavaType)
+		if class == "" {
+			return fmt.Errorf("object javaType is required")
+		}
+		keys := sortedKeys(value.Fields)
+		values := make([]interface{}, len(keys))
+		fieldTypes := make(map[string]string, len(keys))
+		for i, key := range keys {
+			child := value.Fields[key]
+			values[i] = child
+			if child.JavaType != "" {
+				fieldTypes[key] = child.JavaType
+			}
+		}
+		return w.writeObjectWithTypes(class, keys, values, fieldTypes)
+	case javavalue.KindList:
+		class := eraseJavaType(value.JavaType)
+		if class == "" {
+			class = "java.util.ArrayList"
+		}
+		items := make([]interface{}, len(value.Items))
+		for i, item := range value.Items {
+			items[i] = item
+		}
+		return w.writeList(class, items)
+	case javavalue.KindMap:
+		class := eraseJavaType(value.JavaType)
+		if class == "java.util.Map" || class == "java.util.HashMap" || class == "java.util.LinkedHashMap" {
+			class = "java.util.LinkedHashMap"
+		}
+		return w.writeTypedMap(class, value.Entries)
+	default:
+		if handled, err := w.writeJavaScalar(value.JavaType, value.Scalar); handled || err != nil {
+			return err
+		}
+		return w.writeValueWithType("", value.Scalar)
+	}
 }
 
 func (w *writer) writeTypedObject(obj typedObject) error {
@@ -185,6 +218,23 @@ func (w *writer) writeMap(class string, values map[string]interface{}) error {
 			return err
 		}
 		if err := w.writeValue(values[k]); err != nil {
+			return err
+		}
+	}
+	w.buf = append(w.buf, 'z')
+	return nil
+}
+
+func (w *writer) writeTypedMap(class string, entries []javavalue.MapEntry) error {
+	w.buf = append(w.buf, 'M')
+	if class != "" {
+		w.writeType(class)
+	}
+	for _, entry := range entries {
+		if err := w.writeTypedValue(entry.Key); err != nil {
+			return err
+		}
+		if err := w.writeTypedValue(entry.Value); err != nil {
 			return err
 		}
 	}
@@ -339,221 +389,6 @@ func (w *writer) writeJavaScalar(javaType string, v interface{}) (bool, error) {
 	default:
 		return false, nil
 	}
-}
-
-func normalizeArgs(types []string, args []interface{}) ([]interface{}, error) {
-	out := make([]interface{}, len(args))
-	for i, arg := range args {
-		argType := ""
-		if i < len(types) {
-			argType = types[i]
-		}
-		normalized, err := normalizeArgDepth(argType, arg, 0)
-		if err != nil {
-			return nil, fmt.Errorf("arg %d: %w", i, err)
-		}
-		out[i] = normalized
-	}
-	return out, nil
-}
-
-func normalizeArg(argType string, v interface{}) interface{} {
-	out, err := normalizeArgDepth(argType, v, 0)
-	if err != nil {
-		return v
-	}
-	return out
-}
-
-func normalizeArgDepth(argType string, v interface{}, depth int) (interface{}, error) {
-	if depth > maxHessianDepth {
-		return nil, fmt.Errorf("hessian argument nesting too deep")
-	}
-	if m, ok := stringMap(v); ok {
-		if explicit := explicitType(m); explicit != "" {
-			return typedFromMapDepth(explicit, m, depth+1)
-		}
-		if shouldWrapArg(argType) {
-			return typedFromMapDepth(eraseJavaType(argType), m, depth+1)
-		}
-		values, err := normalizePlainMapDepth(m, depth+1)
-		if err != nil {
-			return nil, err
-		}
-		return javaMap(values), nil
-	}
-	return normalizeValueDepth(argType, v, depth+1)
-}
-
-func normalizeValue(v interface{}) interface{} {
-	out, err := normalizeValueDepth("", v, 0)
-	if err != nil {
-		return v
-	}
-	return out
-}
-
-func normalizeValueDepth(javaType string, v interface{}, depth int) (interface{}, error) {
-	if depth > maxHessianDepth {
-		return nil, fmt.Errorf("hessian argument nesting too deep")
-	}
-	switch x := v.(type) {
-	case json.Number:
-		if javaType != "" {
-			return x, nil
-		}
-		return numberValue(x), nil
-	case []interface{}:
-		values, err := normalizeListDepth(x, depth+1)
-		if err != nil {
-			return nil, err
-		}
-		return javaList(values), nil
-	case map[string]interface{}:
-		if explicit := explicitType(x); explicit != "" {
-			return typedFromMapDepth(explicit, x, depth+1)
-		}
-		if shouldWrapArg(javaType) {
-			return typedFromMapDepth(eraseJavaType(javaType), x, depth+1)
-		}
-		values, err := normalizePlainMapDepth(x, depth+1)
-		if err != nil {
-			return nil, err
-		}
-		return javaMap(values), nil
-	default:
-		return x, nil
-	}
-}
-
-func normalizeList(values []interface{}) ([]interface{}, error) {
-	return normalizeListDepth(values, 0)
-}
-
-func normalizeListDepth(values []interface{}, depth int) ([]interface{}, error) {
-	if depth > maxHessianDepth {
-		return nil, fmt.Errorf("hessian argument nesting too deep")
-	}
-	out := make([]interface{}, len(values))
-	for i, v := range values {
-		normalized, err := normalizeValueDepth("", v, depth+1)
-		if err != nil {
-			return nil, err
-		}
-		out[i] = normalized
-	}
-	return out, nil
-}
-
-func normalizePlainMap(values map[string]interface{}) (map[string]interface{}, error) {
-	return normalizePlainMapDepth(values, 0)
-}
-
-func normalizePlainMapDepth(values map[string]interface{}, depth int) (map[string]interface{}, error) {
-	if depth > maxHessianDepth {
-		return nil, fmt.Errorf("hessian argument nesting too deep")
-	}
-	out := make(map[string]interface{}, len(values))
-	for k, v := range values {
-		normalized, err := normalizeValueDepth("", v, depth+1)
-		if err != nil {
-			return nil, err
-		}
-		out[k] = normalized
-	}
-	return out, nil
-}
-
-func typedFromMap(class string, values map[string]interface{}) typedObject {
-	out, err := typedFromMapDepth(class, values, 0)
-	if err != nil {
-		return typedObject{name: class, fields: map[string]interface{}{}}
-	}
-	return out
-}
-
-func typedFromMapDepth(class string, values map[string]interface{}, depth int) (typedObject, error) {
-	if depth > maxHessianDepth {
-		return typedObject{}, fmt.Errorf("hessian argument nesting too deep")
-	}
-	fieldTypes := fieldTypesFromMap(values[javaFieldTypesKey])
-	fields := make(map[string]interface{}, len(values))
-	for k, v := range values {
-		if k == javaTypeKey || k == "__type" || k == javaFieldTypesKey {
-			continue
-		}
-		normalized, err := normalizeValueDepth(fieldTypes[k], v, depth+1)
-		if err != nil {
-			return typedObject{}, err
-		}
-		fields[k] = normalized
-	}
-	return typedObject{name: class, fields: fields, fieldTypes: fieldTypes}, nil
-}
-
-func explicitType(values map[string]interface{}) string {
-	for _, k := range []string{javaTypeKey, "__type"} {
-		if v, ok := values[k].(string); ok && strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
-}
-
-func stringMap(v interface{}) (map[string]interface{}, bool) {
-	switch x := v.(type) {
-	case map[string]interface{}:
-		return x, true
-	case map[string]string:
-		out := make(map[string]interface{}, len(x))
-		for k, v := range x {
-			out[k] = v
-		}
-		return out, true
-	default:
-		return nil, false
-	}
-}
-
-func shouldWrapArg(argType string) bool {
-	t := eraseJavaType(argType)
-	if t == "" || !strings.Contains(t, ".") {
-		return false
-	}
-	if strings.HasPrefix(t, "java.lang.") || strings.HasPrefix(t, "java.math.") || strings.HasPrefix(t, "java.util.") {
-		return false
-	}
-	switch t {
-	case "boolean", "byte", "char", "short", "int", "long", "float", "double", "void":
-		return false
-	default:
-		return true
-	}
-}
-
-func fieldTypesFromMap(v interface{}) map[string]string {
-	if v == nil {
-		return nil
-	}
-	out := map[string]string{}
-	switch x := v.(type) {
-	case map[string]string:
-		for k, typ := range x {
-			if strings.TrimSpace(typ) != "" {
-				out[k] = strings.TrimSpace(typ)
-			}
-		}
-	case map[string]interface{}:
-		for k, raw := range x {
-			if typ, ok := raw.(string); ok && strings.TrimSpace(typ) != "" {
-				out[k] = strings.TrimSpace(typ)
-			}
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
 }
 
 func eraseJavaType(t string) string {
@@ -727,7 +562,7 @@ func decimalString(v interface{}) (string, bool) {
 	}
 }
 
-func sortedKeys(m map[string]interface{}) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

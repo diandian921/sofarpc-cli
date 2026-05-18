@@ -120,10 +120,13 @@ Assertions are intentionally not part of `sofarpc_invoke`. For assertion-based e
 
 ## Config File
 
-`~/.sofarpc/config.json` is stable and user-editable:
+`~/.sofarpc/config.json` is stable and user-editable. The current schema version
+is `1`. Older files without `version` are read as version 1; unsupported future
+versions are rejected with `CONFIG_UNSUPPORTED_VERSION`.
 
 ```json
 {
+  "version": 1,
   "projects": {
     "user": {
       "workspaceRoot": "/Users/me/workspace/user-service",
@@ -205,6 +208,7 @@ Each JSON-RPC stdin frame is capped at 128 MiB. Oversized frames are rejected wi
 ## Troubleshooting
 
 - `CONFIG_INVALID`: fix `~/.sofarpc/config.json`; the tool will not overwrite broken JSON.
+- `CONFIG_UNSUPPORTED_VERSION`: the config file was written by a newer unsupported version.
 - `CONNECT_FAILED`: check the configured server address and network route.
 - `RPC_TIMEOUT`: increase `timeoutMs` or check provider/network latency.
 - unresolved external DTO fields: local source parsing cannot see external jar parents. Exact `paramTypes + orderedArguments` remains available.
@@ -220,3 +224,4 @@ Some tests open loopback ports. In restricted sandboxes, they need permission to
 ## Design Docs
 
 - [Pure-Go runtime](docs/pure-go-runtime.md)
+- [Architecture abstraction review](docs/architecture-abstraction-review.md)

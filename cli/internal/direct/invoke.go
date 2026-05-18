@@ -170,18 +170,13 @@ func buildRequestContent(req Request) ([]byte, string, error) {
 		"type":                   invokeTypeSync,
 		"generic.revise":         "true",
 	}
-	args, err := normalizeArgs(req.ArgTypes, req.Args)
-	if err != nil {
-		return nil, "", err
-	}
-
 	w := newWriter()
 	if err := w.writeObject(requestClass,
 		[]string{"targetAppName", "methodName", "targetServiceUniqueName", "requestProps", "methodArgSigs"},
 		[]interface{}{nil, req.Method, targetService, props, append([]string(nil), req.ArgTypes...)}); err != nil {
 		return nil, "", err
 	}
-	for i, arg := range args {
+	for i, arg := range req.Args {
 		argType := ""
 		if i < len(req.ArgTypes) {
 			argType = req.ArgTypes[i]

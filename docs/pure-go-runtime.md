@@ -6,8 +6,11 @@
 
 - `sofarpc-mcp`: stdio MCP server for agents.
 - `sofarpc-cli`: human-facing config, diagnostics, and reproduction tool.
+- `internal/app`: application use cases for resolve, invocation planning, and
+  execution.
+- `internal/javavalue`: Java-aware typed value model passed from planning to the
+  Hessian encoder.
 - `internal/direct`: BOLT frame codec, Hessian2 reader/writer, request builder, and response flattener.
-- `internal/invoker`: protocol envelope adapter for `invoke` and `ping`.
 - `internal/schema`: local Java source parser for service and DTO discovery.
 
 There is no sidecar runtime, local TCP control plane, token file, or managed process lifecycle.
@@ -16,13 +19,17 @@ There is no sidecar runtime, local TCP control plane, token file, or managed pro
 
 The direct runtime sends a SofaRPC generic invocation over BOLT:
 
-1. Build a `SofaRequest`.
-2. Encode request and arguments with Hessian2.
-3. Send a BOLT RPC request frame to the configured provider address.
-4. Decode `SofaResponse`.
-5. Flatten DTO-like Hessian objects into JSON-friendly maps.
+1. Resolve the configured project, server, endpoint, and method signature.
+2. Build an invocation plan with Java-aware typed arguments.
+3. Build a `SofaRequest`.
+4. Encode request and arguments with Hessian2.
+5. Send a BOLT RPC request frame to the configured provider address.
+6. Decode `SofaResponse`.
+7. Flatten DTO-like Hessian objects into JSON-friendly maps.
 
 `java.math.BigDecimal` and `java.math.BigInteger` values are normalized to JSON numbers.
+DTO field type metadata is carried in the internal typed value model rather than
+in user argument maps.
 Set `rawResult=true` on MCP invoke when the decoded Java object shape is needed for troubleshooting.
 
 ## Agent Contract

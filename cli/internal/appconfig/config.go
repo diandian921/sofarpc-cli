@@ -18,7 +18,9 @@ const (
 	DefaultServerProtocol  = "bolt"
 	DefaultServerTimeoutMS = 5000
 	DefaultServerAppName   = "sofarpc-agent"
+	CurrentConfigVersion   = 1
 	CodeConfigInvalid      = "CONFIG_INVALID"
+	CodeConfigUnsupported  = "CONFIG_UNSUPPORTED_VERSION"
 )
 
 var (
@@ -27,6 +29,7 @@ var (
 )
 
 type Config struct {
+	Version  int                `json:"version"`
 	Projects map[string]Project `json:"projects"`
 	Servers  map[string]Server  `json:"servers"`
 }
@@ -83,6 +86,7 @@ func DefaultLockPath() (string, error) {
 
 func DefaultConfig() Config {
 	return Config{
+		Version:  CurrentConfigVersion,
 		Projects: map[string]Project{},
 		Servers:  map[string]Server{},
 	}
@@ -100,6 +104,7 @@ func Load(path string) (Config, error) {
 	defer f.Close()
 
 	var disk struct {
+		Version          int                `json:"version,omitempty"`
 		Projects         map[string]Project `json:"projects"`
 		Servers          map[string]Server  `json:"servers"`
 		DeprecatedEngine json.RawMessage    `json:"engine,omitempty"`
@@ -108,6 +113,12 @@ func Load(path string) (Config, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&disk); err != nil && !errors.Is(err, io.EOF) {
 		return cfg, &ConfigError{Code: CodeConfigInvalid, Path: path, Err: err}
+	}
+	if disk.Version > CurrentConfigVersion {
+		return cfg, &ConfigError{Code: CodeConfigUnsupported, Path: path, Err: fmt.Errorf("config version %d is newer than supported version %d", disk.Version, CurrentConfigVersion)}
+	}
+	if disk.Version > 0 {
+		cfg.Version = disk.Version
 	}
 	if disk.Projects != nil {
 		cfg.Projects = disk.Projects
@@ -324,6 +335,9 @@ func NormalizeServicePrefixes(prefixes []string) []string {
 }
 
 func applyDefaults(c *Config) {
+	if c.Version <= 0 {
+		c.Version = CurrentConfigVersion
+	}
 	if c.Projects == nil {
 		c.Projects = map[string]Project{}
 	}

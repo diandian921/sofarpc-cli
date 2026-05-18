@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sofarpc/cli/internal/javavalue"
 )
 
 func TestBuildRequestContentWrapsTopLevelDTO(t *testing.T) {
@@ -17,7 +19,9 @@ func TestBuildRequestContentWrapsTopLevelDTO(t *testing.T) {
 		Method:   "query",
 		ArgTypes: []string{"com.example.QueryRequest"},
 		Args: []interface{}{
-			map[string]interface{}{"mpCode": json.Number("433905635109773312")},
+			javavalue.Object("com.example.QueryRequest", map[string]javavalue.TypedValue{
+				"mpCode": javavalue.Scalar("java.lang.Long", json.Number("433905635109773312")),
+			}),
 		},
 	})
 	if err != nil {
@@ -70,17 +74,15 @@ func TestDeclaredNumericTypesChooseHessianTags(t *testing.T) {
 	}
 }
 
-func TestDTOFieldTypesDriveNumericEncoding(t *testing.T) {
+func TestTypedValueDTOFieldTypesDriveNumericEncoding(t *testing.T) {
 	content, _, err := buildRequestContent(Request{
 		Service:  "com.example.Facade",
 		Method:   "query",
 		ArgTypes: []string{"com.example.QueryRequest"},
 		Args: []interface{}{
-			map[string]interface{}{
-				"@type":        "com.example.QueryRequest",
-				"__fieldTypes": map[string]string{"ratio": "java.lang.Double"},
-				"ratio":        json.Number("2.0"),
-			},
+			javavalue.Object("com.example.QueryRequest", map[string]javavalue.TypedValue{
+				"ratio": javavalue.Scalar("java.lang.Double", json.Number("2.0")),
+			}),
 		},
 	})
 	if err != nil {
@@ -125,7 +127,10 @@ func TestDeclaredBigDecimalEncodesTypedValue(t *testing.T) {
 
 func TestListPreservesNullElements(t *testing.T) {
 	w := newWriter()
-	if err := w.writeValue(javaList{nil, json.Number("1")}); err != nil {
+	if err := w.writeValue(javavalue.List("java.util.ArrayList", []javavalue.TypedValue{
+		javavalue.Scalar("", nil),
+		javavalue.Scalar("", json.Number("1")),
+	})); err != nil {
 		t.Fatalf("writeValue: %v", err)
 	}
 	r := &reader{data: w.bytes()}
@@ -172,13 +177,15 @@ func TestHessianStringLengthsUseUTF16Units(t *testing.T) {
 	}
 }
 
-func TestBuildRequestContentRejectsCyclicArguments(t *testing.T) {
-	arg := map[string]interface{}{}
-	arg["self"] = arg
+func TestBuildRequestContentRejectsDeepTypedArguments(t *testing.T) {
+	arg := javavalue.Scalar("java.lang.String", "leaf")
+	for i := 0; i < maxHessianDepth+16; i++ {
+		arg = javavalue.List("java.util.ArrayList", []javavalue.TypedValue{arg})
+	}
 	_, _, err := buildRequestContent(Request{
 		Service:  "com.example.Facade",
 		Method:   "query",
-		ArgTypes: []string{"java.util.Map"},
+		ArgTypes: []string{"java.util.List"},
 		Args:     []interface{}{arg},
 	})
 	if err == nil || !strings.Contains(err.Error(), "nesting too deep") {
@@ -209,8 +216,10 @@ func TestInvokeRoundTripFlattensResponse(t *testing.T) {
 		Service:  "com.example.Facade",
 		Method:   "query",
 		ArgTypes: []string{"com.example.QueryRequest"},
-		Args:     []interface{}{map[string]interface{}{"mpCode": int64(433905635109773312)}},
-		Timeout:  2 * time.Second,
+		Args: []interface{}{javavalue.Object("com.example.QueryRequest", map[string]javavalue.TypedValue{
+			"mpCode": javavalue.Scalar("java.lang.Long", int64(433905635109773312)),
+		})},
+		Timeout: 2 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)

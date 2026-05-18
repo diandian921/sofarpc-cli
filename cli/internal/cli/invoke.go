@@ -42,17 +42,8 @@ func runInvoke(args []string, env Env) int {
 		return 2
 	}
 
-	req, err := protocol.NewRequest(protocol.OpInvoke, payload)
-	if err != nil {
-		fmt.Fprintln(env.Stderr, "invoke: build request:", err)
-		return 1
-	}
-
-	resp, err := dispatch(req)
-	if err != nil {
-		writeLocalFailure(env.Stdout, req.RequestID, protocol.CodeInternalError, err.Error())
-		return 1
-	}
+	resp := executeInvokePayload(payload)
+	resp.RequestID = protocol.NewRequestID(protocol.OpInvoke)
 	if err := writeResponse(env.Stdout, resp); err != nil {
 		fmt.Fprintln(env.Stderr, "invoke: write response:", err)
 		return 1

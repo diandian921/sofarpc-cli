@@ -12,6 +12,9 @@ func TestLoadMissingReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+	if cfg.Version != CurrentConfigVersion {
+		t.Fatalf("version = %d, want %d", cfg.Version, CurrentConfigVersion)
+	}
 	if len(cfg.Projects) != 0 || len(cfg.Servers) != 0 {
 		t.Fatalf("expected empty maps: %+v", cfg)
 	}
@@ -28,6 +31,21 @@ func TestLoadIgnoresDeprecatedEngineConfig(t *testing.T) {
 	}
 	if len(cfg.Projects) != 0 || len(cfg.Servers) != 0 {
 		t.Fatalf("expected empty maps: %+v", cfg)
+	}
+}
+
+func TestLoadRejectsUnsupportedFutureVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"version":999,"projects":{},"servers":{}}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, err := Load(path)
+	var cfgErr *ConfigError
+	if !errors.As(err, &cfgErr) {
+		t.Fatalf("expected ConfigError, got %T: %v", err, err)
+	}
+	if cfgErr.Code != CodeConfigUnsupported {
+		t.Fatalf("code = %q, want %q", cfgErr.Code, CodeConfigUnsupported)
 	}
 }
 
@@ -104,5 +122,8 @@ func TestUpdateWritesAtomically(t *testing.T) {
 	}
 	if _, ok := loaded.Projects["user"]; !ok {
 		t.Fatalf("project not persisted: %+v", loaded)
+	}
+	if loaded.Version != CurrentConfigVersion {
+		t.Fatalf("version = %d, want %d", loaded.Version, CurrentConfigVersion)
 	}
 }

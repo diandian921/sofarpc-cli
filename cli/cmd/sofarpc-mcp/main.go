@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 
+	"github.com/sofarpc/cli/internal/app"
 	"github.com/sofarpc/cli/internal/mcp"
 )
 
@@ -21,6 +22,7 @@ func main() {
 		Stdout:             os.Stdout,
 		Stderr:             os.Stderr,
 		DisableConfigWrite: *disableConfigWrite,
+		App:                app.New(nil),
 	}
 	os.Exit(server.Run())
 }

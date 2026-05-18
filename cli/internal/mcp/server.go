@@ -9,11 +9,10 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/sofarpc/cli/internal/app"
 	"github.com/sofarpc/cli/internal/appconfig"
-	"github.com/sofarpc/cli/internal/invoker"
 	"github.com/sofarpc/cli/internal/protocol"
 	"github.com/sofarpc/cli/internal/schema"
 )
@@ -24,6 +23,7 @@ type Server struct {
 	Stdout             io.Writer
 	Stderr             io.Writer
 	DisableConfigWrite bool
+	App                *app.Service
 }
 
 type request struct {
@@ -31,6 +31,13 @@ type request struct {
 	ID      json.RawMessage `json:"id,omitempty"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params,omitempty"`
+
+	toolCall *toolCallParams
+}
+
+type toolCallParams struct {
+	Name      string                 `json:"name"`
+	Arguments map[string]interface{} `json:"arguments"`
 }
 
 type response struct {
@@ -80,92 +87,7 @@ func (s *Server) Run() int {
 	if stderr == nil {
 		stderr = io.Discard
 	}
-	reader := bufio.NewReaderSize(in, 64*1024)
-	var outMu sync.Mutex
-	var wg sync.WaitGroup
-	running := map[string]context.CancelFunc{}
-	var runningMu sync.Mutex
-	writeLocked := func(resp response) {
-		outMu.Lock()
-		defer outMu.Unlock()
-		_ = write(out, resp)
-	}
-	cancelRequest := func(params json.RawMessage) {
-		var payload struct {
-			RequestID json.RawMessage `json:"requestId"`
-		}
-		if err := decodeJSON(params, &payload); err != nil || len(payload.RequestID) == 0 {
-			return
-		}
-		key := requestIDKey(payload.RequestID)
-		runningMu.Lock()
-		cancel := running[key]
-		runningMu.Unlock()
-		if cancel != nil {
-			cancel()
-		}
-	}
-	for {
-		line, err := readLineLimited(reader, maxJSONRPCLineBytes)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				wg.Wait()
-				return 0
-			}
-			if errors.Is(err, errJSONRPCLineTooLong) {
-				writeLocked(response{JSONRPC: "2.0", Error: &rpcError{Code: -32700, Message: err.Error()}})
-				continue
-			}
-			fmt.Fprintln(stderr, "mcp:", err)
-			wg.Wait()
-			return 1
-		}
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
-		var req request
-		if err := decodeJSON(line, &req); err != nil {
-			writeLocked(response{JSONRPC: "2.0", Error: &rpcError{Code: -32700, Message: err.Error()}})
-			continue
-		}
-		if req.Method == "notifications/cancelled" {
-			cancelRequest(req.Params)
-			continue
-		}
-		run := func(ctx context.Context) {
-			resp, shouldReply := handleWithRecover(req, func() (response, bool) {
-				return s.handle(ctx, req)
-			})
-			if shouldReply && !req.isNotification() {
-				writeLocked(resp)
-			}
-		}
-		if shouldRunAsync(req) {
-			ctx, cancel := context.WithCancel(context.Background())
-			key := requestIDKey(req.ID)
-			if key != "" {
-				runningMu.Lock()
-				running[key] = cancel
-				runningMu.Unlock()
-			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				defer cancel()
-				defer func() {
-					if key != "" {
-						runningMu.Lock()
-						delete(running, key)
-						runningMu.Unlock()
-					}
-				}()
-				run(ctx)
-			}()
-			continue
-		}
-		run(context.Background())
-	}
+	return newSession(s, in, out, stderr).run()
 }
 
 func (r request) isNotification() bool {
@@ -219,12 +141,13 @@ func shouldRunAsync(req request) bool {
 	if req.isNotification() || req.Method != "tools/call" {
 		return false
 	}
-	var params struct {
-		Name      string                 `json:"name"`
-		Arguments map[string]interface{} `json:"arguments"`
-	}
-	if err := decodeJSON(req.Params, &params); err != nil {
-		return false
+	params := req.toolCall
+	if params == nil {
+		var decoded toolCallParams
+		if err := decodeJSON(req.Params, &decoded); err != nil {
+			return false
+		}
+		params = &decoded
 	}
 	switch params.Name {
 	case "sofarpc_invoke":
@@ -267,7 +190,7 @@ func (s *Server) handle(ctx context.Context, req request) (response, bool) {
 		base.Result = map[string]interface{}{"tools": s.tools()}
 		return base, true
 	case "tools/call":
-		result := s.handleToolCall(ctx, req.Params)
+		result := s.handleToolCall(ctx, req)
 		base.Result = result
 		return base, true
 	default:
@@ -336,13 +259,14 @@ func (s *Server) tools() []tool {
 	}
 }
 
-func (s *Server) handleToolCall(ctx context.Context, raw json.RawMessage) toolResult {
-	var params struct {
-		Name      string                 `json:"name"`
-		Arguments map[string]interface{} `json:"arguments"`
-	}
-	if err := decodeJSON(raw, &params); err != nil {
-		return toolErr("invalid tools/call params", err)
+func (s *Server) handleToolCall(ctx context.Context, req request) toolResult {
+	params := req.toolCall
+	if params == nil {
+		var decoded toolCallParams
+		if err := decodeJSON(req.Params, &decoded); err != nil {
+			return toolErr("invalid tools/call params", err)
+		}
+		params = &decoded
 	}
 	if params.Arguments == nil {
 		params.Arguments = map[string]interface{}{}
@@ -363,6 +287,13 @@ func (s *Server) handleToolCall(ctx context.Context, raw json.RawMessage) toolRe
 	default:
 		return toolErr("unknown tool", fmt.Errorf("%s", params.Name))
 	}
+}
+
+func (s *Server) application() *app.Service {
+	if s.App != nil {
+		return s.App
+	}
+	return app.New(nil)
 }
 
 func (s *Server) config(args map[string]interface{}) toolResult {
@@ -421,38 +352,38 @@ func (s *Server) listConfig(args map[string]interface{}) toolResult {
 }
 
 func (s *Server) resolve(args map[string]interface{}) toolResult {
-	cfg, err := loadConfig()
+	project, err := stringArg(args, "project", false)
 	if err != nil {
-		return toolErr("config read failed", err)
+		return toolErr("bad arguments", err)
 	}
-	serverName, server, hasServer, err := s.resolveServer(cfg, args, false)
+	server, err := stringArg(args, "server", false)
 	if err != nil {
-		return toolErr("server resolution failed", err)
+		return toolErr("bad arguments", err)
 	}
-	if hasServer {
-		project, ok := cfg.Projects[server.Project]
-		if !ok {
-			return toolErr("project resolution failed", fmt.Errorf("server %q references missing project %q", serverName, server.Project))
-		}
-		timeoutMS := intArgDefault(args, "timeoutMs", server.TimeoutMS)
+	resolved, err := s.application().Resolve(context.Background(), app.ResolveInput{
+		Project:   project,
+		Server:    server,
+		TimeoutMS: intArgDefault(args, "timeoutMs", 0),
+	})
+	if err != nil {
+		return toolErr("resolution failed", err)
+	}
+	if resolved.Endpoint != nil {
 		return toolOK("Endpoint resolved.", map[string]interface{}{
-			"project":     server.Project,
-			"projectInfo": project,
-			"server":      serverName,
-			"endpoint":    endpointData(server, timeoutMS),
-			"network":     "not_probed",
+			"project":     resolved.Project.Name,
+			"projectInfo": resolved.Project.Info,
+			"server":      resolved.Server,
+			"endpoint":    resolved.Endpoint,
+			"network":     resolved.Network,
+			"diagnostics": resolved.Diagnostics,
 		})
 	}
-	projectName, project, err := s.resolveProject(cfg, args, "")
-	if err != nil {
-		return toolErr("project resolution failed", err)
-	}
-	servers := boundServers(cfg, projectName)
 	return toolOK("Project resolved; no single endpoint was selected.", map[string]interface{}{
-		"project":     projectName,
-		"projectInfo": project,
-		"servers":     servers,
-		"network":     "not_probed",
+		"project":     resolved.Project.Name,
+		"projectInfo": resolved.Project.Info,
+		"servers":     resolved.Servers,
+		"network":     resolved.Network,
+		"diagnostics": resolved.Diagnostics,
 	})
 }
 
@@ -465,41 +396,30 @@ func (s *Server) probe(ctx context.Context, args map[string]interface{}) toolRes
 	if err != nil {
 		return toolErr("bad arguments", err)
 	}
-	serverName := ""
-	projectName := ""
-	timeoutMS := intArgDefault(args, "timeoutMs", appconfig.DefaultServerTimeoutMS)
-	if address == "" {
-		cfg, err := loadConfig()
-		if err != nil {
-			return toolErr("config read failed", err)
-		}
-		var server appconfig.Server
-		var hasServer bool
-		serverName, server, hasServer, err = s.resolveServer(cfg, args, true)
-		if err != nil {
-			return toolErr("server resolution failed", err)
-		}
-		if !hasServer {
-			return toolErr("server resolution failed", fmt.Errorf("server or address is required"))
-		}
-		address = server.Address
-		projectName = server.Project
-		timeoutMS = intArgDefault(args, "timeoutMs", server.TimeoutMS)
+	server, err := stringArg(args, "server", false)
+	if err != nil {
+		return toolErr("bad arguments", err)
 	}
-	payload := protocol.PingPayload{
-		Address:      address,
-		Service:      service,
-		RPCTimeoutMS: timeoutMS,
+	project, err := stringArg(args, "project", false)
+	if err != nil {
+		return toolErr("bad arguments", err)
 	}
 	requestID := protocol.NewRequestID(protocol.OpPing)
-	resp := invoker.PingPayloadContext(ctx, payload)
+	probe := s.application().ProbeEndpoint(ctx, app.ProbeInput{
+		Project:   project,
+		Server:    server,
+		Address:   address,
+		Service:   service,
+		TimeoutMS: intArgDefault(args, "timeoutMs", 0),
+	})
+	resp := protocolResponseFromProbe(probe)
 	resp.RequestID = requestID
 	return toolOK("Probe completed. Success only means the TCP transport path was reachable; it does not prove the remote interface or method exists.", map[string]interface{}{
-		"server":    serverName,
-		"project":   projectName,
-		"address":   address,
-		"service":   service,
-		"timeoutMs": timeoutMS,
+		"server":    probe.Server,
+		"project":   probe.Project,
+		"address":   probe.Address,
+		"service":   probe.Service,
+		"timeoutMs": probe.TimeoutMS,
 		"response":  resp,
 	})
 }
@@ -561,67 +481,146 @@ func (s *Server) describe(args map[string]interface{}) toolResult {
 }
 
 func (s *Server) invoke(ctx context.Context, args map[string]interface{}) toolResult {
-	service, err := stringArg(args, "service", true)
+	input, err := invocationInput(args)
 	if err != nil {
 		return toolErr("bad arguments", err)
+	}
+	plan, err := s.application().PlanInvocation(ctx, input)
+	if err != nil {
+		return toolErr("invocation planning failed", err)
+	}
+	requestID := protocol.NewRequestID(protocol.OpInvoke)
+	planData := plan.Display()
+	planData["requestId"] = requestID
+	if boolArg(args, "dryRun") {
+		return toolOK("Invoke dry run completed.", map[string]interface{}{"dryRun": true, "plan": planData})
+	}
+	resp := protocolResponseFromExecution(s.application().ExecuteInvocation(ctx, plan))
+	resp.RequestID = requestID
+	return toolOK("Invoke completed.", map[string]interface{}{"plan": planData, "response": resp})
+}
+
+func protocolResponseFromExecution(exec app.InvocationExecution) protocol.Response {
+	resp := protocol.Response{
+		OK:   exec.OK,
+		Code: exec.Code,
+		Meta: exec.Meta,
+	}
+	if exec.OK {
+		body, err := json.Marshal(exec.Data)
+		if err != nil {
+			return protocol.Response{
+				OK:   false,
+				Code: protocol.CodeInternalError,
+				Error: &protocol.ResponseError{
+					Message: err.Error(),
+				},
+				Meta: map[string]interface{}{"runtime": "go"},
+			}
+		}
+		resp.Data = body
+		return resp
+	}
+	if exec.Error != nil {
+		resp.Error = &protocol.ResponseError{
+			Message: exec.Error.Message,
+			Cause:   exec.Error.Cause,
+			Details: exec.Error.Details,
+		}
+	}
+	return resp
+}
+
+func protocolResponseFromProbe(probe app.ProbeResult) protocol.Response {
+	data := map[string]interface{}{
+		"address":     probe.Address,
+		"service":     probe.Service,
+		"reachable":   probe.Reachable,
+		"elapsedMs":   probe.ElapsedMS,
+		"diagnostics": probe.Diagnostics,
+	}
+	if probe.Error != nil {
+		return protocol.Response{
+			OK:   false,
+			Code: app.CodeConnectFailed,
+			Error: &protocol.ResponseError{
+				Message: probe.Error.Message,
+				Cause:   probe.Error.Cause,
+				Details: probe.Error.Details,
+			},
+			Meta: probe.Meta,
+		}
+	}
+	body, err := json.Marshal(data)
+	if err != nil {
+		return protocol.Response{
+			OK:    false,
+			Code:  protocol.CodeInternalError,
+			Error: &protocol.ResponseError{Message: err.Error()},
+			Meta:  map[string]interface{}{"runtime": "go"},
+		}
+	}
+	return protocol.Response{
+		OK:   true,
+		Code: app.CodeSuccess,
+		Data: body,
+		Meta: probe.Meta,
+	}
+}
+
+func invocationInput(args map[string]interface{}) (app.InvocationInput, error) {
+	service, err := stringArg(args, "service", true)
+	if err != nil {
+		return app.InvocationInput{}, err
 	}
 	method, err := stringArg(args, "method", true)
 	if err != nil {
-		return toolErr("bad arguments", err)
+		return app.InvocationInput{}, err
+	}
+	server, err := stringArg(args, "server", false)
+	if err != nil {
+		return app.InvocationInput{}, err
+	}
+	project, err := stringArg(args, "project", false)
+	if err != nil {
+		return app.InvocationInput{}, err
 	}
 	paramTypes, err := stringSliceArg(args, "paramTypes")
 	if err != nil {
-		return toolErr("bad arguments", err)
+		return app.InvocationInput{}, err
 	}
 	if len(paramTypes) == 0 {
 		paramTypes, err = stringSliceArg(args, "types")
 		if err != nil {
-			return toolErr("bad arguments", err)
+			return app.InvocationInput{}, err
 		}
 	}
-	cfg, err := loadConfig()
-	if err != nil {
-		return toolErr("config read failed", err)
+	input := app.InvocationInput{
+		Project:    project,
+		Server:     server,
+		Service:    service,
+		Method:     method,
+		ParamTypes: paramTypes,
+		TimeoutMS:  intArgDefault(args, "timeoutMs", 0),
+		RawResult:  boolArg(args, "rawResult"),
 	}
-	serverName, server, hasServer, err := s.resolveServer(cfg, args, true)
-	if err != nil {
-		return toolErr("server resolution failed", err)
+	raw, ok := args["orderedArguments"]
+	if !ok || raw == nil {
+		raw, ok = args["args"]
 	}
-	if !hasServer {
-		return toolErr("server resolution failed", fmt.Errorf("server is required"))
+	if ok && raw != nil {
+		ordered, ok := raw.([]interface{})
+		if !ok {
+			return app.InvocationInput{}, fmt.Errorf("orderedArguments/args must be an array")
+		}
+		input.OrderedArguments = ordered
+		input.HasOrderedArguments = true
+		return input, nil
 	}
-	ordered, paramTypes, err := s.resolveInvokeArguments(cfg, serverName, service, method, args, paramTypes)
-	if err != nil {
-		return toolErr("argument resolution failed", err)
+	if named, ok := args["arguments"].(map[string]interface{}); ok {
+		input.NamedArguments = named
 	}
-	timeoutMS := intArgDefault(args, "timeoutMs", server.TimeoutMS)
-	payload := protocol.InvokePayload{
-		Address:      server.Address,
-		Service:      service,
-		Method:       method,
-		ArgTypes:     paramTypes,
-		Args:         ordered,
-		RPCTimeoutMS: timeoutMS,
-		RawResult:    boolArg(args, "rawResult"),
-	}
-	requestID := protocol.NewRequestID(protocol.OpInvoke)
-	plan := map[string]interface{}{
-		"requestId":        requestID,
-		"server":           serverName,
-		"project":          server.Project,
-		"endpoint":         endpointData(server, timeoutMS),
-		"service":          service,
-		"method":           method,
-		"paramTypes":       paramTypes,
-		"orderedArguments": ordered,
-		"payload":          payload,
-	}
-	if boolArg(args, "dryRun") {
-		return toolOK("Invoke dry run completed.", map[string]interface{}{"dryRun": true, "plan": plan})
-	}
-	resp := invoker.DirectPayloadContext(ctx, payload)
-	resp.RequestID = requestID
-	return toolOK("Invoke completed.", map[string]interface{}{"plan": plan, "response": resp})
+	return input, nil
 }
 
 func (s *Server) doctor(args map[string]interface{}) toolResult {
@@ -813,104 +812,6 @@ func (s *Server) removeServer(args map[string]interface{}) toolResult {
 	return toolOK("Server removed from config.json.", map[string]interface{}{"removed": name})
 }
 
-func (s *Server) resolveInvokeArguments(cfg appconfig.Config, serverName, service, method string, args map[string]interface{}, paramTypes []string) ([]interface{}, []string, error) {
-	raw, ok := args["orderedArguments"]
-	if !ok || raw == nil {
-		raw, ok = args["args"]
-	}
-	if ok && raw != nil {
-		ordered, ok := raw.([]interface{})
-		if !ok {
-			return nil, nil, fmt.Errorf("orderedArguments/args must be an array")
-		}
-		var methodSchema schema.Method
-		var desc schema.Description
-		hasSchema := false
-		if len(paramTypes) == 0 {
-			resolved, resolvedDesc, err := s.resolveMethodDescription(cfg, serverName, service, method, nil)
-			if err != nil {
-				return nil, nil, err
-			}
-			if len(resolved.Parameters) != len(ordered) {
-				return nil, nil, fmt.Errorf("resolved method has %d parameters, got %d arguments", len(resolved.Parameters), len(ordered))
-			}
-			methodSchema = resolved
-			desc = resolvedDesc
-			hasSchema = true
-			paramTypes = rpcParamTypesForMethod(methodSchema)
-		} else if resolved, resolvedDesc, err := s.resolveMethodDescription(cfg, serverName, service, method, paramTypes); err == nil {
-			methodSchema = resolved
-			desc = resolvedDesc
-			hasSchema = true
-		}
-		if len(paramTypes) != len(ordered) {
-			return nil, nil, fmt.Errorf("paramTypes length (%d) does not match orderedArguments length (%d)", len(paramTypes), len(ordered))
-		}
-		if hasSchema && len(methodSchema.Parameters) == len(ordered) {
-			ordered = annotateArgumentsForMethod(ordered, methodSchema, desc)
-		}
-		return ordered, paramTypes, nil
-	}
-	named, ok := args["arguments"].(map[string]interface{})
-	if !ok {
-		return nil, nil, fmt.Errorf("either orderedArguments or arguments is required")
-	}
-	methodSchema, desc, err := s.resolveMethodDescription(cfg, serverName, service, method, paramTypes)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(methodSchema.Parameters) == 1 {
-		param := methodSchema.Parameters[0]
-		if _, ok := named[param.Name]; !ok {
-			return []interface{}{annotateArgumentForParam(named, param.Type, methodSchema, desc)}, []string{rpcParamTypeForMethod(param.Type, methodSchema)}, nil
-		}
-	}
-	ordered := make([]interface{}, 0, len(methodSchema.Parameters))
-	resolvedTypes := make([]string, 0, len(methodSchema.Parameters))
-	for _, param := range methodSchema.Parameters {
-		value, ok := named[param.Name]
-		if !ok {
-			return nil, nil, fmt.Errorf("missing argument %q", param.Name)
-		}
-		ordered = append(ordered, annotateArgumentForParam(value, param.Type, methodSchema, desc))
-		resolvedTypes = append(resolvedTypes, rpcParamTypeForMethod(param.Type, methodSchema))
-	}
-	return ordered, resolvedTypes, nil
-}
-
-func (s *Server) resolveMethodDescription(cfg appconfig.Config, serverName, service, method string, paramTypes []string) (schema.Method, schema.Description, error) {
-	projectName, project, err := s.resolveProject(cfg, nilSafeArgs(nil), serverName)
-	if err != nil {
-		return schema.Method{}, schema.Description{}, err
-	}
-	idx, err := schema.LoadOrBuildIndex(schema.Project{
-		Name:            projectName,
-		WorkspaceRoot:   project.WorkspaceRoot,
-		ServicePrefixes: project.ServicePrefixes,
-	})
-	if err != nil {
-		return schema.Method{}, schema.Description{}, err
-	}
-	desc, err := schema.Describe(idx, service, method)
-	if err != nil {
-		return schema.Method{}, schema.Description{}, err
-	}
-	var matches []schema.Method
-	for _, candidate := range desc.Methods {
-		if len(paramTypes) > 0 && !sameParamTypes(candidate, paramTypes) {
-			continue
-		}
-		matches = append(matches, candidate)
-	}
-	if len(matches) == 0 {
-		return schema.Method{}, schema.Description{}, fmt.Errorf("method %s.%s not found for supplied paramTypes", service, method)
-	}
-	if len(matches) > 1 {
-		return schema.Method{}, schema.Description{}, fmt.Errorf("method %s.%s is overloaded; provide paramTypes. Candidates: %s", service, method, methodSignatures(matches))
-	}
-	return matches[0], desc, nil
-}
-
 func (s *Server) resolveProject(cfg appconfig.Config, args map[string]interface{}, serverName string) (string, appconfig.Project, error) {
 	explicit, err := stringArg(args, "project", false)
 	if err != nil {
@@ -1014,13 +915,6 @@ func boundServers(cfg appconfig.Config, project string) []map[string]interface{}
 		servers = append(servers, map[string]interface{}{"name": name, "server": server})
 	}
 	return servers
-}
-
-func nilSafeArgs(args map[string]interface{}) map[string]interface{} {
-	if args == nil {
-		return map[string]interface{}{}
-	}
-	return args
 }
 
 func publicMethods(methods []schema.Method) []schema.Method {
