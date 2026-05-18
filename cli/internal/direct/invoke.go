@@ -39,9 +39,7 @@ func init() {
 	requestID.Store(uint32(time.Now().UnixNano()))
 }
 
-// Request is the pure-Go direct invoke surface. It intentionally mirrors the
-// existing daemon invoke payload so callers can route the same request to either
-// implementation.
+// Request is the pure-Go direct invoke surface.
 type Request struct {
 	Address  string
 	Service  string

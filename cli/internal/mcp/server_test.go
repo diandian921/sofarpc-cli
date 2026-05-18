@@ -29,7 +29,7 @@ func TestToolsListCanDisableConfigWriteTools(t *testing.T) {
 	if strings.Contains(out.String(), "add_project") {
 		t.Fatalf("config write tool should be hidden: %s", out.String())
 	}
-	if !strings.Contains(out.String(), "engine_status") {
+	if !strings.Contains(out.String(), "invoke_method") {
 		t.Fatalf("expected read tool in list: %s", out.String())
 	}
 }

@@ -12,7 +12,7 @@ import (
 )
 
 // runServer manages configured RPC servers in ~/.sofarpc/config.json.
-// The Java Engine never reads this file; Go resolves servers before calling Engine.
+// Go resolves server names before invoking the direct runtime.
 func runServer(args []string, env Env) int {
 	if len(args) == 0 {
 		fmt.Fprintln(env.Stderr, "server: subcommand required (add|list|remove)")

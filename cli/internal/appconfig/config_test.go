@@ -12,8 +12,19 @@ func TestLoadMissingReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Engine.Port != DefaultPort || cfg.Engine.IdleTTL != DefaultIdleTTL || cfg.Engine.Mode != EngineModeJava {
-		t.Fatalf("defaults not applied: %+v", cfg.Engine)
+	if len(cfg.Projects) != 0 || len(cfg.Servers) != 0 {
+		t.Fatalf("expected empty maps: %+v", cfg)
+	}
+}
+
+func TestLoadIgnoresDeprecatedEngineConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"projects":{},"servers":{},"engine":{"mode":"java","port":37651}}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
 	}
 	if len(cfg.Projects) != 0 || len(cfg.Servers) != 0 {
 		t.Fatalf("expected empty maps: %+v", cfg)

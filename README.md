@@ -2,7 +2,7 @@
 
 MCP-first SofaRPC testing toolkit for agents.
 
-The primary entrypoint is `sofarpc-mcp`, a stdio MCP server. `sofarpc-cli` is kept for human configuration, diagnostics, and exact reproduction. Invocation can run through the stable Java Engine, or through the experimental pure-Go direct BOLT/Hessian2 engine for lower-latency direct calls.
+The primary entrypoint is `sofarpc-mcp`, a stdio MCP server. `sofarpc-cli` is kept for human configuration, diagnostics, and exact reproduction. Invocation runs through a pure-Go direct BOLT/Hessian2 runtime; no Java process or sidecar Engine is required.
 
 ## What Gets Installed
 
@@ -11,21 +11,13 @@ The primary entrypoint is `sofarpc-mcp`, a stdio MCP server. `sofarpc-cli` is ke
   bin/
     sofarpc-mcp
     sofarpc-cli
-  lib/
-    sofarpc-engine.jar
   config.json
-  state/
-    token
-    engine.json
-    engine.lock
-    config.lock
   logs/
-    engine.log
   cache/
     schema/
 ```
 
-`config.json`, token, logs, state, and cache are not overwritten on upgrade.
+`config.json`, logs, and cache are not overwritten on upgrade.
 
 ## Install
 
@@ -47,12 +39,11 @@ The package contains:
 ```text
 sofarpc-mcp
 sofarpc-cli
-sofarpc-engine.jar
 install.sh
 install.ps1
 ```
 
-Requirements: Go 1.19+, Maven 3.6+, Java 8+.
+Requirements: Go 1.19+ when building from source. Release packages contain prebuilt binaries.
 
 ## MCP Configuration
 
@@ -95,7 +86,6 @@ Config and context:
 
 Runtime and RPC:
 
-- `engine_status`
 - `ping_service`
 - `search_interface`
 - `describe_interface`
@@ -110,7 +100,6 @@ Runtime and RPC:
   "server": "user-test",
   "service": "com.example.UserService",
   "method": "getUser",
-  "engine": "go",
   "paramTypes": ["java.lang.String"],
   "orderedArguments": ["u001"]
 }
@@ -150,24 +139,9 @@ or named arguments when local source can resolve the method signature:
       "appName": "sofarpc-agent",
       "attachments": {}
     }
-  },
-  "engine": {
-    "mode": "java",
-    "host": "127.0.0.1",
-    "port": 37651,
-    "javaHome": null,
-    "idleTTL": "30m",
-    "startTimeoutMs": 20000,
-    "maxConcurrentInvokes": 8
   }
 }
 ```
-
-`engine.mode` accepts:
-
-- `java`: use the shared Java Engine. This is the default compatibility path.
-- `go`: use the pure-Go direct BOLT/Hessian2 path for invoke.
-- `auto`: try the pure-Go direct path for invoke, then fall back to Java when the direct route cannot produce a response.
 
 ## CLI
 
@@ -177,17 +151,15 @@ Use CLI for setup and diagnostics:
 sofarpc-cli project add user /Users/me/workspace/user-service --prefix com.company.user
 sofarpc-cli server add user-test 10.0.0.1:12200 --project user
 sofarpc-cli server list --json
-sofarpc-cli daemon status
-sofarpc-cli daemon stop
 ```
 
-The legacy `exec --stdin`, `ping`, and `invoke` commands remain available for reproduction.
+The `exec --stdin`, `ping`, and `invoke` commands are available for exact reproduction.
 
-For direct invoke reproduction without starting the Java Engine:
+For invoke reproduction:
 
 ```bash
-sofarpc-cli invoke --engine go \
-  --address 10.0.0.1:12200 \
+sofarpc-cli invoke \
+  --address user-test \
   --service com.example.UserService \
   --method getUser \
   --arg-types com.example.GetUserRequest \
@@ -216,18 +188,14 @@ Schema cache is stored under `~/.sofarpc/cache/schema/` and invalidated by sourc
 
 ## Troubleshooting
 
-- `java_not_found`: install Java 8+ or fix `PATH`.
-- `java_version_unsupported`: use Java 8 or newer.
-- `engine_jar_not_found`: run `./scripts/install.sh` or set `SOFARPCD_JAR`.
-- `port_occupied`: port `37651` is already used by a non-reusable local process.
-- `engine_start_timeout`: inspect `~/.sofarpc/logs/engine.log`; the MCP/CLI error includes a bounded log tail when available.
 - `CONFIG_INVALID`: fix `~/.sofarpc/config.json`; the tool will not overwrite broken JSON.
+- `CONNECT_FAILED`: check the configured server address and network route.
+- `RPC_TIMEOUT`: increase `timeoutMs` or check provider/network latency.
 - unresolved external DTO fields: local source parsing cannot see external jar parents. Exact `paramTypes + orderedArguments` remains available.
 
 ## Test
 
 ```bash
-mvn -f daemon/pom.xml test
 cd cli && go test ./...
 ```
 
@@ -235,6 +203,4 @@ Some tests open loopback ports. In restricted sandboxes, they need permission to
 
 ## Design Docs
 
-- [MCP-first design](docs/mcp-first-sofarpc-agent-design.md)
-- [Implementation plan](docs/mcp-first-implementation-plan.md)
-- [Design review](docs/mcp-first-sofarpc-agent-design-review.md)
+- [Pure-Go runtime](docs/pure-go-runtime.md)

@@ -32,10 +32,6 @@ func Run(args []string, env Env) int {
 		return runInvoke(args[1:], env)
 	case "ping":
 		return runPing(args[1:], env)
-	case "daemon":
-		return runDaemon(args[1:], env)
-	case "engine":
-		return runEngine(args[1:], env)
 	case "project":
 		return runProject(args[1:], env)
 	case "server":
@@ -77,10 +73,9 @@ func printUsage(w io.Writer) {
 	fmt.Fprint(w, `sofarpc-cli — MCP-first SofaRPC CLI
 
 Usage:
-  sofarpc-cli exec --stdin                 Read one legacy envelope from stdin, write one to stdout.
-  sofarpc-cli invoke [flags]               Build and send a legacy invoke request.
-  sofarpc-cli ping <host:port|server>      Probe a target address via the Engine.
-  sofarpc-cli engine start|stop|status     Manage the local Engine.
+  sofarpc-cli exec --stdin                 Read one request envelope from stdin, write one response.
+  sofarpc-cli invoke [flags]               Invoke a SofaRPC method over direct BOLT/Hessian2.
+  sofarpc-cli ping <host:port|server>      Probe a target TCP address.
   sofarpc-cli project add|list|remove      Manage local source projects.
   sofarpc-cli server add|list|remove       Manage configured RPC servers.
   sofarpc-cli version                      Print build version.

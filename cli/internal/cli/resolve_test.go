@@ -76,11 +76,11 @@ func TestResolveEnvelopeAddressNonAddressableOp(t *testing.T) {
 	defer cleanup()
 
 	req := protocol.Request{
-		Op:      protocol.OpHealth,
+		Op:      "version",
 		Payload: json.RawMessage(`{}`),
 	}
 	if err := resolveEnvelopeAddress(&req); err != nil {
-		t.Fatalf("health should not need resolution: %v", err)
+		t.Fatalf("non-addressable op should not need resolution: %v", err)
 	}
 }
 

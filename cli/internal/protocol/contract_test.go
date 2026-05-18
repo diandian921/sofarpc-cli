@@ -10,9 +10,8 @@ import (
 	"testing"
 )
 
-// strictDecode rejects unknown top-level envelope fields. The Java daemon does the same via
-// Jackson FAIL_ON_UNKNOWN_PROPERTIES — together they pin additionalProperties:false in both
-// stacks. Extension must flow through meta (free-form map) or payload (op-specific JsonNode).
+// strictDecode rejects unknown top-level envelope fields so extension flows through
+// meta (free-form map) or payload (op-specific JSON).
 func strictDecode(raw []byte, out interface{}) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -21,7 +20,7 @@ func strictDecode(raw []byte, out interface{}) error {
 
 // TestRequestFixturesDecodeCleanly is the Go half of the protocol contract: every shared
 // request fixture under protocol/fixtures must decode into a Request with the required
-// envelope fields populated. Java does the same in EnvelopeFixturesTest.java.
+// envelope fields populated.
 func TestRequestFixturesDecodeCleanly(t *testing.T) {
 	for _, path := range collectByPrefix(t, "request") {
 		t.Run(relName(t, path), func(t *testing.T) {
@@ -87,7 +86,6 @@ func TestKnownCodesCovered(t *testing.T) {
 		CodeRPCTimeout,
 		CodeInvokeFailed,
 		CodeAssertionFailed,
-		CodeDaemonUnavailable,
 		CodeInternalError,
 	}
 	for _, code := range required {
@@ -100,7 +98,7 @@ func TestKnownCodesCovered(t *testing.T) {
 func assertOpKnown(t *testing.T, op string) {
 	t.Helper()
 	switch op {
-	case OpInvoke, OpPing, OpHealth, OpShutdown:
+	case OpInvoke, OpPing:
 	default:
 		t.Fatalf("unknown op %q", op)
 	}
@@ -110,7 +108,7 @@ func assertCodeKnown(t *testing.T, code string) {
 	t.Helper()
 	switch code {
 	case CodeSuccess, CodeBadRequest, CodeConnectFailed, CodeRPCTimeout,
-		CodeInvokeFailed, CodeAssertionFailed, CodeDaemonUnavailable, CodeInternalError:
+		CodeInvokeFailed, CodeAssertionFailed, CodeInternalError:
 	default:
 		t.Fatalf("unknown code %q", code)
 	}

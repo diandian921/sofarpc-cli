@@ -7,15 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/sofarpc/cli/internal/appconfig"
-	"github.com/sofarpc/cli/internal/engine"
 	"github.com/sofarpc/cli/internal/invoker"
-	"github.com/sofarpc/cli/internal/launcher"
 	"github.com/sofarpc/cli/internal/protocol"
 	"github.com/sofarpc/cli/internal/schema"
 )
@@ -136,7 +133,6 @@ func (s *Server) handle(req request) (response, bool) {
 
 func (s *Server) tools() []tool {
 	tools := []tool{
-		{Name: "engine_status", Description: "Inspect Engine status without starting it.", InputSchema: objectSchema(nil)},
 		{Name: "list_projects", Description: "List configured local source projects.", InputSchema: objectSchema(nil)},
 		{Name: "set_current_project", Description: "Set the session-only current project.", InputSchema: objectSchema(map[string]interface{}{"project": stringSchema("Project name.")}, "project")},
 		{Name: "list_servers", Description: "List configured SofaRPC servers.", InputSchema: objectSchema(map[string]interface{}{"project": stringSchema("Optional project filter.")})},
@@ -160,7 +156,6 @@ func (s *Server) tools() []tool {
 			"server":           stringSchema("Configured server name."),
 			"service":          stringSchema("Service interface FQN."),
 			"method":           stringSchema("Method name."),
-			"engine":           stringSchema("Optional invoke engine: java, go, or auto. Defaults to config engine.mode."),
 			"paramTypes":       arraySchema("Optional Java parameter type FQNs for overload disambiguation."),
 			"orderedArguments": arraySchema("Arguments in method parameter order."),
 			"arguments":        objectSchema(nil),
@@ -211,8 +206,6 @@ func (s *Server) handleToolCall(raw json.RawMessage) toolResult {
 		params.Arguments = map[string]interface{}{}
 	}
 	switch params.Name {
-	case "engine_status":
-		return s.engineStatus()
 	case "list_projects":
 		return s.listProjects()
 	case "set_current_project":
@@ -407,31 +400,6 @@ func (s *Server) removeServer(args map[string]interface{}) toolResult {
 	return toolOK("Server removed from config.json.", map[string]interface{}{"removed": name})
 }
 
-func (s *Server) engineStatus() toolResult {
-	cfg, cfgErr := loadConfig()
-	if cfgErr != nil {
-		return toolErr("config read failed", cfgErr)
-	}
-	paths, err := launcher.DefaultPaths()
-	if err != nil {
-		return toolErr("launcher path failed", err)
-	}
-	state, stateErr := launcher.ReadState(paths.StateFile)
-	running := stateErr == nil && state != nil && launcher.IsPIDAlive(state.PID)
-	data := map[string]interface{}{
-		"running":         running,
-		"state":           state,
-		"stateError":      errorString(stateErr),
-		"desired":         cfg.Engine,
-		"logFile":         paths.LogFile,
-		"restartRequired": false,
-	}
-	if state != nil && cfg.Engine.Port != 0 && state.Port != cfg.Engine.Port {
-		data["restartRequired"] = true
-	}
-	return toolOK(statusSummary(running), data)
-}
-
 func (s *Server) pingService(args map[string]interface{}) toolResult {
 	serverName, err := stringArg(args, "server", true)
 	if err != nil {
@@ -441,20 +409,26 @@ func (s *Server) pingService(args map[string]interface{}) toolResult {
 	if err != nil {
 		return toolErr("bad arguments", err)
 	}
-	cfg, server, err := serverConfig(serverName)
+	_, server, err := serverConfig(serverName)
 	if err != nil {
 		return toolErr("server resolution failed", err)
 	}
 	timeoutMS := intArgDefault(args, "timeoutMs", server.TimeoutMS)
-	var resp protocol.Response
-	if err := callEngine("sofarpc.ping", map[string]interface{}{
-		"address":      server.Address,
-		"service":      service,
-		"rpcTimeoutMs": timeoutMS,
-	}, &resp, s.BuildVersion); err != nil {
+	payload := protocol.PingPayload{
+		Address:      server.Address,
+		Service:      service,
+		RPCTimeoutMS: timeoutMS,
+	}
+	req, err := protocol.NewRequest(protocol.OpPing, payload)
+	if err != nil {
 		return toolErr("ping_service failed", err)
 	}
-	data := map[string]interface{}{"server": serverName, "project": server.Project, "service": service, "engineResponse": resp, "configEngine": cfg.Engine}
+	directResp, err := invoker.DirectRequest(req)
+	if err != nil {
+		return toolErr("ping_service failed", err)
+	}
+	resp := *directResp
+	data := map[string]interface{}{"server": serverName, "project": server.Project, "service": service, "response": resp}
 	return toolOK("Ping completed. Success only means the local transport path was usable; it does not prove the remote interface or method exists.", data)
 }
 
@@ -549,10 +523,6 @@ func (s *Server) invokeMethod(args map[string]interface{}) toolResult {
 		return toolErr("argument resolution failed", err)
 	}
 	timeoutMS := intArgDefault(args, "timeoutMs", server.TimeoutMS)
-	engineMode, err := stringArg(args, "engine", false)
-	if err != nil {
-		return toolErr("bad arguments", err)
-	}
 	payload := protocol.InvokePayload{
 		Address:      server.Address,
 		Service:      service,
@@ -561,34 +531,16 @@ func (s *Server) invokeMethod(args map[string]interface{}) toolResult {
 		Args:         ordered,
 		RPCTimeoutMS: timeoutMS,
 	}
-	var resp protocol.Response
-	mode := normalizeMCPInvokeEngineMode(engineMode)
-	if strings.TrimSpace(engineMode) == "" {
-		mode = normalizeMCPInvokeEngineMode(cfg.Engine.Mode)
+	req, err := protocol.NewRequest(protocol.OpInvoke, payload)
+	if err != nil {
+		return toolErr("invoke_method failed", err)
 	}
-	if mode == appconfig.EngineModeGo || mode == appconfig.EngineModeAuto {
-		req, err := protocol.NewRequest(protocol.OpInvoke, payload)
-		if err != nil {
-			return toolErr("invoke_method failed", err)
-		}
-		directResp, err := invoker.DirectRequest(req)
-		if err != nil {
-			return toolErr("invoke_method failed", err)
-		}
-		resp = *directResp
-	} else {
-		if err := callEngine("sofarpc.invoke", map[string]interface{}{
-			"address":      payload.Address,
-			"service":      payload.Service,
-			"method":       payload.Method,
-			"argTypes":     payload.ArgTypes,
-			"args":         payload.Args,
-			"rpcTimeoutMs": payload.RPCTimeoutMS,
-		}, &resp, s.BuildVersion); err != nil {
-			return toolErr("invoke_method failed", err)
-		}
+	directResp, err := invoker.DirectRequest(req)
+	if err != nil {
+		return toolErr("invoke_method failed", err)
 	}
-	return toolOK("Invoke completed.", map[string]interface{}{"server": serverName, "service": service, "method": method, "engineResponse": resp})
+	resp := *directResp
+	return toolOK("Invoke completed.", map[string]interface{}{"server": serverName, "service": service, "method": method, "response": resp})
 }
 
 func (s *Server) resolveInvokeArguments(cfg appconfig.Config, serverName, service, method string, args map[string]interface{}, paramTypes []string) ([]interface{}, []string, error) {
@@ -810,17 +762,6 @@ func rpcParamType(typ string) string {
 	}
 }
 
-func normalizeMCPInvokeEngineMode(mode string) string {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case appconfig.EngineModeGo:
-		return appconfig.EngineModeGo
-	case appconfig.EngineModeAuto:
-		return appconfig.EngineModeAuto
-	default:
-		return appconfig.EngineModeJava
-	}
-}
-
 func eraseRPCGeneric(typ string) string {
 	base := strings.TrimSpace(typ)
 	base = strings.TrimPrefix(base, "final ")
@@ -837,44 +778,6 @@ func isPrimitiveRPCType(typ string) bool {
 	default:
 		return false
 	}
-}
-
-func callEngine(method string, params interface{}, out interface{}, buildVersion string) error {
-	cfg, err := launcher.DefaultConfig(buildVersion)
-	if err != nil {
-		return err
-	}
-	appCfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-	if appCfg.Engine.Port > 0 {
-		cfg.Port = appCfg.Engine.Port
-	}
-	if appCfg.Engine.StartTimeoutMS > 0 {
-		cfg.SpawnBudget = time.Duration(appCfg.Engine.StartTimeoutMS) * time.Millisecond
-	}
-	if idle, err := time.ParseDuration(appCfg.Engine.IdleTTL); err == nil && idle > 0 {
-		cfg.IdleTTLMS = idle.Milliseconds()
-	}
-	if appCfg.Engine.JavaHome != nil && *appCfg.Engine.JavaHome != "" {
-		cfg.JavaBin = filepath.Join(*appCfg.Engine.JavaHome, "bin", "java")
-	}
-	conn, err := launcher.Connect(cfg)
-	if err != nil {
-		return err
-	}
-	token, err := launcher.ReadToken(cfg.Paths.TokenFile)
-	if err != nil {
-		return err
-	}
-	client := engine.Client{
-		Addr:           conn.Client.Addr,
-		DialTimeout:    cfg.DialTimeout,
-		RequestTimeout: cfg.RequestTimeout,
-		Token:          token,
-	}
-	return client.CallAuthenticated(method, params, out)
 }
 
 func serverConfig(name string) (appconfig.Config, appconfig.Server, error) {
@@ -922,12 +825,6 @@ func toolErr(summary string, err error) toolResult {
 	data := map[string]interface{}{"ok": false, "message": summary}
 	if err != nil {
 		data["error"] = err.Error()
-		if diag, ok := launcher.AsDiagnostic(err); ok {
-			data["reason"] = diag.Reason
-			for k, v := range diag.Details {
-				data[k] = v
-			}
-		}
 		var cfgErr *appconfig.ConfigError
 		if errors.As(err, &cfgErr) {
 			data["code"] = cfgErr.Code
@@ -1045,20 +942,6 @@ func intArgDefault(args map[string]interface{}, key string, def int) int {
 	default:
 		return def
 	}
-}
-
-func statusSummary(running bool) string {
-	if running {
-		return "Engine appears to be running."
-	}
-	return "Engine is not running."
-}
-
-func errorString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
 
 func objectSchema(properties map[string]interface{}, required ...string) map[string]interface{} {

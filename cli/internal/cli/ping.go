@@ -11,9 +11,7 @@ func runPing(args []string, env Env) int {
 	fs := flag.NewFlagSet("ping", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
 	service := fs.String("service", "", "optional service hint for richer errors")
-	timeoutMS := fs.Int("timeout-ms", 0, "dial timeout (ms); 0 uses Engine default")
-	noSpawn := fs.Bool("no-spawn", false, "fail instead of spawning the Engine")
-	jar := fs.String("jar", "", "path to sofarpc-engine.jar (overrides autodiscovery)")
+	timeoutMS := fs.Int("timeout-ms", 0, "dial timeout (ms); 0 uses default")
 
 	rest, err := parseMixed(fs, args)
 	if err != nil {
@@ -40,9 +38,9 @@ func runPing(args []string, env Env) int {
 		return 1
 	}
 
-	resp, err := dispatch(req, execConfig(env, *noSpawn, *jar))
+	resp, err := dispatch(req)
 	if err != nil {
-		writeDispatchFailure(env.Stdout, req.RequestID, err)
+		writeLocalFailure(env.Stdout, req.RequestID, protocol.CodeInternalError, err.Error())
 		return 1
 	}
 	if err := writeResponse(env.Stdout, resp); err != nil {

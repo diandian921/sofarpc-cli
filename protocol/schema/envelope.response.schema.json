@@ -22,7 +22,6 @@
         "RPC_TIMEOUT",
         "INVOKE_FAILED",
         "ASSERTION_FAILED",
-        "DAEMON_UNAVAILABLE",
         "INTERNAL_ERROR"
       ]
     },

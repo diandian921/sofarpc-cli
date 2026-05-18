@@ -1,14 +1,9 @@
 # protocol
 
-Go client 与 Java daemon 之间的唯一契约。
+CLI exec/direct runtime 的 JSON envelope 契约。
 
 - `schema/` — JSON Schema（draft-07），定义请求/响应包裹与各 `op` 的 payload
-- `fixtures/` — golden fixtures，Go 与 Java 两边契约测试共用
-
-## 帧格式
-
-- 4 字节 big-endian 长度前缀
-- 后跟 UTF-8 编码 JSON 消息
+- `fixtures/` — golden fixtures，Go 契约测试使用
 
 ## 包裹层
 
@@ -19,12 +14,10 @@ Go client 与 Java daemon 之间的唯一契约。
 
 - `invoke` — 发起一次 SofaRPC GenericService 调用，可带断言
 - `ping` — 探测目标地址能否联通
-- `health` — daemon 自检
-- `shutdown` — 主动停机
 
 ## 错误码
 
-`SUCCESS` / `BAD_REQUEST` / `CONNECT_FAILED` / `RPC_TIMEOUT` / `INVOKE_FAILED` / `ASSERTION_FAILED` / `DAEMON_UNAVAILABLE` / `INTERNAL_ERROR`
+`SUCCESS` / `BAD_REQUEST` / `CONNECT_FAILED` / `RPC_TIMEOUT` / `INVOKE_FAILED` / `ASSERTION_FAILED` / `INTERNAL_ERROR`
 
 ## 目录约定
 

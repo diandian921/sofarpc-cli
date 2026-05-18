@@ -1,8 +1,0 @@
-{
-  "requestId": "req-exec-local-0001",
-  "ok": false,
-  "code": "DAEMON_UNAVAILABLE",
-  "error": {
-    "message": "daemon not available and --no-spawn was set"
-  }
-}

@@ -12,7 +12,7 @@
     },
     "op": {
       "type": "string",
-      "enum": ["invoke", "ping", "health", "shutdown"]
+      "enum": ["invoke", "ping"]
     },
     "meta": {
       "type": "object",

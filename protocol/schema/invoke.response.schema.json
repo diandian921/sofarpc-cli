@@ -11,7 +11,7 @@
     "elapsedMs": {
       "type": "integer",
       "minimum": 0,
-      "description": "Wall-clock time daemon spent on the RPC call itself (excludes framing)."
+      "description": "Wall-clock time spent on the direct RPC call itself."
     },
     "assertions": {
       "type": "array",

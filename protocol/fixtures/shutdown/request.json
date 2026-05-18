@@ -1,8 +1,0 @@
-{
-  "requestId": "req-shutdown-0001",
-  "op": "shutdown",
-  "meta": {},
-  "payload": {
-    "graceMs": 500
-  }
-}

@@ -1,8 +1,7 @@
 // Package alias implements a small local registry that maps short names
 // (e.g. "user-test") to RPC endpoints (e.g. "10.74.194.40:12200"). The
 // registry lives at ~/.sofarpc/servers.json and is read/written by the
-// Go client only; the daemon never sees aliases — addresses are resolved
-// client-side before any envelope is sent over the wire.
+// Go client only; addresses are resolved client-side before invocation.
 package alias
 
 import (
@@ -32,7 +31,7 @@ type Registry struct {
 var aliasPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
 // hostPortPattern is the minimal shape we treat as a literal address.
-// It is intentionally lax — the daemon validates for real.
+// It is intentionally lax; the direct runtime validates the final request.
 var hostPortPattern = regexp.MustCompile(`^[^\s]+:\d+$`)
 
 // DefaultPath returns ~/.sofarpc/servers.json.

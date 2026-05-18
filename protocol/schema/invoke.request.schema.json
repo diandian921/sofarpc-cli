@@ -52,7 +52,7 @@
     "rpcTimeoutMs": {
       "type": "integer",
       "minimum": 1,
-      "description": "Per-call timeout. daemon enforces."
+      "description": "Per-call timeout in milliseconds."
     }
   },
   "additionalProperties": false

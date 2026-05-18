@@ -3,43 +3,34 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
-	"path/filepath"
 	"strconv"
 	"testing"
 
 	"github.com/sofarpc/cli/internal/protocol"
 )
 
-// Each of these tests reuses the fake-daemon + tempHome scaffolding from exec_test.go to
-// verify that the flag-driven subcommands build the right envelope and interpret the reply.
-
-func TestInvokeSubcommandSendsEnvelope(t *testing.T) {
-	dir, cleanup := tempHome(t)
+func TestInvokeSubcommandReturnsDirectFailureEnvelope(t *testing.T) {
+	_, cleanup := tempHome(t)
 	defer cleanup()
-
-	srv, port := startFakeDaemon(t)
-	defer srv.Close()
-	writeState(t, filepath.Join(dir, "state", "engine.json"), port)
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
 	code := runInvoke([]string{
-		"--address", "127.0.0.1:12200",
+		"--address", "127.0.0.1:1",
 		"--service", "com.example.UserService",
 		"--method", "getUser",
 		"--arg-types", "java.lang.String",
 		"--args-json", `["u001"]`,
-		"--no-spawn",
 	}, Env{BuildVersion: "test", Stdout: stdout, Stderr: stderr})
 
-	if code != 0 {
-		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	if code == 0 {
+		t.Fatalf("expected non-zero exit; stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
 	var resp protocol.Response
 	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &resp); err != nil {
 		t.Fatalf("decode: %v, out=%s", err, stdout.String())
 	}
-	if !resp.OK || resp.Code != protocol.CodeSuccess {
+	if resp.OK || resp.Code != protocol.CodeConnectFailed {
 		t.Fatalf("bad resp: %+v", resp)
 	}
 }
@@ -86,16 +77,14 @@ func TestBuildInvokePayloadPreservesLargeJSONNumbers(t *testing.T) {
 }
 
 func TestPingSubcommandSendsEnvelope(t *testing.T) {
-	dir, cleanup := tempHome(t)
+	_, cleanup := tempHome(t)
 	defer cleanup()
-
-	srv, port := startFakeDaemon(t)
-	defer srv.Close()
-	writeState(t, filepath.Join(dir, "state", "engine.json"), port)
+	ln := startTCPListener(t)
+	defer ln.Close()
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	code := runPing([]string{"127.0.0.1:9999", "--no-spawn"},
+	code := runPing([]string{ln.Addr().String()},
 		Env{BuildVersion: "test", Stdout: stdout, Stderr: stderr})
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
@@ -110,16 +99,14 @@ func TestPingSubcommandSendsEnvelope(t *testing.T) {
 }
 
 func TestPingAcceptsFlagsAfterPositional(t *testing.T) {
-	dir, cleanup := tempHome(t)
+	_, cleanup := tempHome(t)
 	defer cleanup()
-
-	srv, port := startFakeDaemon(t)
-	defer srv.Close()
-	writeState(t, filepath.Join(dir, "state", "engine.json"), port)
+	ln := startTCPListener(t)
+	defer ln.Close()
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
-	code := runPing([]string{"127.0.0.1:9999", "--service", "com.x.Foo", "--no-spawn"},
+	code := runPing([]string{ln.Addr().String(), "--service", "com.x.Foo"},
 		Env{BuildVersion: "test", Stdout: stdout, Stderr: stderr})
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
@@ -132,7 +119,7 @@ func TestServerAddAcceptsFlagAfterPositionals(t *testing.T) {
 
 	projectOut := &bytes.Buffer{}
 	projectErr := &bytes.Buffer{}
-	projectCode := runProject([]string{"add", "user", filepath.Dir(dir), "--prefix", "com.example"},
+	projectCode := runProject([]string{"add", "user", dir, "--prefix", "com.example"},
 		Env{BuildVersion: "test", Stdout: projectOut, Stderr: projectErr})
 	if projectCode != 0 {
 		t.Fatalf("project add exit = %d; stderr=%s", projectCode, projectErr.String())
@@ -151,50 +138,5 @@ func TestServerAddAcceptsFlagAfterPositionals(t *testing.T) {
 	}
 	if out["name"] != "user-test" {
 		t.Fatalf("unexpected output: %+v", out)
-	}
-}
-
-func TestDaemonStatusWhenNoState(t *testing.T) {
-	_, cleanup := tempHome(t)
-	defer cleanup()
-
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	code := runDaemon([]string{"status"}, Env{BuildVersion: "test", Stdout: stdout, Stderr: stderr})
-	if code != 0 {
-		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
-	}
-	var result map[string]interface{}
-	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &result); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if running, _ := result["running"].(bool); running {
-		t.Fatalf("expected running=false, got %v", result)
-	}
-}
-
-func TestDaemonStatusReportsRunning(t *testing.T) {
-	dir, cleanup := tempHome(t)
-	defer cleanup()
-
-	srv, port := startFakeDaemon(t)
-	defer srv.Close()
-	writeState(t, filepath.Join(dir, "state", "engine.json"), port)
-
-	stdout := &bytes.Buffer{}
-	stderr := &bytes.Buffer{}
-	code := runDaemon([]string{"status"}, Env{BuildVersion: "test", Stdout: stdout, Stderr: stderr})
-	if code != 0 {
-		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
-	}
-	var result map[string]interface{}
-	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &result); err != nil {
-		t.Fatalf("decode: %v, out=%s", err, stdout.String())
-	}
-	if ok, _ := result["ok"].(bool); !ok {
-		t.Fatalf("expected ok=true, got %+v", result)
-	}
-	if running, _ := result["running"].(bool); !running {
-		t.Fatalf("expected running=true, got %+v", result)
 	}
 }

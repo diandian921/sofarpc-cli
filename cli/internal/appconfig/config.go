@@ -1,5 +1,5 @@
 // Package appconfig owns ~/.sofarpc/config.json, the MCP-first user-editable
-// project/server/engine configuration contract.
+// project/server configuration contract.
 package appconfig
 
 import (
@@ -16,18 +16,10 @@ import (
 )
 
 const (
-	EngineModeJava              = "java"
-	EngineModeGo                = "go"
-	EngineModeAuto              = "auto"
-	DefaultHost                 = "127.0.0.1"
-	DefaultPort                 = 37651
-	DefaultIdleTTL              = "30m"
-	DefaultStartTimeoutMS       = 20000
-	DefaultMaxConcurrentInvokes = 8
-	DefaultServerProtocol       = "bolt"
-	DefaultServerTimeoutMS      = 5000
-	DefaultServerAppName        = "sofarpc-agent"
-	CodeConfigInvalid           = "CONFIG_INVALID"
+	DefaultServerProtocol  = "bolt"
+	DefaultServerTimeoutMS = 5000
+	DefaultServerAppName   = "sofarpc-agent"
+	CodeConfigInvalid      = "CONFIG_INVALID"
 )
 
 var (
@@ -38,7 +30,6 @@ var (
 type Config struct {
 	Projects map[string]Project `json:"projects"`
 	Servers  map[string]Server  `json:"servers"`
-	Engine   Engine             `json:"engine"`
 }
 
 type Project struct {
@@ -53,16 +44,6 @@ type Server struct {
 	TimeoutMS   int               `json:"timeoutMs"`
 	AppName     string            `json:"appName"`
 	Attachments map[string]string `json:"attachments"`
-}
-
-type Engine struct {
-	Mode                 string  `json:"mode"`
-	Host                 string  `json:"host"`
-	Port                 int     `json:"port"`
-	JavaHome             *string `json:"javaHome"`
-	IdleTTL              string  `json:"idleTTL"`
-	StartTimeoutMS       int     `json:"startTimeoutMs"`
-	MaxConcurrentInvokes int     `json:"maxConcurrentInvokes"`
 }
 
 type ConfigError struct {
@@ -105,14 +86,6 @@ func DefaultConfig() Config {
 	return Config{
 		Projects: map[string]Project{},
 		Servers:  map[string]Server{},
-		Engine: Engine{
-			Mode:                 EngineModeJava,
-			Host:                 DefaultHost,
-			Port:                 DefaultPort,
-			IdleTTL:              DefaultIdleTTL,
-			StartTimeoutMS:       DefaultStartTimeoutMS,
-			MaxConcurrentInvokes: DefaultMaxConcurrentInvokes,
-		},
 	}
 }
 
@@ -127,10 +100,21 @@ func Load(path string) (Config, error) {
 	}
 	defer f.Close()
 
+	var disk struct {
+		Projects         map[string]Project `json:"projects"`
+		Servers          map[string]Server  `json:"servers"`
+		DeprecatedEngine json.RawMessage    `json:"engine,omitempty"`
+	}
 	dec := json.NewDecoder(f)
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
+	if err := dec.Decode(&disk); err != nil && !errors.Is(err, io.EOF) {
 		return cfg, &ConfigError{Code: CodeConfigInvalid, Path: path, Err: err}
+	}
+	if disk.Projects != nil {
+		cfg.Projects = disk.Projects
+	}
+	if disk.Servers != nil {
+		cfg.Servers = disk.Servers
 	}
 	applyDefaults(&cfg)
 	return cfg, nil
@@ -346,24 +330,6 @@ func applyDefaults(c *Config) {
 	}
 	if c.Servers == nil {
 		c.Servers = map[string]Server{}
-	}
-	if c.Engine.Host == "" {
-		c.Engine.Host = DefaultHost
-	}
-	if c.Engine.Mode == "" {
-		c.Engine.Mode = EngineModeJava
-	}
-	if c.Engine.Port == 0 {
-		c.Engine.Port = DefaultPort
-	}
-	if c.Engine.IdleTTL == "" {
-		c.Engine.IdleTTL = DefaultIdleTTL
-	}
-	if c.Engine.StartTimeoutMS == 0 {
-		c.Engine.StartTimeoutMS = DefaultStartTimeoutMS
-	}
-	if c.Engine.MaxConcurrentInvokes == 0 {
-		c.Engine.MaxConcurrentInvokes = DefaultMaxConcurrentInvokes
 	}
 	for name, server := range c.Servers {
 		if server.Protocol == "" {
