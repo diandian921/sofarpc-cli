@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestDiscoverSourceRoots(t *testing.T) {
@@ -141,6 +142,38 @@ public interface UserService {
 	}
 }
 
+func TestSourceFingerprintUsesFileContent(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src", "main", "java", "com", "example")
+	mkdir(t, src)
+	path := filepath.Join(src, "UserService.java")
+	first := "package com.example; public interface UserService { String a(); }"
+	second := "package com.example; public interface UserService { String b(); }"
+	if len(first) != len(second) {
+		t.Fatalf("test setup requires same-size Java files")
+	}
+	write(t, path, first)
+	ts := time.Unix(1700000000, 0)
+	if err := os.Chtimes(path, ts, ts); err != nil {
+		t.Fatalf("chtimes first: %v", err)
+	}
+	before, err := SourceFingerprint(root)
+	if err != nil {
+		t.Fatalf("SourceFingerprint first: %v", err)
+	}
+	write(t, path, second)
+	if err := os.Chtimes(path, ts, ts); err != nil {
+		t.Fatalf("chtimes second: %v", err)
+	}
+	after, err := SourceFingerprint(root)
+	if err != nil {
+		t.Fatalf("SourceFingerprint second: %v", err)
+	}
+	if before == after {
+		t.Fatalf("fingerprint did not change for same-size same-mtime content edit")
+	}
+}
+
 func TestLoadOrBuildIndexPreservesMethodImports(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -200,6 +233,60 @@ public class UserServiceImpl {
 	}
 	if len(idx.Methods) != 0 {
 		t.Fatalf("class methods should not be service candidates: %#v", idx.Methods)
+	}
+}
+
+func TestAnnotationInterfaceIsNotServiceCandidate(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src", "main", "java", "com", "example")
+	mkdir(t, src)
+	write(t, filepath.Join(src, "Marker.java"), `
+package com.example;
+public @interface Marker {
+    String value();
+}
+`)
+
+	idx, err := BuildIndex(Project{Name: "user", WorkspaceRoot: root, ServicePrefixes: []string{"com.example."}})
+	if err != nil {
+		t.Fatalf("BuildIndex: %v", err)
+	}
+	if len(idx.Methods) != 0 {
+		t.Fatalf("@interface should not be parsed as service methods: %#v", idx.Methods)
+	}
+}
+
+func TestNestedInterfaceCanBeServiceCandidate(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src", "main", "java", "com", "example")
+	mkdir(t, src)
+	write(t, filepath.Join(src, "Facades.java"), `
+package com.example;
+public class Facades {
+    public interface UserService {
+        String getUser(String userId);
+    }
+}
+`)
+
+	idx, err := BuildIndex(Project{Name: "user", WorkspaceRoot: root, ServicePrefixes: []string{"com.example."}})
+	if err != nil {
+		t.Fatalf("BuildIndex: %v", err)
+	}
+	if len(idx.Methods) != 1 {
+		t.Fatalf("methods = %#v", idx.Methods)
+	}
+	if got := idx.Methods[0].Service; got != "com.example.UserService" {
+		t.Fatalf("service = %q", got)
+	}
+}
+
+func TestShouldIgnoreDirOnlyChecksSinglePathSegment(t *testing.T) {
+	if shouldIgnoreDir("src/test/java") {
+		t.Fatalf("shouldIgnoreDir should not pretend to match multi-segment paths")
+	}
+	if !shouldIgnoreDir("target") {
+		t.Fatalf("target should be ignored")
 	}
 }
 

@@ -3,12 +3,13 @@ package mcp
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sofarpc/cli/internal/appconfig"
@@ -61,6 +62,10 @@ type tool struct {
 	InputSchema map[string]interface{} `json:"inputSchema"`
 }
 
+const maxJSONRPCLineBytes = 128 << 20
+
+var errJSONRPCLineTooLong = errors.New("json-rpc frame exceeds maximum line size")
+
 func (s *Server) Run() int {
 	_ = schema.CleanupUnused(7 * 24 * time.Hour)
 	in := s.Stdin
@@ -75,36 +80,178 @@ func (s *Server) Run() int {
 	if stderr == nil {
 		stderr = io.Discard
 	}
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
+	reader := bufio.NewReaderSize(in, 64*1024)
+	var outMu sync.Mutex
+	var wg sync.WaitGroup
+	running := map[string]context.CancelFunc{}
+	var runningMu sync.Mutex
+	writeLocked := func(resp response) {
+		outMu.Lock()
+		defer outMu.Unlock()
+		_ = write(out, resp)
+	}
+	cancelRequest := func(params json.RawMessage) {
+		var payload struct {
+			RequestID json.RawMessage `json:"requestId"`
+		}
+		if err := decodeJSON(params, &payload); err != nil || len(payload.RequestID) == 0 {
+			return
+		}
+		key := requestIDKey(payload.RequestID)
+		runningMu.Lock()
+		cancel := running[key]
+		runningMu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+	}
+	for {
+		line, err := readLineLimited(reader, maxJSONRPCLineBytes)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				wg.Wait()
+				return 0
+			}
+			if errors.Is(err, errJSONRPCLineTooLong) {
+				writeLocked(response{JSONRPC: "2.0", Error: &rpcError{Code: -32700, Message: err.Error()}})
+				continue
+			}
+			fmt.Fprintln(stderr, "mcp:", err)
+			wg.Wait()
+			return 1
+		}
+		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
 			continue
 		}
 		var req request
 		if err := decodeJSON(line, &req); err != nil {
-			_ = write(out, response{JSONRPC: "2.0", Error: &rpcError{Code: -32700, Message: err.Error()}})
+			writeLocked(response{JSONRPC: "2.0", Error: &rpcError{Code: -32700, Message: err.Error()}})
 			continue
 		}
-		resp, shouldReply := s.handle(req)
-		if shouldReply {
-			_ = write(out, resp)
+		if req.Method == "notifications/cancelled" {
+			cancelRequest(req.Params)
+			continue
 		}
+		run := func(ctx context.Context) {
+			resp, shouldReply := handleWithRecover(req, func() (response, bool) {
+				return s.handle(ctx, req)
+			})
+			if shouldReply && !req.isNotification() {
+				writeLocked(resp)
+			}
+		}
+		if shouldRunAsync(req) {
+			ctx, cancel := context.WithCancel(context.Background())
+			key := requestIDKey(req.ID)
+			if key != "" {
+				runningMu.Lock()
+				running[key] = cancel
+				runningMu.Unlock()
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer cancel()
+				defer func() {
+					if key != "" {
+						runningMu.Lock()
+						delete(running, key)
+						runningMu.Unlock()
+					}
+				}()
+				run(ctx)
+			}()
+			continue
+		}
+		run(context.Background())
 	}
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintln(stderr, "mcp:", err)
-		return 1
-	}
-	return 0
 }
 
-func (s *Server) handle(req request) (response, bool) {
+func (r request) isNotification() bool {
+	return len(r.ID) == 0
+}
+
+func readLineLimited(r *bufio.Reader, maxBytes int) ([]byte, error) {
+	var out []byte
+	tooLong := false
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if !tooLong {
+			if len(out)+len(chunk) > maxBytes {
+				tooLong = true
+				out = nil
+			} else {
+				out = append(out, chunk...)
+			}
+		}
+		switch {
+		case err == nil:
+			if tooLong {
+				return nil, errJSONRPCLineTooLong
+			}
+			return out, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF):
+			if tooLong {
+				return nil, errJSONRPCLineTooLong
+			}
+			if len(out) > 0 {
+				return out, nil
+			}
+			return nil, io.EOF
+		default:
+			return nil, err
+		}
+	}
+}
+
+func requestIDKey(id json.RawMessage) string {
+	id = bytes.TrimSpace(id)
+	if len(id) == 0 {
+		return ""
+	}
+	return string(id)
+}
+
+func shouldRunAsync(req request) bool {
+	if req.isNotification() || req.Method != "tools/call" {
+		return false
+	}
+	var params struct {
+		Name      string                 `json:"name"`
+		Arguments map[string]interface{} `json:"arguments"`
+	}
+	if err := decodeJSON(req.Params, &params); err != nil {
+		return false
+	}
+	switch params.Name {
+	case "sofarpc_invoke":
+		return !boolArg(params.Arguments, "dryRun")
+	case "sofarpc_probe":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) handle(ctx context.Context, req request) (response, bool) {
 	base := response{JSONRPC: "2.0", ID: req.ID}
 	switch req.Method {
 	case "initialize":
+		protocolVersion := "2024-11-05"
+		var params struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		if len(req.Params) > 0 {
+			_ = decodeJSON(req.Params, &params)
+			if strings.TrimSpace(params.ProtocolVersion) != "" {
+				protocolVersion = strings.TrimSpace(params.ProtocolVersion)
+			}
+		}
 		base.Result = map[string]interface{}{
-			"protocolVersion": "2024-11-05",
+			"protocolVersion": protocolVersion,
 			"capabilities": map[string]interface{}{
 				"tools": map[string]interface{}{},
 			},
@@ -120,7 +267,7 @@ func (s *Server) handle(req request) (response, bool) {
 		base.Result = map[string]interface{}{"tools": s.tools()}
 		return base, true
 	case "tools/call":
-		result := s.handleToolCall(req.Params)
+		result := s.handleToolCall(ctx, req.Params)
 		base.Result = result
 		return base, true
 	default:
@@ -178,6 +325,7 @@ func (s *Server) tools() []tool {
 			"arguments":        freeObjectSchema("Named arguments keyed by Java parameter name, or a single DTO object when the method has one parameter."),
 			"timeoutMs":        numberSchema("Optional total timeout in milliseconds."),
 			"dryRun":           boolSchema("When true, return the resolved plan without sending a SofaRPC request."),
+			"rawResult":        boolSchema("When true, include the decoded Java object shape alongside the flattened result."),
 		}, "service", "method")},
 		{Name: "sofarpc_doctor", Description: "Run structured diagnostics for config, project source schema, and invocation prerequisites.", InputSchema: objectSchema(map[string]interface{}{
 			"project": stringSchema("Optional project name."),
@@ -188,7 +336,7 @@ func (s *Server) tools() []tool {
 	}
 }
 
-func (s *Server) handleToolCall(raw json.RawMessage) toolResult {
+func (s *Server) handleToolCall(ctx context.Context, raw json.RawMessage) toolResult {
 	var params struct {
 		Name      string                 `json:"name"`
 		Arguments map[string]interface{} `json:"arguments"`
@@ -205,11 +353,11 @@ func (s *Server) handleToolCall(raw json.RawMessage) toolResult {
 	case "sofarpc_resolve":
 		return s.resolve(params.Arguments)
 	case "sofarpc_probe":
-		return s.probe(params.Arguments)
+		return s.probe(ctx, params.Arguments)
 	case "sofarpc_describe":
 		return s.describe(params.Arguments)
 	case "sofarpc_invoke":
-		return s.invoke(params.Arguments)
+		return s.invoke(ctx, params.Arguments)
 	case "sofarpc_doctor":
 		return s.doctor(params.Arguments)
 	default:
@@ -308,7 +456,7 @@ func (s *Server) resolve(args map[string]interface{}) toolResult {
 	})
 }
 
-func (s *Server) probe(args map[string]interface{}) toolResult {
+func (s *Server) probe(ctx context.Context, args map[string]interface{}) toolResult {
 	address, err := stringArg(args, "address", false)
 	if err != nil {
 		return toolErr("bad arguments", err)
@@ -343,15 +491,9 @@ func (s *Server) probe(args map[string]interface{}) toolResult {
 		Service:      service,
 		RPCTimeoutMS: timeoutMS,
 	}
-	req, err := protocol.NewRequest(protocol.OpPing, payload)
-	if err != nil {
-		return toolErr("sofarpc_probe failed", err)
-	}
-	directResp, err := invoker.DirectRequest(req)
-	if err != nil {
-		return toolErr("sofarpc_probe failed", err)
-	}
-	resp := *directResp
+	requestID := protocol.NewRequestID(protocol.OpPing)
+	resp := invoker.PingPayloadContext(ctx, payload)
+	resp.RequestID = requestID
 	return toolOK("Probe completed. Success only means the TCP transport path was reachable; it does not prove the remote interface or method exists.", map[string]interface{}{
 		"server":    serverName,
 		"project":   projectName,
@@ -418,7 +560,7 @@ func (s *Server) describe(args map[string]interface{}) toolResult {
 	return toolOK(strings.Join(summary, "; ")+".", data)
 }
 
-func (s *Server) invoke(args map[string]interface{}) toolResult {
+func (s *Server) invoke(ctx context.Context, args map[string]interface{}) toolResult {
 	service, err := stringArg(args, "service", true)
 	if err != nil {
 		return toolErr("bad arguments", err)
@@ -460,13 +602,11 @@ func (s *Server) invoke(args map[string]interface{}) toolResult {
 		ArgTypes:     paramTypes,
 		Args:         ordered,
 		RPCTimeoutMS: timeoutMS,
+		RawResult:    boolArg(args, "rawResult"),
 	}
-	req, err := protocol.NewRequest(protocol.OpInvoke, payload)
-	if err != nil {
-		return toolErr("sofarpc_invoke failed", err)
-	}
+	requestID := protocol.NewRequestID(protocol.OpInvoke)
 	plan := map[string]interface{}{
-		"requestId":        req.RequestID,
+		"requestId":        requestID,
 		"server":           serverName,
 		"project":          server.Project,
 		"endpoint":         endpointData(server, timeoutMS),
@@ -479,11 +619,8 @@ func (s *Server) invoke(args map[string]interface{}) toolResult {
 	if boolArg(args, "dryRun") {
 		return toolOK("Invoke dry run completed.", map[string]interface{}{"dryRun": true, "plan": plan})
 	}
-	directResp, err := invoker.DirectRequest(req)
-	if err != nil {
-		return toolErr("sofarpc_invoke failed", err)
-	}
-	resp := *directResp
+	resp := invoker.DirectPayloadContext(ctx, payload)
+	resp.RequestID = requestID
 	return toolOK("Invoke completed.", map[string]interface{}{"plan": plan, "response": resp})
 }
 
@@ -686,15 +823,31 @@ func (s *Server) resolveInvokeArguments(cfg appconfig.Config, serverName, servic
 		if !ok {
 			return nil, nil, fmt.Errorf("orderedArguments/args must be an array")
 		}
+		var methodSchema schema.Method
+		var desc schema.Description
+		hasSchema := false
 		if len(paramTypes) == 0 {
-			resolvedTypes, err := s.resolveParamTypes(cfg, serverName, service, method, len(ordered), nil)
+			resolved, resolvedDesc, err := s.resolveMethodDescription(cfg, serverName, service, method, nil)
 			if err != nil {
 				return nil, nil, err
 			}
-			paramTypes = resolvedTypes
+			if len(resolved.Parameters) != len(ordered) {
+				return nil, nil, fmt.Errorf("resolved method has %d parameters, got %d arguments", len(resolved.Parameters), len(ordered))
+			}
+			methodSchema = resolved
+			desc = resolvedDesc
+			hasSchema = true
+			paramTypes = rpcParamTypesForMethod(methodSchema)
+		} else if resolved, resolvedDesc, err := s.resolveMethodDescription(cfg, serverName, service, method, paramTypes); err == nil {
+			methodSchema = resolved
+			desc = resolvedDesc
+			hasSchema = true
 		}
 		if len(paramTypes) != len(ordered) {
 			return nil, nil, fmt.Errorf("paramTypes length (%d) does not match orderedArguments length (%d)", len(paramTypes), len(ordered))
+		}
+		if hasSchema && len(methodSchema.Parameters) == len(ordered) {
+			ordered = annotateArgumentsForMethod(ordered, methodSchema, desc)
 		}
 		return ordered, paramTypes, nil
 	}
@@ -702,14 +855,14 @@ func (s *Server) resolveInvokeArguments(cfg appconfig.Config, serverName, servic
 	if !ok {
 		return nil, nil, fmt.Errorf("either orderedArguments or arguments is required")
 	}
-	methodSchema, err := s.resolveMethodSchema(cfg, serverName, service, method, paramTypes)
+	methodSchema, desc, err := s.resolveMethodDescription(cfg, serverName, service, method, paramTypes)
 	if err != nil {
 		return nil, nil, err
 	}
 	if len(methodSchema.Parameters) == 1 {
 		param := methodSchema.Parameters[0]
 		if _, ok := named[param.Name]; !ok {
-			return []interface{}{named}, []string{rpcParamTypeForMethod(param.Type, methodSchema)}, nil
+			return []interface{}{annotateArgumentForParam(named, param.Type, methodSchema, desc)}, []string{rpcParamTypeForMethod(param.Type, methodSchema)}, nil
 		}
 	}
 	ordered := make([]interface{}, 0, len(methodSchema.Parameters))
@@ -719,31 +872,16 @@ func (s *Server) resolveInvokeArguments(cfg appconfig.Config, serverName, servic
 		if !ok {
 			return nil, nil, fmt.Errorf("missing argument %q", param.Name)
 		}
-		ordered = append(ordered, value)
+		ordered = append(ordered, annotateArgumentForParam(value, param.Type, methodSchema, desc))
 		resolvedTypes = append(resolvedTypes, rpcParamTypeForMethod(param.Type, methodSchema))
 	}
 	return ordered, resolvedTypes, nil
 }
 
-func (s *Server) resolveParamTypes(cfg appconfig.Config, serverName, service, method string, count int, paramTypes []string) ([]string, error) {
-	methodSchema, err := s.resolveMethodSchema(cfg, serverName, service, method, paramTypes)
-	if err != nil {
-		return nil, err
-	}
-	if len(methodSchema.Parameters) != count {
-		return nil, fmt.Errorf("resolved method has %d parameters, got %d arguments", len(methodSchema.Parameters), count)
-	}
-	out := make([]string, 0, len(methodSchema.Parameters))
-	for _, param := range methodSchema.Parameters {
-		out = append(out, rpcParamTypeForMethod(param.Type, methodSchema))
-	}
-	return out, nil
-}
-
-func (s *Server) resolveMethodSchema(cfg appconfig.Config, serverName, service, method string, paramTypes []string) (schema.Method, error) {
+func (s *Server) resolveMethodDescription(cfg appconfig.Config, serverName, service, method string, paramTypes []string) (schema.Method, schema.Description, error) {
 	projectName, project, err := s.resolveProject(cfg, nilSafeArgs(nil), serverName)
 	if err != nil {
-		return schema.Method{}, err
+		return schema.Method{}, schema.Description{}, err
 	}
 	idx, err := schema.LoadOrBuildIndex(schema.Project{
 		Name:            projectName,
@@ -751,11 +889,11 @@ func (s *Server) resolveMethodSchema(cfg appconfig.Config, serverName, service, 
 		ServicePrefixes: project.ServicePrefixes,
 	})
 	if err != nil {
-		return schema.Method{}, err
+		return schema.Method{}, schema.Description{}, err
 	}
 	desc, err := schema.Describe(idx, service, method)
 	if err != nil {
-		return schema.Method{}, err
+		return schema.Method{}, schema.Description{}, err
 	}
 	var matches []schema.Method
 	for _, candidate := range desc.Methods {
@@ -765,12 +903,12 @@ func (s *Server) resolveMethodSchema(cfg appconfig.Config, serverName, service, 
 		matches = append(matches, candidate)
 	}
 	if len(matches) == 0 {
-		return schema.Method{}, fmt.Errorf("method %s.%s not found for supplied paramTypes", service, method)
+		return schema.Method{}, schema.Description{}, fmt.Errorf("method %s.%s not found for supplied paramTypes", service, method)
 	}
 	if len(matches) > 1 {
-		return schema.Method{}, fmt.Errorf("method %s.%s is overloaded; provide paramTypes", service, method)
+		return schema.Method{}, schema.Description{}, fmt.Errorf("method %s.%s is overloaded; provide paramTypes. Candidates: %s", service, method, methodSignatures(matches))
 	}
-	return matches[0], nil
+	return matches[0], desc, nil
 }
 
 func (s *Server) resolveProject(cfg appconfig.Config, args map[string]interface{}, serverName string) (string, appconfig.Project, error) {
@@ -905,292 +1043,4 @@ func publicDescription(desc schema.Description) schema.Description {
 		desc.Types = types
 	}
 	return desc
-}
-
-func sameParamTypes(method schema.Method, types []string) bool {
-	if len(method.Parameters) != len(types) {
-		return false
-	}
-	for i := range method.Parameters {
-		if rpcParamTypeForMethod(method.Parameters[i].Type, method) != rpcParamTypeForMethod(types[i], method) {
-			return false
-		}
-	}
-	return true
-}
-
-func rpcParamTypeForMethod(typ string, method schema.Method) string {
-	base := eraseRPCGeneric(typ)
-	if base == "" {
-		return typ
-	}
-	mapped := rpcParamType(base)
-	if mapped != base || strings.Contains(mapped, ".") || isPrimitiveRPCType(mapped) {
-		return mapped
-	}
-	if imported, ok := method.Imports[base]; ok {
-		return imported
-	}
-	if method.Package != "" {
-		return method.Package + "." + base
-	}
-	return base
-}
-
-func rpcParamType(typ string) string {
-	switch typ {
-	case "String":
-		return "java.lang.String"
-	case "Integer":
-		return "java.lang.Integer"
-	case "Long":
-		return "java.lang.Long"
-	case "Boolean":
-		return "java.lang.Boolean"
-	case "Double":
-		return "java.lang.Double"
-	case "Float":
-		return "java.lang.Float"
-	case "Short":
-		return "java.lang.Short"
-	case "Byte":
-		return "java.lang.Byte"
-	case "Character":
-		return "java.lang.Character"
-	case "BigDecimal":
-		return "java.math.BigDecimal"
-	case "Date":
-		return "java.util.Date"
-	case "List":
-		return "java.util.List"
-	case "Map":
-		return "java.util.Map"
-	case "Set":
-		return "java.util.Set"
-	default:
-		return typ
-	}
-}
-
-func eraseRPCGeneric(typ string) string {
-	base := strings.TrimSpace(typ)
-	base = strings.TrimPrefix(base, "final ")
-	if idx := strings.Index(base, "<"); idx >= 0 {
-		base = strings.TrimSpace(base[:idx])
-	}
-	return strings.TrimSuffix(base, "[]")
-}
-
-func isPrimitiveRPCType(typ string) bool {
-	switch typ {
-	case "boolean", "byte", "char", "short", "int", "long", "float", "double", "void":
-		return true
-	default:
-		return false
-	}
-}
-
-func loadConfig() (appconfig.Config, error) {
-	path, err := appconfig.DefaultPath()
-	if err != nil {
-		return appconfig.Config{}, err
-	}
-	return appconfig.Load(path)
-}
-
-func configPaths() (string, string, error) {
-	path, err := appconfig.DefaultPath()
-	if err != nil {
-		return "", "", err
-	}
-	lock, err := appconfig.DefaultLockPath()
-	if err != nil {
-		return "", "", err
-	}
-	return path, lock, nil
-}
-
-func mutateOnly(path, lock string, mutate func(*appconfig.Config) error) error {
-	_, err := appconfig.Update(path, lock, mutate)
-	return err
-}
-
-func toolOK(summary string, data interface{}) toolResult {
-	return toolResult{Content: []content{{Type: "text", Text: summary}}, StructuredContent: data}
-}
-
-func toolErr(summary string, err error) toolResult {
-	data := map[string]interface{}{"ok": false, "message": summary}
-	if err != nil {
-		data["error"] = err.Error()
-		var cfgErr *appconfig.ConfigError
-		if errors.As(err, &cfgErr) {
-			data["code"] = cfgErr.Code
-			data["configPath"] = cfgErr.Path
-		}
-	}
-	return toolResult{Content: []content{{Type: "text", Text: summary}}, StructuredContent: data, IsError: true}
-}
-
-func write(w io.Writer, resp response) error {
-	body, err := json.Marshal(resp)
-	if err != nil {
-		return err
-	}
-	body = append(body, '\n')
-	_, err = w.Write(body)
-	return err
-}
-
-func decodeJSON(raw []byte, out interface{}) error {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	return dec.Decode(out)
-}
-
-func stringArg(args map[string]interface{}, key string, required bool) (string, error) {
-	v, ok := args[key]
-	if !ok || v == nil {
-		if required {
-			return "", fmt.Errorf("%s is required", key)
-		}
-		return "", nil
-	}
-	s, ok := v.(string)
-	if !ok || s == "" {
-		return "", fmt.Errorf("%s must be a non-empty string", key)
-	}
-	return s, nil
-}
-
-func stringArgDefault(args map[string]interface{}, key, def string) string {
-	s, err := stringArg(args, key, false)
-	if err != nil || s == "" {
-		return def
-	}
-	return s
-}
-
-func stringSliceArg(args map[string]interface{}, key string) ([]string, error) {
-	v, ok := args[key]
-	if !ok || v == nil {
-		return nil, nil
-	}
-	arr, ok := v.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("%s must be an array of strings", key)
-	}
-	out := make([]string, 0, len(arr))
-	for i, item := range arr {
-		s, ok := item.(string)
-		if !ok {
-			return nil, fmt.Errorf("%s[%d] must be a string", key, i)
-		}
-		out = append(out, s)
-	}
-	return out, nil
-}
-
-func stringMapArg(args map[string]interface{}, key string) (map[string]string, error) {
-	v, ok := args[key]
-	if !ok || v == nil {
-		return map[string]string{}, nil
-	}
-	raw, ok := v.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("%s must be an object", key)
-	}
-	out := map[string]string{}
-	for k, val := range raw {
-		s, ok := val.(string)
-		if !ok {
-			return nil, fmt.Errorf("%s.%s must be a string", key, k)
-		}
-		out[k] = s
-	}
-	return out, nil
-}
-
-func boolArg(args map[string]interface{}, key string) bool {
-	v, ok := args[key]
-	if !ok {
-		return false
-	}
-	b, _ := v.(bool)
-	return b
-}
-
-func intArgDefault(args map[string]interface{}, key string, def int) int {
-	v, ok := args[key]
-	if !ok || v == nil {
-		return def
-	}
-	switch n := v.(type) {
-	case float64:
-		if n <= 0 {
-			return def
-		}
-		return int(n)
-	case json.Number:
-		i, err := strconv.Atoi(n.String())
-		if err != nil || i <= 0 {
-			return def
-		}
-		return i
-	default:
-		return def
-	}
-}
-
-func objectSchema(properties map[string]interface{}, required ...string) map[string]interface{} {
-	if properties == nil {
-		properties = map[string]interface{}{}
-	}
-	schema := map[string]interface{}{
-		"type":                 "object",
-		"properties":           properties,
-		"additionalProperties": false,
-	}
-	if len(required) > 0 {
-		schema["required"] = required
-	}
-	return schema
-}
-
-func freeObjectSchema(description string) map[string]interface{} {
-	return map[string]interface{}{"type": "object", "description": description, "additionalProperties": true}
-}
-
-func stringMapSchema(description string) map[string]interface{} {
-	return map[string]interface{}{
-		"type":        "object",
-		"description": description,
-		"additionalProperties": map[string]interface{}{
-			"type": "string",
-		},
-	}
-}
-
-func stringSchema(description string) map[string]interface{} {
-	return map[string]interface{}{"type": "string", "description": description}
-}
-
-func enumStringSchema(description string, values ...string) map[string]interface{} {
-	enum := make([]interface{}, 0, len(values))
-	for _, value := range values {
-		enum = append(enum, value)
-	}
-	return map[string]interface{}{"type": "string", "description": description, "enum": enum}
-}
-
-func numberSchema(description string) map[string]interface{} {
-	return map[string]interface{}{"type": "integer", "description": description}
-}
-
-func boolSchema(description string) map[string]interface{} {
-	return map[string]interface{}{"type": "boolean", "description": description}
-}
-
-func arraySchema(description string) map[string]interface{} {
-	return map[string]interface{}{"type": "array", "description": description}
 }

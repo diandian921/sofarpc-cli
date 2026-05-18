@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -114,12 +113,13 @@ func SourceFingerprint(workspace string) (string, error) {
 			if !strings.HasSuffix(path, ".java") {
 				return nil
 			}
-			info, err := d.Info()
+			body, err := os.ReadFile(path)
 			if err != nil {
 				return nil
 			}
+			fileHash := sha256.Sum256(body)
 			rel, _ := filepath.Rel(workspace, path)
-			rows = append(rows, rel+"|"+intString(info.Size())+"|"+intString(info.ModTime().UnixNano()))
+			rows = append(rows, rel+"|"+hex.EncodeToString(fileHash[:]))
 			return nil
 		})
 		if err != nil {
@@ -151,8 +151,4 @@ func writeCache(path string, cached cacheFile) error {
 	}
 	body = append(body, '\n')
 	return os.WriteFile(path, body, 0o644)
-}
-
-func intString(v int64) string {
-	return strconv.FormatInt(v, 10)
 }

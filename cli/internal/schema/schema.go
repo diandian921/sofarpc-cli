@@ -20,20 +20,19 @@ type Project struct {
 }
 
 type Method struct {
-	Service       string            `json:"service"`
-	Interface     string            `json:"interface"`
-	Package       string            `json:"package"`
-	Method        string            `json:"method"`
-	ReturnType    string            `json:"returnType"`
-	Parameters    []Parameter       `json:"parameters"`
-	Summary       string            `json:"summary,omitempty"`
-	SourceFile    string            `json:"sourceFile"`
-	Score         int               `json:"score,omitempty"`
-	Evidence      []string          `json:"evidence,omitempty"`
-	OutOfPrefix   bool              `json:"outOfPrefix,omitempty"`
-	SourceHash    string            `json:"sourceHash,omitempty"`
-	ParseWarnings []string          `json:"parseWarnings,omitempty"`
-	Imports       map[string]string `json:"imports,omitempty"`
+	Service     string            `json:"service"`
+	Interface   string            `json:"interface"`
+	Package     string            `json:"package"`
+	Method      string            `json:"method"`
+	ReturnType  string            `json:"returnType"`
+	Parameters  []Parameter       `json:"parameters"`
+	Summary     string            `json:"summary,omitempty"`
+	SourceFile  string            `json:"sourceFile"`
+	Score       int               `json:"score,omitempty"`
+	Evidence    []string          `json:"evidence,omitempty"`
+	OutOfPrefix bool              `json:"outOfPrefix,omitempty"`
+	SourceHash  string            `json:"sourceHash,omitempty"`
+	Imports     map[string]string `json:"imports,omitempty"`
 }
 
 type Parameter struct {
@@ -74,8 +73,7 @@ type Index struct {
 var (
 	packageRE   = regexp.MustCompile(`(?m)^\s*package\s+([A-Za-z_][\w.]*)\s*;`)
 	importRE    = regexp.MustCompile(`(?m)^\s*import\s+([A-Za-z_][\w.]*\.[A-Za-z_]\w*)\s*;`)
-	typeRE      = regexp.MustCompile(`(?m)\b(?:public\s+)?(?:interface|class|enum)\s+([A-Za-z_]\w*)\b`)
-	typeKindRE  = regexp.MustCompile(`(?m)\b(?:public\s+)?(interface|class|enum)\s+([A-Za-z_]\w*)\b`)
+	typeKindRE  = regexp.MustCompile(`(?m)^\s*(?:public\s+)?(?:abstract\s+)?(?:final\s+)?(interface|class|enum)\s+([A-Za-z_]\w*)\b`)
 	methodRE    = regexp.MustCompile(`(?s)(/\*\*.*?\*/)?\s*(?:public\s+)?(?:default\s+)?(?:static\s+)?(?:<[^;{}()]+>\s*)?([A-Za-z_][\w.<>\[\]?,\s]*?)\s+([A-Za-z_]\w*)\s*\(([^{};]*)\)\s*(?:;|\{)`)
 	fieldRE     = regexp.MustCompile(`(?m)^\s*(?:private|protected|public)\s+(?:static\s+)?(?:final\s+)?([A-Za-z_][\w.<>\[\]?,\s]*)\s+([A-Za-z_]\w*)\s*(?:=|;)`)
 	enumValueRE = regexp.MustCompile(`(?s)\benum\s+[A-Za-z_]\w*\s*\{(.*?)\}`)
@@ -262,7 +260,7 @@ func parseJavaFile(path string, prefixes []string) ([]Method, map[string]TypeSch
 	body := string(bodyBytes)
 	pkg := firstSubmatch(packageRE, body)
 	imports := parseImports(body)
-	kind, typeName := firstTypeKind(body)
+	kind, typeName := serviceTypeKind(body)
 	if pkg == "" || typeName == "" {
 		return nil, nil
 	}
@@ -574,8 +572,17 @@ func firstSubmatch(re *regexp.Regexp, s string) string {
 	return m[1]
 }
 
-func firstTypeKind(s string) (string, string) {
-	m := typeKindRE.FindStringSubmatch(s)
+func serviceTypeKind(s string) (string, string) {
+	matches := typeKindRE.FindAllStringSubmatch(s, -1)
+	if len(matches) == 0 {
+		return "", ""
+	}
+	for _, m := range matches {
+		if len(m) >= 3 && m[1] == "interface" {
+			return m[1], m[2]
+		}
+	}
+	m := matches[0]
 	if len(m) < 3 {
 		return "", ""
 	}
@@ -596,16 +603,11 @@ func matchesAnyPrefix(service string, prefixes []string) bool {
 
 func shouldIgnoreDir(name string) bool {
 	switch name {
-	case "target", "build", ".git", ".idea", "node_modules", "src/test/java":
+	case "target", "build", ".git", ".idea", "node_modules":
 		return true
 	default:
 		return false
 	}
-}
-
-func isDir(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
 }
 
 func isControlKeyword(s string) bool {

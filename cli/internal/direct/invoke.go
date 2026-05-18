@@ -3,7 +3,6 @@ package direct
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -54,6 +53,7 @@ type Request struct {
 
 type Outcome struct {
 	Result      interface{}
+	RawResult   interface{}
 	Elapsed     time.Duration
 	Diagnostics map[string]interface{}
 }
@@ -67,6 +67,25 @@ func (e *RemoteError) Error() string {
 		return ""
 	}
 	return e.Message
+}
+
+type ConnectError struct {
+	Address string
+	Err     error
+}
+
+func (e *ConnectError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("dial %s: %v", e.Address, e.Err)
+}
+
+func (e *ConnectError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 // Invoke sends one SOFARPC generic invocation over direct BOLT + Hessian2.
@@ -113,6 +132,7 @@ func Invoke(ctx context.Context, req Request) (Outcome, error) {
 	}
 	return Outcome{
 		Result:      flattenValue(decoded.AppResponse),
+		RawResult:   decoded.AppResponse,
 		Elapsed:     elapsed,
 		Diagnostics: responseDiagnostics(resp, targetService, id),
 	}, nil
@@ -150,7 +170,10 @@ func buildRequestContent(req Request) ([]byte, string, error) {
 		"type":                   invokeTypeSync,
 		"generic.revise":         "true",
 	}
-	args := normalizeArgs(req.ArgTypes, req.Args)
+	args, err := normalizeArgs(req.ArgTypes, req.Args)
+	if err != nil {
+		return nil, "", err
+	}
 
 	w := newWriter()
 	if err := w.writeObject(requestClass,
@@ -159,7 +182,11 @@ func buildRequestContent(req Request) ([]byte, string, error) {
 		return nil, "", err
 	}
 	for i, arg := range args {
-		if err := w.writeValue(arg); err != nil {
+		argType := ""
+		if i < len(req.ArgTypes) {
+			argType = req.ArgTypes[i]
+		}
+		if err := w.writeValueWithType(argType, arg); err != nil {
 			return nil, "", fmt.Errorf("encode arg %d: %w", i, err)
 		}
 	}
@@ -220,18 +247,36 @@ func roundTrip(ctx context.Context, addr string, frame []byte) (boltResponse, er
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		return boltResponse{}, fmt.Errorf("dial %s: %w", addr, err)
+		return boltResponse{}, &ConnectError{Address: addr, Err: err}
 	}
 	defer conn.Close()
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-done:
+		}
+	}()
+	defer close(done)
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
 			return boltResponse{}, err
 		}
 	}
 	if _, err := conn.Write(frame); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return boltResponse{}, ctxErr
+		}
 		return boltResponse{}, fmt.Errorf("write request: %w", err)
 	}
-	return readBoltResponse(conn)
+	resp, err := readBoltResponse(conn)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return boltResponse{}, ctxErr
+		}
+	}
+	return resp, err
 }
 
 type boltResponse struct {
@@ -373,18 +418,4 @@ func responseDiagnostics(resp boltResponse, targetService string, id uint32) map
 		"responseCodec":           resp.Codec,
 		"responseContentLength":   len(resp.Content),
 	}
-}
-
-func cloneJSONValue(v interface{}) interface{} {
-	body, err := json.Marshal(v)
-	if err != nil {
-		return v
-	}
-	dec := json.NewDecoder(strings.NewReader(string(body)))
-	dec.UseNumber()
-	var out interface{}
-	if err := dec.Decode(&out); err != nil {
-		return v
-	}
-	return out
 }

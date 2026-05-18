@@ -53,6 +53,10 @@
       "type": "integer",
       "minimum": 1,
       "description": "Per-call timeout in milliseconds."
+    },
+    "rawResult": {
+      "type": "boolean",
+      "description": "Include the decoded Java object shape in invoke response data when true."
     }
   },
   "additionalProperties": false

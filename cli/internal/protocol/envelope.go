@@ -55,6 +55,7 @@ type InvokePayload struct {
 	Args         []interface{}   `json:"args"`
 	Assertions   []AssertionSpec `json:"assertions,omitempty"`
 	RPCTimeoutMS int             `json:"rpcTimeoutMs,omitempty"`
+	RawResult    bool            `json:"rawResult,omitempty"`
 }
 
 // AssertionSpec is a single assertion descriptor.

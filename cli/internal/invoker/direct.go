@@ -37,8 +37,12 @@ func DirectRequest(req protocol.Request) (*protocol.Response, error) {
 }
 
 func DirectPayload(payload protocol.InvokePayload) protocol.Response {
+	return DirectPayloadContext(context.Background(), payload)
+}
+
+func DirectPayloadContext(ctx context.Context, payload protocol.InvokePayload) protocol.Response {
 	timeout := time.Duration(payload.RPCTimeoutMS) * time.Millisecond
-	out, err := direct.Invoke(context.Background(), direct.Request{
+	out, err := direct.Invoke(ctx, direct.Request{
 		Address:  payload.Address,
 		Service:  payload.Service,
 		Method:   payload.Method,
@@ -57,6 +61,9 @@ func DirectPayload(payload protocol.InvokePayload) protocol.Response {
 	data := map[string]interface{}{
 		"result":    out.Result,
 		"elapsedMs": out.Elapsed.Milliseconds(),
+	}
+	if payload.RawResult {
+		data["rawResult"] = out.RawResult
 	}
 	assertions, failed := direct.EvaluateAssertions(out.Result, Assertions(payload.Assertions))
 	if len(assertions) > 0 {
@@ -80,11 +87,15 @@ func DirectPayload(payload protocol.InvokePayload) protocol.Response {
 }
 
 func PingPayload(payload protocol.PingPayload) protocol.Response {
+	return PingPayloadContext(context.Background(), payload)
+}
+
+func PingPayloadContext(ctx context.Context, payload protocol.PingPayload) protocol.Response {
 	timeout := time.Duration(payload.RPCTimeoutMS) * time.Millisecond
 	if timeout <= 0 {
 		timeout = time.Duration(appconfig.DefaultServerTimeoutMS) * time.Millisecond
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	start := time.Now()
@@ -167,19 +178,34 @@ func Assertions(input []protocol.AssertionSpec) []direct.Assertion {
 }
 
 func ErrorCode(err error) string {
+	var connectErr *direct.ConnectError
+	if errors.As(err, &connectErr) {
+		return protocol.CodeConnectFailed
+	}
 	var remote *direct.RemoteError
 	if errors.As(err, &remote) {
 		return protocol.CodeInvokeFailed
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return protocol.CodeRPCTimeout
 	}
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return protocol.CodeRPCTimeout
 	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return protocol.CodeConnectFailed
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Op == "dial" {
+		return protocol.CodeConnectFailed
+	}
 	msg := strings.ToLower(err.Error())
 	if strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "timeout") {
 		return protocol.CodeRPCTimeout
 	}
-	if strings.Contains(msg, "dial") || strings.Contains(msg, "connection refused") || strings.Contains(msg, "no such host") {
+	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "no such host") {
 		return protocol.CodeConnectFailed
 	}
 	return protocol.CodeInvokeFailed

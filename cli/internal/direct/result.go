@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Assertion struct {
@@ -73,9 +75,133 @@ func flattenJavaValueObject(class string, fields map[string]interface{}) (interf
 			return nil, false
 		}
 		return flattenJavaNumber(value), true
+	case "java.util.Date", "java.sql.Date", "java.sql.Time", "java.sql.Timestamp":
+		return flattenJavaDate(fields)
+	case "java.util.Optional":
+		return flattenJavaOptional(fields)
+	case "java.util.OptionalInt", "java.util.OptionalLong":
+		return flattenJavaOptionalNumber(fields, false)
+	case "java.util.OptionalDouble":
+		return flattenJavaOptionalNumber(fields, true)
 	default:
+		if looksLikeEnumObject(class, fields) {
+			return fields["name"], true
+		}
 		return nil, false
 	}
+}
+
+func flattenJavaDate(fields map[string]interface{}) (interface{}, bool) {
+	for _, key := range []string{"time", "fastTime", "value"} {
+		raw, ok := fields[key]
+		if !ok {
+			continue
+		}
+		epochMillis, ok := int64FromValue(raw)
+		if !ok {
+			continue
+		}
+		return map[string]interface{}{
+			"epochMillis": epochMillis,
+			"iso":         time.UnixMilli(epochMillis).UTC().Format(time.RFC3339Nano),
+		}, true
+	}
+	return nil, false
+}
+
+func flattenJavaOptional(fields map[string]interface{}) (interface{}, bool) {
+	if present, ok := boolField(fields, "present"); ok && !present {
+		return nil, true
+	}
+	for _, key := range []string{"value", "val"} {
+		if value, ok := fields[key]; ok {
+			return flattenValue(value), true
+		}
+	}
+	return nil, false
+}
+
+func flattenJavaOptionalNumber(fields map[string]interface{}, floating bool) (interface{}, bool) {
+	if present, ok := boolField(fields, "present"); ok && !present {
+		return nil, true
+	}
+	for _, key := range []string{"value", "val"} {
+		value, ok := fields[key]
+		if !ok {
+			continue
+		}
+		if floating {
+			if n, ok := float64FromValue(value); ok {
+				return n, true
+			}
+		} else if n, ok := int64FromValue(value); ok {
+			return n, true
+		}
+		return flattenValue(value), true
+	}
+	return nil, false
+}
+
+func looksLikeEnumObject(class string, fields map[string]interface{}) bool {
+	if !strings.HasSuffix(class, "Enum") || len(fields) != 1 {
+		return false
+	}
+	_, ok := fields["name"].(string)
+	return ok
+}
+
+func boolField(fields map[string]interface{}, key string) (bool, bool) {
+	v, ok := fields[key]
+	if !ok {
+		return false, false
+	}
+	b, ok := v.(bool)
+	return b, ok
+}
+
+func int64FromValue(v interface{}) (int64, bool) {
+	switch x := v.(type) {
+	case json.Number:
+		if i, err := x.Int64(); err == nil {
+			return i, true
+		}
+	case int:
+		return int64(x), true
+	case int8:
+		return int64(x), true
+	case int16:
+		return int64(x), true
+	case int32:
+		return int64(x), true
+	case int64:
+		return x, true
+	case float64:
+		return int64(x), x == float64(int64(x))
+	case string:
+		i, err := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+		return i, err == nil
+	}
+	return 0, false
+}
+
+func float64FromValue(v interface{}) (float64, bool) {
+	switch x := v.(type) {
+	case json.Number:
+		f, err := x.Float64()
+		return f, err == nil
+	case int:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	case float32:
+		return float64(x), true
+	case float64:
+		return x, true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		return f, err == nil
+	}
+	return 0, false
 }
 
 func flattenJavaNumber(value interface{}) interface{} {
@@ -195,4 +321,18 @@ func valuesEqual(left, right interface{}) bool {
 	left = cloneJSONValue(left)
 	right = cloneJSONValue(right)
 	return reflect.DeepEqual(left, right) || fmt.Sprint(left) == fmt.Sprint(right)
+}
+
+func cloneJSONValue(v interface{}) interface{} {
+	body, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	dec := json.NewDecoder(strings.NewReader(string(body)))
+	dec.UseNumber()
+	var out interface{}
+	if err := dec.Decode(&out); err != nil {
+		return v
+	}
+	return out
 }

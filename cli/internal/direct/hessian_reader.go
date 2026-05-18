@@ -549,12 +549,19 @@ func (r *reader) rawUTF8(chars int) ([]byte, error) {
 	start := r.offset
 	count := 0
 	for r.offset < len(r.data) && count < chars {
-		_, size := utf8.DecodeRune(r.data[r.offset:])
-		if size == 0 {
+		decoded, size := utf8.DecodeRune(r.data[r.offset:])
+		if size == 0 || (decoded == utf8.RuneError && size == 1) {
 			return nil, fmt.Errorf("bad utf8")
 		}
+		units := 1
+		if decoded > 0xffff {
+			units = 2
+		}
+		if count+units > chars {
+			return nil, fmt.Errorf("bad utf8 length")
+		}
 		r.offset += size
-		count++
+		count += units
 	}
 	if count != chars {
 		return nil, fmt.Errorf("unexpected EOF")

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,6 +44,148 @@ func TestBuildRequestContentWrapsTopLevelDTO(t *testing.T) {
 	}
 }
 
+func TestDeclaredNumericTypesChooseHessianTags(t *testing.T) {
+	cases := []struct {
+		name     string
+		javaType string
+		value    interface{}
+		wantTag  byte
+	}{
+		{name: "integer", javaType: "java.lang.Integer", value: json.Number("5"), wantTag: 'I'},
+		{name: "long", javaType: "java.lang.Long", value: json.Number("5"), wantTag: 'L'},
+		{name: "double", javaType: "java.lang.Double", value: json.Number("2.0"), wantTag: 'D'},
+		{name: "primitive double", javaType: "double", value: float64(2), wantTag: 'D'},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWriter()
+			if err := w.writeValueWithType(tc.javaType, tc.value); err != nil {
+				t.Fatalf("writeValueWithType: %v", err)
+			}
+			got := w.bytes()[0]
+			if got != tc.wantTag {
+				t.Fatalf("tag = %q, want %q; bytes=%x", got, tc.wantTag, w.bytes())
+			}
+		})
+	}
+}
+
+func TestDTOFieldTypesDriveNumericEncoding(t *testing.T) {
+	content, _, err := buildRequestContent(Request{
+		Service:  "com.example.Facade",
+		Method:   "query",
+		ArgTypes: []string{"com.example.QueryRequest"},
+		Args: []interface{}{
+			map[string]interface{}{
+				"@type":        "com.example.QueryRequest",
+				"__fieldTypes": map[string]string{"ratio": "java.lang.Double"},
+				"ratio":        json.Number("2.0"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildRequestContent: %v", err)
+	}
+	r := &reader{data: content}
+	if _, err := r.readValue(); err != nil {
+		t.Fatalf("read SofaRequest: %v", err)
+	}
+	arg, err := r.readValue()
+	if err != nil {
+		t.Fatalf("read arg: %v", err)
+	}
+	fields := arg.(map[string]interface{})["fields"].(map[string]interface{})
+	if got, ok := fields["ratio"].(float64); !ok || got != 2 {
+		t.Fatalf("ratio = %#v, want float64(2)", fields["ratio"])
+	}
+	if _, exists := fields["__fieldTypes"]; exists {
+		t.Fatalf("__fieldTypes leaked into hessian fields: %#v", fields)
+	}
+}
+
+func TestDeclaredBigDecimalEncodesTypedValue(t *testing.T) {
+	w := newWriter()
+	if err := w.writeValueWithType("java.math.BigDecimal", "1000.50"); err != nil {
+		t.Fatalf("writeValueWithType: %v", err)
+	}
+	r := &reader{data: w.bytes()}
+	got, err := r.readValue()
+	if err != nil {
+		t.Fatalf("readValue: %v", err)
+	}
+	obj := got.(map[string]interface{})
+	if obj["type"] != "java.math.BigDecimal" {
+		t.Fatalf("type = %#v", obj["type"])
+	}
+	fields := obj["fields"].(map[string]interface{})
+	if fields["value"] != "1000.50" {
+		t.Fatalf("value = %#v", fields["value"])
+	}
+}
+
+func TestListPreservesNullElements(t *testing.T) {
+	w := newWriter()
+	if err := w.writeValue(javaList{nil, json.Number("1")}); err != nil {
+		t.Fatalf("writeValue: %v", err)
+	}
+	r := &reader{data: w.bytes()}
+	got, err := r.readValue()
+	if err != nil {
+		t.Fatalf("readValue: %v", err)
+	}
+	items := got.(map[string]interface{})["items"].([]interface{})
+	if len(items) != 2 || items[0] != nil || items[1] != int64(1) {
+		t.Fatalf("items = %#v", items)
+	}
+}
+
+func TestLongBoundaryEncoding(t *testing.T) {
+	w := newWriter()
+	if err := w.writeValueWithType("java.lang.Long", json.Number("9223372036854775807")); err != nil {
+		t.Fatalf("writeValueWithType: %v", err)
+	}
+	r := &reader{data: w.bytes()}
+	got, err := r.readValue()
+	if err != nil {
+		t.Fatalf("readValue: %v", err)
+	}
+	if got != int64(9223372036854775807) {
+		t.Fatalf("long = %#v", got)
+	}
+}
+
+func TestHessianStringLengthsUseUTF16Units(t *testing.T) {
+	w := newWriter()
+	if err := w.writeString("a🙂b"); err != nil {
+		t.Fatalf("writeString: %v", err)
+	}
+	if got := w.bytes()[0]; got != 4 {
+		t.Fatalf("short string length tag = %d, want 4 UTF-16 units", got)
+	}
+	r := &reader{data: w.bytes()}
+	got, err := r.readValue()
+	if err != nil {
+		t.Fatalf("readValue: %v", err)
+	}
+	if got != "a🙂b" {
+		t.Fatalf("string = %q", got)
+	}
+}
+
+func TestBuildRequestContentRejectsCyclicArguments(t *testing.T) {
+	arg := map[string]interface{}{}
+	arg["self"] = arg
+	_, _, err := buildRequestContent(Request{
+		Service:  "com.example.Facade",
+		Method:   "query",
+		ArgTypes: []string{"java.util.Map"},
+		Args:     []interface{}{arg},
+	})
+	if err == nil || !strings.Contains(err.Error(), "nesting too deep") {
+		t.Fatalf("err = %v, want nesting error", err)
+	}
+}
+
 func TestInvokeRoundTripFlattensResponse(t *testing.T) {
 	responseContent := successResponse(t, typedObject{
 		name: "com.example.OperationResult",
@@ -71,6 +214,10 @@ func TestInvokeRoundTripFlattensResponse(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
+	}
+	raw := out.RawResult.(map[string]interface{})
+	if raw["type"] != "com.example.OperationResult" {
+		t.Fatalf("raw result = %#v", raw)
 	}
 	result := out.Result.(map[string]interface{})
 	if result["success"] != true || result["code"] != int64(0) {
@@ -102,6 +249,48 @@ func TestEvaluateAssertions(t *testing.T) {
 	})
 	if failed != 1 || len(out) != 2 || out[0].Passed || !out[1].Passed {
 		t.Fatalf("unexpected assertions: failed=%d out=%+v", failed, out)
+	}
+}
+
+func TestFlattenJDKValueTypes(t *testing.T) {
+	date := flattenValue(map[string]interface{}{
+		"type":   "java.util.Date",
+		"fields": map[string]interface{}{"fastTime": int64(0)},
+	}).(map[string]interface{})
+	if date["epochMillis"] != int64(0) || date["iso"] != "1970-01-01T00:00:00Z" {
+		t.Fatalf("date = %#v", date)
+	}
+
+	optional := flattenValue(map[string]interface{}{
+		"type":   "java.util.Optional",
+		"fields": map[string]interface{}{"present": true, "value": "ok"},
+	})
+	if optional != "ok" {
+		t.Fatalf("optional = %#v", optional)
+	}
+
+	emptyOptional := flattenValue(map[string]interface{}{
+		"type":   "java.util.Optional",
+		"fields": map[string]interface{}{"present": false},
+	})
+	if emptyOptional != nil {
+		t.Fatalf("empty optional = %#v", emptyOptional)
+	}
+
+	enum := flattenValue(map[string]interface{}{
+		"type":   "com.example.StatusEnum",
+		"fields": map[string]interface{}{"name": "ACTIVE"},
+	})
+	if enum != "ACTIVE" {
+		t.Fatalf("enum = %#v", enum)
+	}
+
+	dto := flattenValue(map[string]interface{}{
+		"type":   "com.example.Name",
+		"fields": map[string]interface{}{"name": "alice"},
+	}).(map[string]interface{})
+	if dto["name"] != "alice" {
+		t.Fatalf("single-field DTO should not flatten as enum: %#v", dto)
 	}
 }
 

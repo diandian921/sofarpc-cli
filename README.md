@@ -114,6 +114,10 @@ or named arguments when local source can resolve the method signature:
 
 Use `dryRun=true` to inspect the endpoint, parameter types, ordered arguments, and protocol payload without sending a SofaRPC request.
 
+Set `rawResult=true` when debugging serialization or response shape problems. The response then includes both the normal flattened `result` and the decoded Java object shape as `rawResult`.
+
+Assertions are intentionally not part of `sofarpc_invoke`. For assertion-based exact reproduction, use `sofarpc-cli exec --stdin` or the CLI `invoke` command.
+
 ## Config File
 
 `~/.sofarpc/config.json` is stable and user-editable:
@@ -180,7 +184,23 @@ Ignored:
 - `.idea`
 - `node_modules`
 
-Schema cache is stored under `~/.sofarpc/cache/schema/` and invalidated by source-set fingerprint. Entries unused for 7 days may be cleaned.
+Schema cache is stored under `~/.sofarpc/cache/schema/` and invalidated by source content fingerprint. Entries unused for 7 days may be cleaned.
+
+## Runtime Boundaries
+
+The pure-Go runtime covers direct BOLT generic invocation and the common Hessian2 value shapes used by DTO-style requests and responses. Declared Java argument and DTO field types are used for numeric encoding, so values such as `Integer`, `Long`, and `Double` do not depend on Go's JSON number shape.
+
+Known limits:
+
+- object reference preservation is not implemented for request encoding; cyclic request values are rejected.
+- `java.util.Date`, `byte[]`, complex enum payloads, and provider-specific Hessian extensions need dedicated compatibility tests before relying on them broadly.
+- map keys are flattened to strings in the normal `result`; use `rawResult=true` when key type matters during diagnosis.
+
+## Security Boundaries
+
+`sofarpc-mcp` is a local developer tool. Treat stdout as the JSON-RPC protocol stream; diagnostics and future logging must go to stderr. `sofarpc_probe` can dial an explicit address for diagnostics, so prefer configured servers when running against untrusted agent input.
+
+Each JSON-RPC stdin frame is capped at 128 MiB. Oversized frames are rejected with a parse error and the server continues reading subsequent frames.
 
 ## Troubleshooting
 

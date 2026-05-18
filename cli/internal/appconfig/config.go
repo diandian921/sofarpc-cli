@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
 )
 
 const (
@@ -366,22 +365,4 @@ func sortedKeys[T any](m map[string]T) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func lockConfig(path string) (func(), error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
-	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
-	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		_ = f.Close()
-		return nil, err
-	}
-	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-		_ = f.Close()
-	}, nil
 }

@@ -13,6 +13,9 @@
       "minimum": 0,
       "description": "Wall-clock time spent on the direct RPC call itself."
     },
+    "rawResult": {
+      "description": "Decoded Java object shape before flattening. Present only when requested."
+    },
     "assertions": {
       "type": "array",
       "items": {

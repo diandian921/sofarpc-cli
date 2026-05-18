@@ -12,7 +12,7 @@ CLI exec/direct runtime 的 JSON envelope 契约。
 
 ## op 列表（V1）
 
-- `invoke` — 发起一次 SofaRPC GenericService 调用，可带断言
+- `invoke` — 发起一次 SofaRPC GenericService 调用，可带断言；可用 `rawResult=true` 返回未 flatten 的 Java 对象形态
 - `ping` — 探测目标地址能否联通
 
 ## 错误码

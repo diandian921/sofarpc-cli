@@ -5,15 +5,21 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
-const javaTypeKey = "@type"
+const (
+	javaTypeKey       = "@type"
+	javaFieldTypesKey = "__fieldTypes"
+	maxHessianDepth   = 128
+)
 
 type typedObject struct {
-	name   string
-	fields map[string]interface{}
+	name       string
+	fields     map[string]interface{}
+	fieldTypes map[string]string
 }
 
 type javaList []interface{}
@@ -22,6 +28,7 @@ type javaMap map[string]interface{}
 type writer struct {
 	buf     []byte
 	classes map[string]int
+	depth   int
 }
 
 func newWriter() *writer {
@@ -33,9 +40,23 @@ func (w *writer) bytes() []byte {
 }
 
 func (w *writer) writeValue(v interface{}) error {
-	switch x := v.(type) {
-	case nil:
+	return w.writeValueWithType("", v)
+}
+
+func (w *writer) writeValueWithType(javaType string, v interface{}) error {
+	w.depth++
+	defer func() { w.depth-- }()
+	if w.depth > maxHessianDepth {
+		return fmt.Errorf("hessian nesting too deep")
+	}
+	if v == nil {
 		w.buf = append(w.buf, 'N')
+		return nil
+	}
+	if handled, err := w.writeJavaScalar(javaType, v); handled || err != nil {
+		return err
+	}
+	switch x := v.(type) {
 	case bool:
 		if x {
 			w.buf = append(w.buf, 'T')
@@ -84,11 +105,19 @@ func (w *writer) writeValue(v interface{}) error {
 		}
 		return w.writeList("[string]", items)
 	case []interface{}:
-		return w.writeList("java.util.ArrayList", normalizeList(x))
+		items, err := normalizeList(x)
+		if err != nil {
+			return err
+		}
+		return w.writeList("java.util.ArrayList", items)
 	case javaList:
 		return w.writeList("java.util.ArrayList", []interface{}(x))
 	case map[string]interface{}:
-		return w.writeMap("", normalizePlainMap(x))
+		values, err := normalizePlainMap(x)
+		if err != nil {
+			return err
+		}
+		return w.writeMap("", values)
 	case map[string]string:
 		m := make(map[string]interface{}, len(x))
 		for k, v := range x {
@@ -111,10 +140,14 @@ func (w *writer) writeTypedObject(obj typedObject) error {
 	for i, k := range keys {
 		values[i] = obj.fields[k]
 	}
-	return w.writeObject(obj.name, keys, values)
+	return w.writeObjectWithTypes(obj.name, keys, values, obj.fieldTypes)
 }
 
 func (w *writer) writeObject(class string, fields []string, values []interface{}) error {
+	return w.writeObjectWithTypes(class, fields, values, nil)
+}
+
+func (w *writer) writeObjectWithTypes(class string, fields []string, values []interface{}, fieldTypes map[string]string) error {
 	if len(fields) != len(values) {
 		return fmt.Errorf("field/value mismatch for %s", class)
 	}
@@ -134,8 +167,8 @@ func (w *writer) writeObject(class string, fields []string, values []interface{}
 	}
 	w.buf = append(w.buf, 'o')
 	w.writeInt(int64(ref))
-	for _, v := range values {
-		if err := w.writeValue(v); err != nil {
+	for i, v := range values {
+		if err := w.writeValueWithType(fieldTypes[fields[i]], v); err != nil {
 			return err
 		}
 	}
@@ -175,7 +208,7 @@ func (w *writer) writeList(class string, values []interface{}) error {
 }
 
 func (w *writer) writeString(s string) error {
-	n := utf8.RuneCountInString(s)
+	n := utf16Length(s)
 	if n <= 0x1f {
 		w.buf = append(w.buf, byte(n))
 		w.buf = append(w.buf, s...)
@@ -191,13 +224,13 @@ func (w *writer) writeString(s string) error {
 }
 
 func (w *writer) writeLenString(s string) {
-	w.writeInt(int64(utf8.RuneCountInString(s)))
+	w.writeInt(int64(utf16Length(s)))
 	w.buf = append(w.buf, s...)
 }
 
 func (w *writer) writeType(s string) {
 	w.buf = append(w.buf, 't')
-	w.writeUint16(uint16(utf8.RuneCountInString(s)))
+	w.writeUint16(uint16(utf16Length(s)))
 	w.buf = append(w.buf, s...)
 }
 
@@ -239,72 +272,223 @@ func (w *writer) writeUint64(n uint64) {
 		byte(n>>24), byte(n>>16), byte(n>>8), byte(n))
 }
 
-func normalizeArgs(types []string, args []interface{}) []interface{} {
+func (w *writer) writeJavaScalar(javaType string, v interface{}) (bool, error) {
+	base := eraseJavaType(javaType)
+	if base == "" {
+		return false, nil
+	}
+	switch base {
+	case "boolean", "java.lang.Boolean":
+		b, ok := boolValue(v)
+		if !ok {
+			return true, fmt.Errorf("cannot encode %T as %s", v, base)
+		}
+		if b {
+			w.buf = append(w.buf, 'T')
+		} else {
+			w.buf = append(w.buf, 'F')
+		}
+		return true, nil
+	case "byte", "java.lang.Byte":
+		n, ok := int64Value(v)
+		if !ok || n < math.MinInt8 || n > math.MaxInt8 {
+			return true, fmt.Errorf("cannot encode %v as %s", v, base)
+		}
+		w.writeInt(n)
+		return true, nil
+	case "short", "java.lang.Short":
+		n, ok := int64Value(v)
+		if !ok || n < math.MinInt16 || n > math.MaxInt16 {
+			return true, fmt.Errorf("cannot encode %v as %s", v, base)
+		}
+		w.writeInt(n)
+		return true, nil
+	case "int", "java.lang.Integer":
+		n, ok := int64Value(v)
+		if !ok || n < math.MinInt32 || n > math.MaxInt32 {
+			return true, fmt.Errorf("cannot encode %v as %s", v, base)
+		}
+		w.writeInt(n)
+		return true, nil
+	case "long", "java.lang.Long":
+		n, ok := int64Value(v)
+		if !ok {
+			return true, fmt.Errorf("cannot encode %v as %s", v, base)
+		}
+		w.writeLong(n)
+		return true, nil
+	case "float", "java.lang.Float", "double", "java.lang.Double":
+		n, ok := float64Value(v)
+		if !ok {
+			return true, fmt.Errorf("cannot encode %v as %s", v, base)
+		}
+		w.writeDouble(n)
+		return true, nil
+	case "char", "java.lang.Character", "java.lang.String":
+		s, ok := stringValue(v)
+		if !ok {
+			return true, fmt.Errorf("cannot encode %T as %s", v, base)
+		}
+		return true, w.writeString(s)
+	case "java.math.BigDecimal", "java.math.BigInteger":
+		s, ok := decimalString(v)
+		if !ok {
+			return true, fmt.Errorf("cannot encode %T as %s", v, base)
+		}
+		return true, w.writeTypedObject(typedObject{name: base, fields: map[string]interface{}{"value": s}})
+	default:
+		return false, nil
+	}
+}
+
+func normalizeArgs(types []string, args []interface{}) ([]interface{}, error) {
 	out := make([]interface{}, len(args))
 	for i, arg := range args {
 		argType := ""
 		if i < len(types) {
 			argType = types[i]
 		}
-		out[i] = normalizeArg(argType, arg)
+		normalized, err := normalizeArgDepth(argType, arg, 0)
+		if err != nil {
+			return nil, fmt.Errorf("arg %d: %w", i, err)
+		}
+		out[i] = normalized
 	}
-	return out
+	return out, nil
 }
 
 func normalizeArg(argType string, v interface{}) interface{} {
+	out, err := normalizeArgDepth(argType, v, 0)
+	if err != nil {
+		return v
+	}
+	return out
+}
+
+func normalizeArgDepth(argType string, v interface{}, depth int) (interface{}, error) {
+	if depth > maxHessianDepth {
+		return nil, fmt.Errorf("hessian argument nesting too deep")
+	}
 	if m, ok := stringMap(v); ok {
 		if explicit := explicitType(m); explicit != "" {
-			return typedFromMap(explicit, m)
+			return typedFromMapDepth(explicit, m, depth+1)
 		}
 		if shouldWrapArg(argType) {
-			return typedFromMap(eraseJavaType(argType), m)
+			return typedFromMapDepth(eraseJavaType(argType), m, depth+1)
 		}
-		return javaMap(normalizePlainMap(m))
+		values, err := normalizePlainMapDepth(m, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		return javaMap(values), nil
 	}
-	return normalizeValue(v)
+	return normalizeValueDepth(argType, v, depth+1)
 }
 
 func normalizeValue(v interface{}) interface{} {
+	out, err := normalizeValueDepth("", v, 0)
+	if err != nil {
+		return v
+	}
+	return out
+}
+
+func normalizeValueDepth(javaType string, v interface{}, depth int) (interface{}, error) {
+	if depth > maxHessianDepth {
+		return nil, fmt.Errorf("hessian argument nesting too deep")
+	}
 	switch x := v.(type) {
 	case json.Number:
-		return numberValue(x)
+		if javaType != "" {
+			return x, nil
+		}
+		return numberValue(x), nil
 	case []interface{}:
-		return javaList(normalizeList(x))
+		values, err := normalizeListDepth(x, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		return javaList(values), nil
 	case map[string]interface{}:
 		if explicit := explicitType(x); explicit != "" {
-			return typedFromMap(explicit, x)
+			return typedFromMapDepth(explicit, x, depth+1)
 		}
-		return javaMap(normalizePlainMap(x))
+		if shouldWrapArg(javaType) {
+			return typedFromMapDepth(eraseJavaType(javaType), x, depth+1)
+		}
+		values, err := normalizePlainMapDepth(x, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		return javaMap(values), nil
 	default:
-		return x
+		return x, nil
 	}
 }
 
-func normalizeList(values []interface{}) []interface{} {
+func normalizeList(values []interface{}) ([]interface{}, error) {
+	return normalizeListDepth(values, 0)
+}
+
+func normalizeListDepth(values []interface{}, depth int) ([]interface{}, error) {
+	if depth > maxHessianDepth {
+		return nil, fmt.Errorf("hessian argument nesting too deep")
+	}
 	out := make([]interface{}, len(values))
 	for i, v := range values {
-		out[i] = normalizeValue(v)
+		normalized, err := normalizeValueDepth("", v, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = normalized
 	}
-	return out
+	return out, nil
 }
 
-func normalizePlainMap(values map[string]interface{}) map[string]interface{} {
+func normalizePlainMap(values map[string]interface{}) (map[string]interface{}, error) {
+	return normalizePlainMapDepth(values, 0)
+}
+
+func normalizePlainMapDepth(values map[string]interface{}, depth int) (map[string]interface{}, error) {
+	if depth > maxHessianDepth {
+		return nil, fmt.Errorf("hessian argument nesting too deep")
+	}
 	out := make(map[string]interface{}, len(values))
 	for k, v := range values {
-		out[k] = normalizeValue(v)
+		normalized, err := normalizeValueDepth("", v, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = normalized
 	}
-	return out
+	return out, nil
 }
 
 func typedFromMap(class string, values map[string]interface{}) typedObject {
+	out, err := typedFromMapDepth(class, values, 0)
+	if err != nil {
+		return typedObject{name: class, fields: map[string]interface{}{}}
+	}
+	return out
+}
+
+func typedFromMapDepth(class string, values map[string]interface{}, depth int) (typedObject, error) {
+	if depth > maxHessianDepth {
+		return typedObject{}, fmt.Errorf("hessian argument nesting too deep")
+	}
+	fieldTypes := fieldTypesFromMap(values[javaFieldTypesKey])
 	fields := make(map[string]interface{}, len(values))
 	for k, v := range values {
-		if k == javaTypeKey || k == "__type" {
+		if k == javaTypeKey || k == "__type" || k == javaFieldTypesKey {
 			continue
 		}
-		fields[k] = normalizeValue(v)
+		normalized, err := normalizeValueDepth(fieldTypes[k], v, depth+1)
+		if err != nil {
+			return typedObject{}, err
+		}
+		fields[k] = normalized
 	}
-	return typedObject{name: class, fields: fields}
+	return typedObject{name: class, fields: fields, fieldTypes: fieldTypes}, nil
 }
 
 func explicitType(values map[string]interface{}) string {
@@ -347,6 +531,31 @@ func shouldWrapArg(argType string) bool {
 	}
 }
 
+func fieldTypesFromMap(v interface{}) map[string]string {
+	if v == nil {
+		return nil
+	}
+	out := map[string]string{}
+	switch x := v.(type) {
+	case map[string]string:
+		for k, typ := range x {
+			if strings.TrimSpace(typ) != "" {
+				out[k] = strings.TrimSpace(typ)
+			}
+		}
+	case map[string]interface{}:
+		for k, raw := range x {
+			if typ, ok := raw.(string); ok && strings.TrimSpace(typ) != "" {
+				out[k] = strings.TrimSpace(typ)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func eraseJavaType(t string) string {
 	t = strings.TrimSpace(t)
 	if i := strings.IndexByte(t, '<'); i >= 0 {
@@ -373,6 +582,149 @@ func numberValue(n json.Number) interface{} {
 		return f
 	}
 	return s
+}
+
+func utf16Length(s string) int {
+	n := 0
+	for _, r := range s {
+		if r > utf8.RuneSelf && r > 0xffff {
+			n += 2
+		} else {
+			n++
+		}
+	}
+	return n
+}
+
+func int64Value(v interface{}) (int64, bool) {
+	switch x := v.(type) {
+	case json.Number:
+		if i, err := x.Int64(); err == nil {
+			return i, true
+		}
+		if f, err := x.Float64(); err == nil && math.Trunc(f) == f && f >= math.MinInt64 && f <= math.MaxInt64 {
+			return int64(f), true
+		}
+	case int:
+		return int64(x), true
+	case int8:
+		return int64(x), true
+	case int16:
+		return int64(x), true
+	case int32:
+		return int64(x), true
+	case int64:
+		return x, true
+	case uint:
+		if uint64(x) <= math.MaxInt64 {
+			return int64(x), true
+		}
+	case uint8:
+		return int64(x), true
+	case uint16:
+		return int64(x), true
+	case uint32:
+		return int64(x), true
+	case uint64:
+		if x <= math.MaxInt64 {
+			return int64(x), true
+		}
+	case float32:
+		f := float64(x)
+		if math.Trunc(f) == f && f >= math.MinInt64 && f <= math.MaxInt64 {
+			return int64(f), true
+		}
+	case float64:
+		if math.Trunc(x) == x && x >= math.MinInt64 && x <= math.MaxInt64 {
+			return int64(x), true
+		}
+	case string:
+		if i, err := strconv.ParseInt(strings.TrimSpace(x), 10, 64); err == nil {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+func float64Value(v interface{}) (float64, bool) {
+	switch x := v.(type) {
+	case json.Number:
+		f, err := x.Float64()
+		return f, err == nil
+	case int:
+		return float64(x), true
+	case int8:
+		return float64(x), true
+	case int16:
+		return float64(x), true
+	case int32:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	case uint:
+		return float64(x), true
+	case uint8:
+		return float64(x), true
+	case uint16:
+		return float64(x), true
+	case uint32:
+		return float64(x), true
+	case uint64:
+		return float64(x), true
+	case float32:
+		return float64(x), true
+	case float64:
+		return x, true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
+}
+
+func boolValue(v interface{}) (bool, bool) {
+	switch x := v.(type) {
+	case bool:
+		return x, true
+	case string:
+		b, err := strconv.ParseBool(strings.TrimSpace(x))
+		return b, err == nil
+	default:
+		return false, false
+	}
+}
+
+func stringValue(v interface{}) (string, bool) {
+	switch x := v.(type) {
+	case string:
+		return x, true
+	case json.Number:
+		return x.String(), true
+	case fmt.Stringer:
+		return x.String(), true
+	case bool:
+		return strconv.FormatBool(x), true
+	default:
+		return "", false
+	}
+}
+
+func decimalString(v interface{}) (string, bool) {
+	switch x := v.(type) {
+	case json.Number:
+		return x.String(), true
+	case string:
+		return strings.TrimSpace(x), strings.TrimSpace(x) != ""
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprint(x), true
+	case float32:
+		return strconv.FormatFloat(float64(x), 'f', -1, 32), true
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64), true
+	default:
+		return "", false
+	}
 }
 
 func sortedKeys(m map[string]interface{}) []string {
