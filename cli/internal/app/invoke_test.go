@@ -99,6 +99,13 @@ func TestTypedValueForParamAddsDTOFieldTypesWithoutMagicKeys(t *testing.T) {
 	}
 }
 
+func TestTypedValueForJavaTypeKeepsByteArrayScalar(t *testing.T) {
+	typed := typedValueForJavaType([]interface{}{json.Number("1"), json.Number("2"), json.Number("255")}, "byte[]", nil, 0)
+	if typed.Kind != javavalue.KindScalar || typed.JavaType != "byte[]" {
+		t.Fatalf("typed value = %#v", typed)
+	}
+}
+
 func TestPlanNamedArgumentsUsesSourceIndexPort(t *testing.T) {
 	cfg := appconfig.Config{
 		Projects: map[string]appconfig.Project{

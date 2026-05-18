@@ -1,0 +1,399 @@
+//go:build hessian_oracle
+
+package direct
+
+import (
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/sofarpc/cli/internal/javavalue"
+)
+
+type javaHessianContract struct {
+	java      string
+	classpath string
+}
+
+var (
+	javaContractOnce    sync.Once
+	javaContractCache   javaHessianContract
+	javaContractSkip    string
+	javaContractErr     error
+	javaContractTempDir string
+)
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if javaContractTempDir != "" {
+		_ = os.RemoveAll(javaContractTempDir)
+	}
+	os.Exit(code)
+}
+
+func TestHessianJavaContractGoEncodedValuesReadableByJava(t *testing.T) {
+	contract := requireJavaHessianContract(t)
+
+	cases := []struct {
+		name  string
+		value javavalue.TypedValue
+		mode  string
+		want  string
+	}{
+		{
+			name:  "integer",
+			value: javavalue.Scalar("java.lang.Integer", json.Number("5")),
+			mode:  "decode-any",
+			want:  "java.lang.Integer:5",
+		},
+		{
+			name:  "long",
+			value: javavalue.Scalar("java.lang.Long", json.Number("433905635109773312")),
+			mode:  "decode-any",
+			want:  "java.lang.Long:433905635109773312",
+		},
+		{
+			name:  "double whole number",
+			value: javavalue.Scalar("java.lang.Double", json.Number("2.0")),
+			mode:  "decode-any",
+			want:  "java.lang.Double:2.0",
+		},
+		{
+			name:  "utf16 string",
+			value: javavalue.Scalar("java.lang.String", "a🙂b"),
+			mode:  "decode-any",
+			want:  "java.lang.String:a🙂b",
+		},
+		{
+			name: "list with null",
+			value: javavalue.List("java.util.ArrayList", []javavalue.TypedValue{
+				javavalue.Scalar("", nil),
+				javavalue.Scalar("java.lang.Long", json.Number("1")),
+				javavalue.Scalar("java.lang.String", "two"),
+			}),
+			mode: "decode-any",
+			want: "List[null,java.lang.Long:1,java.lang.String:two]",
+		},
+		{
+			name: "map long key",
+			value: javavalue.Map("java.util.LinkedHashMap", []javavalue.MapEntry{
+				{Key: javavalue.Scalar("java.lang.Long", json.Number("7")), Value: javavalue.Scalar("java.lang.String", "seven")},
+				{Key: javavalue.Scalar("java.lang.String", "name"), Value: javavalue.Scalar("java.lang.String", "alice")},
+			}),
+			mode: "decode-any",
+			want: "Map{java.lang.Long:7=java.lang.String:seven,java.lang.String:name=java.lang.String:alice}",
+		},
+		{
+			name:  "big decimal",
+			value: javavalue.Scalar("java.math.BigDecimal", "1000.50"),
+			mode:  "decode-any",
+			want:  "java.math.BigDecimal:1000.50",
+		},
+		{
+			name:  "byte array",
+			value: javavalue.Scalar("byte[]", []interface{}{json.Number("1"), json.Number("2"), json.Number("255")}),
+			mode:  "decode-any",
+			want:  "byte[]:0102ff",
+		},
+		{
+			name: "dto",
+			value: javavalue.Object("HessianContractHelper$QueryRequest", map[string]javavalue.TypedValue{
+				"mpCode": javavalue.Scalar("java.lang.Long", json.Number("433905635109773312")),
+				"ratio":  javavalue.Scalar("java.lang.Double", json.Number("2.0")),
+				"emoji":  javavalue.Scalar("java.lang.String", "a🙂b"),
+			}),
+			mode: "decode-query-request",
+			want: "QueryRequest{mpCode=java.lang.Long:433905635109773312,ratio=java.lang.Double:2.0,emoji=java.lang.String:a🙂b}",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWriter()
+			if err := w.writeValue(tc.value); err != nil {
+				t.Fatalf("writeValue: %v", err)
+			}
+			got := contract.run(t, tc.mode, hex.EncodeToString(w.bytes()))
+			if got != tc.want {
+				t.Fatalf("java decoded %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHessianJavaContractJavaEncodedValuesReadableByGo(t *testing.T) {
+	contract := requireJavaHessianContract(t)
+
+	cases := []struct {
+		name  string
+		check func(t *testing.T, got interface{})
+	}{
+		{
+			name: "string-emoji",
+			check: func(t *testing.T, got interface{}) {
+				if got != "a🙂b" {
+					t.Fatalf("got %#v", got)
+				}
+			},
+		},
+		{
+			name: "long",
+			check: func(t *testing.T, got interface{}) {
+				if got != int64(433905635109773312) {
+					t.Fatalf("got %#v", got)
+				}
+			},
+		},
+		{
+			name: "integer",
+			check: func(t *testing.T, got interface{}) {
+				if got != int64(5) {
+					t.Fatalf("got %#v", got)
+				}
+			},
+		},
+		{
+			name: "double-whole",
+			check: func(t *testing.T, got interface{}) {
+				if got != float64(2) {
+					t.Fatalf("got %#v", got)
+				}
+			},
+		},
+		{
+			name: "list-with-null",
+			check: func(t *testing.T, got interface{}) {
+				items := listItems(t, got)
+				if len(items) != 3 || items[0] != nil || items[1] != int64(1) || items[2] != "two" {
+					t.Fatalf("items = %#v", items)
+				}
+			},
+		},
+		{
+			name: "map-long-key",
+			check: func(t *testing.T, got interface{}) {
+				entries := mapEntries(t, got)
+				if entries["7"] != "seven" || entries["name"] != "alice" {
+					t.Fatalf("entries = %#v", entries)
+				}
+			},
+		},
+		{
+			name: "big-decimal",
+			check: func(t *testing.T, got interface{}) {
+				obj := objectFields(t, got, "java.math.BigDecimal")
+				if obj["value"] != "1000.50" {
+					t.Fatalf("fields = %#v", obj)
+				}
+			},
+		},
+		{
+			name: "bytes",
+			check: func(t *testing.T, got interface{}) {
+				b, ok := got.([]byte)
+				if !ok || hex.EncodeToString(b) != "0102ff" {
+					t.Fatalf("got %#v", got)
+				}
+			},
+		},
+		{
+			name: "query-response",
+			check: func(t *testing.T, got interface{}) {
+				fields := objectFields(t, got, "HessianContractHelper$QueryResponse")
+				if fields["success"] != true {
+					t.Fatalf("fields = %#v", fields)
+				}
+				amount := objectFields(t, fields["amount"], "java.math.BigDecimal")
+				if amount["value"] != "113795.2485" {
+					t.Fatalf("amount = %#v", amount)
+				}
+				tags := listItems(t, fields["tags"])
+				if len(tags) != 2 || tags[0] != "A" || tags[1] != "B" {
+					t.Fatalf("tags = %#v", tags)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rawHex := contract.run(t, "encode", tc.name)
+			data, err := hex.DecodeString(rawHex)
+			if err != nil {
+				t.Fatalf("decode helper hex: %v", err)
+			}
+			got, err := (&reader{data: data}).readValue()
+			if err != nil {
+				t.Fatalf("readValue: %v; data=%s", err, rawHex)
+			}
+			tc.check(t, got)
+		})
+	}
+}
+
+func requireJavaHessianContract(t *testing.T) javaHessianContract {
+	t.Helper()
+	javaContractOnce.Do(func() {
+		javac, err := exec.LookPath("javac")
+		if err != nil {
+			javaContractSkip = "javac not found; skipping Java Hessian contract tests"
+			return
+		}
+		java, err := exec.LookPath("java")
+		if err != nil {
+			javaContractSkip = "java not found; skipping Java Hessian contract tests"
+			return
+		}
+		jar := findHessianJar()
+		if jar == "" {
+			javaContractSkip = "hessian jar not found in local Maven repository; skipping Java Hessian contract tests"
+			return
+		}
+		outDir, err := os.MkdirTemp("", "sofarpc-hessian-contract-*")
+		if err != nil {
+			javaContractErr = err
+			return
+		}
+		javaContractTempDir = outDir
+		src := filepath.Join("testdata", "java", "HessianContractHelper.java")
+		cmd := exec.Command(javac, "-cp", jar, "-d", outDir, src)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			javaContractErr = fmt.Errorf("compile Java Hessian helper: %w\n%s", err, output)
+			return
+		}
+		javaContractCache = javaHessianContract{java: java, classpath: strings.Join([]string{jar, outDir}, string(os.PathListSeparator))}
+	})
+	if javaContractSkip != "" {
+		t.Skip(javaContractSkip)
+	}
+	if javaContractErr != nil {
+		t.Fatal(javaContractErr)
+	}
+	return javaContractCache
+}
+
+func findHessianJar() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	candidates := []string{
+		filepath.Join(home, ".m2", "repository", "hessian", "hessian", "3.2.16.alipay", "hessian-3.2.16.alipay.jar"),
+		filepath.Join(home, ".m2", "repository", "hessian", "hessian", "3.2.4.alipay", "hessian-3.2.4.alipay.jar"),
+		filepath.Join(home, ".m2", "repository", "com", "caucho", "hessian", "3.1.5", "hessian-3.1.5.jar"),
+	}
+	for _, path := range candidates {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return ""
+}
+
+func (c javaHessianContract) run(t *testing.T, args ...string) string {
+	t.Helper()
+	cmdArgs := append([]string{"-cp", c.classpath, "HessianContractHelper"}, args...)
+	cmd := exec.Command(c.java, cmdArgs...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("java helper failed: %v\n%s", err, output)
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func listItems(t *testing.T, got interface{}) []interface{} {
+	t.Helper()
+	if items, ok := got.([]interface{}); ok {
+		return items
+	}
+	obj, ok := got.(map[string]interface{})
+	if !ok {
+		t.Fatalf("got %T, want list", got)
+	}
+	items, ok := obj["items"].([]interface{})
+	if !ok {
+		t.Fatalf("got %#v, want list items", got)
+	}
+	return items
+}
+
+func mapEntries(t *testing.T, got interface{}) map[string]interface{} {
+	t.Helper()
+	entries, ok := got.(map[string]interface{})
+	if !ok {
+		t.Fatalf("got %T, want map", got)
+	}
+	if nested, ok := entries["entries"].(map[string]interface{}); ok {
+		return nested
+	}
+	return entries
+}
+
+func objectFields(t *testing.T, got interface{}, wantType string) map[string]interface{} {
+	t.Helper()
+	obj, ok := got.(map[string]interface{})
+	if !ok {
+		t.Fatalf("got %T, want object %s", got, wantType)
+	}
+	if obj["type"] != wantType {
+		t.Fatalf("type = %#v, want %s; object=%#v", obj["type"], wantType, obj)
+	}
+	fields, ok := obj["fields"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("fields missing in %#v", obj)
+	}
+	return fields
+}
+
+func TestHessianJavaContractJavaDateDecodesAsEpochMillis(t *testing.T) {
+	contract := requireJavaHessianContract(t)
+	rawHex := contract.run(t, "encode", "date")
+	data, err := hex.DecodeString(rawHex)
+	if err != nil {
+		t.Fatalf("decode helper hex: %v", err)
+	}
+	got, err := (&reader{data: data}).readValue()
+	if err != nil {
+		t.Fatalf("readValue: %v; data=%s", err, rawHex)
+	}
+	if got != int64(0) {
+		t.Fatalf("date = %#v, want epoch millis", got)
+	}
+}
+
+func TestHessianJavaContractDocumentsKnownBigIntegerPresentationGap(t *testing.T) {
+	contract := requireJavaHessianContract(t)
+	rawHex := contract.run(t, "encode", "big-integer")
+	data, err := hex.DecodeString(rawHex)
+	if err != nil {
+		t.Fatalf("decode helper hex: %v", err)
+	}
+	got, err := (&reader{data: data}).readValue()
+	if err != nil {
+		t.Fatalf("readValue: %v; data=%s", err, rawHex)
+	}
+	fields := objectFields(t, got, "java.math.BigInteger")
+	if _, ok := fields["value"]; ok {
+		t.Fatalf("BigInteger unexpectedly rendered as value; remove this known-gap test")
+	}
+	if fields["signum"] != int64(1) || fields["mag"] == nil {
+		t.Fatalf("fields = %#v", fields)
+	}
+}
+
+func TestHessianJavaContractDocumentsKnownBigIntegerWriteGap(t *testing.T) {
+	w := newWriter()
+	err := w.writeValueWithType("java.math.BigInteger", "9223372036854775807")
+	if err == nil {
+		t.Fatalf("BigInteger unexpectedly encoded; remove this known-gap test and add Java round-trip coverage")
+	}
+	if !strings.Contains(err.Error(), "BigInteger encoding is not supported") {
+		t.Fatalf("err = %v", err)
+	}
+}

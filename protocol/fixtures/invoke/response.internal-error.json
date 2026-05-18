@@ -1,9 +1,0 @@
-{
-  "requestId": "req-invoke-0042",
-  "ok": false,
-  "code": "INTERNAL_ERROR",
-  "error": {
-    "message": "IllegalStateException: dispatcher crashed",
-    "cause": "java.lang.IllegalStateException"
-  }
-}

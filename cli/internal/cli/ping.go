@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/sofarpc/cli/internal/app"
-	"github.com/sofarpc/cli/internal/protocol"
 )
 
 func runPing(args []string, env Env) int {
@@ -34,13 +33,13 @@ func runPing(args []string, env Env) int {
 		Service:   *service,
 		TimeoutMS: *timeoutMS,
 	})
-	resp := protocolResponseFromProbe(probe)
-	resp.RequestID = protocol.NewRequestID(protocol.OpPing)
-	if err := writeResponse(env.Stdout, &resp); err != nil {
-		fmt.Fprintln(env.Stderr, "ping: write response:", err)
+	result := app.RenderProbe(probe)
+	result.RequestID = app.NewRequestID("ping")
+	if err := writeResult(env.Stdout, result); err != nil {
+		fmt.Fprintln(env.Stderr, "ping: write result:", err)
 		return 1
 	}
-	if !resp.OK {
+	if !result.OK {
 		return 1
 	}
 	return 0

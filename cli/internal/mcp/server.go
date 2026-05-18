@@ -13,7 +13,6 @@ import (
 
 	"github.com/sofarpc/cli/internal/app"
 	"github.com/sofarpc/cli/internal/appconfig"
-	"github.com/sofarpc/cli/internal/protocol"
 	"github.com/sofarpc/cli/internal/schema"
 )
 
@@ -404,7 +403,7 @@ func (s *Server) probe(ctx context.Context, args map[string]interface{}) toolRes
 	if err != nil {
 		return toolErr("bad arguments", err)
 	}
-	requestID := protocol.NewRequestID(protocol.OpPing)
+	requestID := app.NewRequestID("ping")
 	probe := s.application().ProbeEndpoint(ctx, app.ProbeInput{
 		Project:   project,
 		Server:    server,
@@ -412,7 +411,7 @@ func (s *Server) probe(ctx context.Context, args map[string]interface{}) toolRes
 		Service:   service,
 		TimeoutMS: intArgDefault(args, "timeoutMs", 0),
 	})
-	resp := protocolResponseFromProbe(probe)
+	resp := app.RenderProbe(probe)
 	resp.RequestID = requestID
 	return toolOK("Probe completed. Success only means the TCP transport path was reachable; it does not prove the remote interface or method exists.", map[string]interface{}{
 		"server":    probe.Server,
@@ -489,83 +488,15 @@ func (s *Server) invoke(ctx context.Context, args map[string]interface{}) toolRe
 	if err != nil {
 		return toolErr("invocation planning failed", err)
 	}
-	requestID := protocol.NewRequestID(protocol.OpInvoke)
+	requestID := app.NewRequestID("invoke")
 	planData := plan.Display()
 	planData["requestId"] = requestID
 	if boolArg(args, "dryRun") {
 		return toolOK("Invoke dry run completed.", map[string]interface{}{"dryRun": true, "plan": planData})
 	}
-	resp := protocolResponseFromExecution(s.application().ExecuteInvocation(ctx, plan))
+	resp := app.RenderExecution(s.application().ExecuteInvocation(ctx, plan))
 	resp.RequestID = requestID
 	return toolOK("Invoke completed.", map[string]interface{}{"plan": planData, "response": resp})
-}
-
-func protocolResponseFromExecution(exec app.InvocationExecution) protocol.Response {
-	resp := protocol.Response{
-		OK:   exec.OK,
-		Code: exec.Code,
-		Meta: exec.Meta,
-	}
-	if exec.OK {
-		body, err := json.Marshal(exec.Data)
-		if err != nil {
-			return protocol.Response{
-				OK:   false,
-				Code: protocol.CodeInternalError,
-				Error: &protocol.ResponseError{
-					Message: err.Error(),
-				},
-				Meta: map[string]interface{}{"runtime": "go"},
-			}
-		}
-		resp.Data = body
-		return resp
-	}
-	if exec.Error != nil {
-		resp.Error = &protocol.ResponseError{
-			Message: exec.Error.Message,
-			Cause:   exec.Error.Cause,
-			Details: exec.Error.Details,
-		}
-	}
-	return resp
-}
-
-func protocolResponseFromProbe(probe app.ProbeResult) protocol.Response {
-	data := map[string]interface{}{
-		"address":     probe.Address,
-		"service":     probe.Service,
-		"reachable":   probe.Reachable,
-		"elapsedMs":   probe.ElapsedMS,
-		"diagnostics": probe.Diagnostics,
-	}
-	if probe.Error != nil {
-		return protocol.Response{
-			OK:   false,
-			Code: app.CodeConnectFailed,
-			Error: &protocol.ResponseError{
-				Message: probe.Error.Message,
-				Cause:   probe.Error.Cause,
-				Details: probe.Error.Details,
-			},
-			Meta: probe.Meta,
-		}
-	}
-	body, err := json.Marshal(data)
-	if err != nil {
-		return protocol.Response{
-			OK:    false,
-			Code:  protocol.CodeInternalError,
-			Error: &protocol.ResponseError{Message: err.Error()},
-			Meta:  map[string]interface{}{"runtime": "go"},
-		}
-	}
-	return protocol.Response{
-		OK:   true,
-		Code: app.CodeSuccess,
-		Data: body,
-		Meta: probe.Meta,
-	}
 }
 
 func invocationInput(args map[string]interface{}) (app.InvocationInput, error) {

@@ -67,6 +67,9 @@ func typedValueForJavaType(value interface{}, javaType string, types map[string]
 	if depth > maxTypePlanDepth {
 		return javavalue.Scalar(javaType, value)
 	}
+	if isByteArrayType(javaType) {
+		return javavalue.Scalar(javaType, value)
+	}
 	switch raw := value.(type) {
 	case map[string]interface{}:
 		typ, ok := types[eraseRPCGeneric(javaType)]
@@ -231,6 +234,12 @@ func eraseRPCGeneric(typ string) string {
 		base = strings.TrimSpace(base[:idx])
 	}
 	return strings.TrimSuffix(base, "[]")
+}
+
+func isByteArrayType(typ string) bool {
+	typ = strings.TrimSpace(typ)
+	typ = strings.TrimPrefix(typ, "final ")
+	return typ == "byte[]" || typ == "java.lang.Byte[]"
 }
 
 func isPrimitiveRPCType(typ string) bool {

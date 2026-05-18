@@ -249,60 +249,6 @@ func TestInvokeRoundTripFlattensResponse(t *testing.T) {
 	}
 }
 
-func TestEvaluateAssertions(t *testing.T) {
-	result := map[string]interface{}{"status": "INACTIVE", "name": "alice"}
-	exists := true
-	out, failed := EvaluateAssertions(result, []Assertion{
-		{Path: "$.status", Equals: "ACTIVE"},
-		{Path: "$.name", Exists: &exists},
-	})
-	if failed != 1 || len(out) != 2 || out[0].Passed || !out[1].Passed {
-		t.Fatalf("unexpected assertions: failed=%d out=%+v", failed, out)
-	}
-}
-
-func TestFlattenJDKValueTypes(t *testing.T) {
-	date := flattenValue(map[string]interface{}{
-		"type":   "java.util.Date",
-		"fields": map[string]interface{}{"fastTime": int64(0)},
-	}).(map[string]interface{})
-	if date["epochMillis"] != int64(0) || date["iso"] != "1970-01-01T00:00:00Z" {
-		t.Fatalf("date = %#v", date)
-	}
-
-	optional := flattenValue(map[string]interface{}{
-		"type":   "java.util.Optional",
-		"fields": map[string]interface{}{"present": true, "value": "ok"},
-	})
-	if optional != "ok" {
-		t.Fatalf("optional = %#v", optional)
-	}
-
-	emptyOptional := flattenValue(map[string]interface{}{
-		"type":   "java.util.Optional",
-		"fields": map[string]interface{}{"present": false},
-	})
-	if emptyOptional != nil {
-		t.Fatalf("empty optional = %#v", emptyOptional)
-	}
-
-	enum := flattenValue(map[string]interface{}{
-		"type":   "com.example.StatusEnum",
-		"fields": map[string]interface{}{"name": "ACTIVE"},
-	})
-	if enum != "ACTIVE" {
-		t.Fatalf("enum = %#v", enum)
-	}
-
-	dto := flattenValue(map[string]interface{}{
-		"type":   "com.example.Name",
-		"fields": map[string]interface{}{"name": "alice"},
-	}).(map[string]interface{})
-	if dto["name"] != "alice" {
-		t.Fatalf("single-field DTO should not flatten as enum: %#v", dto)
-	}
-}
-
 func successResponse(t *testing.T, app interface{}) []byte {
 	t.Helper()
 	w := newWriter()

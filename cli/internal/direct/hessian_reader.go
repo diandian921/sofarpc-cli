@@ -4,7 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"unicode/utf8"
+	"strings"
+	"unicode/utf16"
 )
 
 const (
@@ -419,17 +420,17 @@ func (r *reader) stringWithTag(tag byte) (string, error) {
 		return r.utf8(int(tag))
 	}
 	var done bool
-	var out []byte
+	var out strings.Builder
 	for {
 		n, err := r.uint16()
 		if err != nil {
 			return "", err
 		}
-		chunk, err := r.rawUTF8(int(n))
+		chunk, err := r.utf8(int(n))
 		if err != nil {
 			return "", err
 		}
-		out = append(out, chunk...)
+		out.WriteString(chunk)
 		done = tag == 'S'
 		if done {
 			break
@@ -443,7 +444,7 @@ func (r *reader) stringWithTag(tag byte) (string, error) {
 		}
 		tag = next
 	}
-	return string(out), nil
+	return out.String(), nil
 }
 
 func (r *reader) bytesWithTag(tag byte) ([]byte, error) {
@@ -538,35 +539,73 @@ func (r *reader) int64() (int64, error) {
 }
 
 func (r *reader) utf8(chars int) (string, error) {
-	raw, err := r.rawUTF8(chars)
-	if err != nil {
-		return "", err
-	}
-	return string(raw), nil
-}
-
-func (r *reader) rawUTF8(chars int) ([]byte, error) {
-	start := r.offset
+	var out strings.Builder
 	count := 0
-	for r.offset < len(r.data) && count < chars {
-		decoded, size := utf8.DecodeRune(r.data[r.offset:])
-		if size == 0 || (decoded == utf8.RuneError && size == 1) {
-			return nil, fmt.Errorf("bad utf8")
+	for count < chars {
+		unit, err := r.utf8Unit()
+		if err != nil {
+			return "", err
 		}
-		units := 1
-		if decoded > 0xffff {
-			units = 2
+		count++
+		if unit >= 0xd800 && unit <= 0xdbff {
+			if count >= chars {
+				return "", fmt.Errorf("bad utf8")
+			}
+			low, err := r.utf8Unit()
+			if err != nil {
+				return "", err
+			}
+			count++
+			if low < 0xdc00 || low > 0xdfff {
+				return "", fmt.Errorf("bad utf8")
+			}
+			out.WriteRune(utf16.DecodeRune(rune(unit), rune(low)))
+			continue
 		}
-		if count+units > chars {
-			return nil, fmt.Errorf("bad utf8 length")
+		if unit >= 0xdc00 && unit <= 0xdfff {
+			return "", fmt.Errorf("bad utf8")
 		}
-		r.offset += size
-		count += units
+		out.WriteRune(rune(unit))
 	}
 	if count != chars {
-		return nil, fmt.Errorf("unexpected EOF")
+		return "", fmt.Errorf("unexpected EOF")
 	}
-	return r.data[start:r.offset], nil
+	return out.String(), nil
+}
+
+func (r *reader) utf8Unit() (uint16, error) {
+	b0, err := r.byte()
+	if err != nil {
+		return 0, err
+	}
+	switch {
+	case b0 < 0x80:
+		return uint16(b0), nil
+	case b0&0xe0 == 0xc0:
+		b1, err := r.byte()
+		if err != nil {
+			return 0, err
+		}
+		if b1&0xc0 != 0x80 {
+			return 0, fmt.Errorf("bad utf8")
+		}
+		return uint16(b0&0x1f)<<6 | uint16(b1&0x3f), nil
+	case b0&0xf0 == 0xe0:
+		b1, err := r.byte()
+		if err != nil {
+			return 0, err
+		}
+		b2, err := r.byte()
+		if err != nil {
+			return 0, err
+		}
+		if b1&0xc0 != 0x80 || b2&0xc0 != 0x80 {
+			return 0, fmt.Errorf("bad utf8")
+		}
+		return uint16(b0&0x0f)<<12 | uint16(b1&0x3f)<<6 | uint16(b2&0x3f), nil
+	default:
+		return 0, fmt.Errorf("bad utf8")
+	}
 }
 
 func (r *reader) raw(n int) ([]byte, error) {

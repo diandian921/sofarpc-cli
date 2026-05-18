@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/sofarpc/cli/internal/presentation"
 )
 
 const (
@@ -131,7 +133,7 @@ func Invoke(ctx context.Context, req Request) (Outcome, error) {
 		return Outcome{Elapsed: elapsed, Diagnostics: responseDiagnostics(resp, targetService, id)}, &RemoteError{Message: msg}
 	}
 	return Outcome{
-		Result:      flattenValue(decoded.AppResponse),
+		Result:      presentation.Flatten(decoded.AppResponse),
 		RawResult:   decoded.AppResponse,
 		Elapsed:     elapsed,
 		Diagnostics: responseDiagnostics(resp, targetService, id),

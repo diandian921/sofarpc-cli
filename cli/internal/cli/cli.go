@@ -26,8 +26,6 @@ func Run(args []string, env Env) int {
 		return 2
 	}
 	switch args[0] {
-	case "exec":
-		return runExec(args[1:], env)
 	case "invoke":
 		return runInvoke(args[1:], env)
 	case "ping":
@@ -73,7 +71,6 @@ func printUsage(w io.Writer) {
 	fmt.Fprint(w, `sofarpc-cli — MCP-first SofaRPC CLI
 
 Usage:
-  sofarpc-cli exec --stdin                 Read one request envelope from stdin, write one response.
   sofarpc-cli invoke [flags]               Invoke a SofaRPC method over direct BOLT/Hessian2.
   sofarpc-cli ping <host:port|server>      Probe a target TCP address.
   sofarpc-cli project add|list|remove      Manage local source projects.

@@ -10,11 +10,13 @@ import (
 )
 
 const (
-	CodeSuccess       = "SUCCESS"
-	CodeConnectFailed = "CONNECT_FAILED"
-	CodeRPCTimeout    = "RPC_TIMEOUT"
-	CodeInvokeFailed  = "INVOKE_FAILED"
-	CodeInternalError = "INTERNAL_ERROR"
+	CodeSuccess         = "SUCCESS"
+	CodeBadRequest      = "BAD_REQUEST"
+	CodeConnectFailed   = "CONNECT_FAILED"
+	CodeRPCTimeout      = "RPC_TIMEOUT"
+	CodeInvokeFailed    = "INVOKE_FAILED"
+	CodeAssertionFailed = "ASSERTION_FAILED"
+	CodeInternalError   = "INTERNAL_ERROR"
 )
 
 type ErrorKind string

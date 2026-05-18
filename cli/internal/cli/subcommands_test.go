@@ -3,13 +3,49 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"net"
+	"os"
 	"strconv"
 	"testing"
 
-	"github.com/sofarpc/cli/internal/protocol"
+	"github.com/sofarpc/cli/internal/app"
 )
 
-func TestInvokeSubcommandReturnsDirectFailureEnvelope(t *testing.T) {
+func tempHome(t *testing.T) (string, func()) {
+	t.Helper()
+	dir := t.TempDir()
+	base := dir + string(os.PathSeparator) + ".sofarpc"
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatalf("mkdir .sofarpc: %v", err)
+	}
+	prevHome := os.Getenv("HOME")
+	if err := os.Setenv("HOME", dir); err != nil {
+		t.Fatalf("setenv HOME: %v", err)
+	}
+	return base, func() {
+		_ = os.Setenv("HOME", prevHome)
+	}
+}
+
+func startTCPListener(t *testing.T) net.Listener {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	return ln
+}
+
+func TestInvokeSubcommandReturnsDirectFailureResult(t *testing.T) {
 	_, cleanup := tempHome(t)
 	defer cleanup()
 
@@ -26,11 +62,11 @@ func TestInvokeSubcommandReturnsDirectFailureEnvelope(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("expected non-zero exit; stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
-	var resp protocol.Response
+	var resp app.Result
 	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &resp); err != nil {
 		t.Fatalf("decode: %v, out=%s", err, stdout.String())
 	}
-	if resp.OK || resp.Code != protocol.CodeConnectFailed {
+	if resp.OK || resp.Code != app.CodeConnectFailed {
 		t.Fatalf("bad resp: %+v", resp)
 	}
 }
@@ -53,8 +89,8 @@ func TestInvokeRejectsArgTypeMismatch(t *testing.T) {
 	}
 }
 
-func TestBuildInvokePayloadPreservesLargeJSONNumbers(t *testing.T) {
-	payload, err := buildInvokePayload(
+func TestBuildInvokeInputPreservesLargeJSONNumbers(t *testing.T) {
+	input, _, err := buildInvokeInput(
 		"127.0.0.1:12200",
 		"com.example.UserService",
 		"getUser",
@@ -64,9 +100,9 @@ func TestBuildInvokePayloadPreservesLargeJSONNumbers(t *testing.T) {
 		0,
 	)
 	if err != nil {
-		t.Fatalf("buildInvokePayload: %v", err)
+		t.Fatalf("buildInvokeInput: %v", err)
 	}
-	arg := payload.Args[0].(map[string]interface{})
+	arg := input.OrderedArguments[0].(map[string]interface{})
 	number, ok := arg["mpCode"].(json.Number)
 	if !ok {
 		t.Fatalf("mpCode type = %T", arg["mpCode"])
@@ -76,7 +112,7 @@ func TestBuildInvokePayloadPreservesLargeJSONNumbers(t *testing.T) {
 	}
 }
 
-func TestPingSubcommandSendsEnvelope(t *testing.T) {
+func TestPingSubcommandRendersResult(t *testing.T) {
 	_, cleanup := tempHome(t)
 	defer cleanup()
 	ln := startTCPListener(t)
@@ -89,7 +125,7 @@ func TestPingSubcommandSendsEnvelope(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
 	}
-	var resp protocol.Response
+	var resp app.Result
 	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}

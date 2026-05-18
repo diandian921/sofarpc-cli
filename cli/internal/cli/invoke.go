@@ -1,16 +1,18 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"strings"
 
-	"github.com/sofarpc/cli/internal/protocol"
+	"github.com/sofarpc/cli/internal/app"
+	"github.com/sofarpc/cli/internal/presentation"
 )
 
-// runInvoke is the human-facing shortcut for OpInvoke. Agents should prefer `exec --stdin`
-// because it avoids shell-quoting JSON; this subcommand maps flat flags to the same envelope.
+// runInvoke is the human-facing shortcut for an invocation. It maps flat flags
+// to an app InvocationInput and emits the single rendered result contract.
 func runInvoke(args []string, env Env) int {
 	fs := flag.NewFlagSet("invoke", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
@@ -36,50 +38,86 @@ func runInvoke(args []string, env Env) int {
 	}
 	*addr = resolved
 
-	payload, err := buildInvokePayload(*addr, *service, *method, *argTypesCSV, *argsJSON, *assertionsJSON, *timeoutMS)
+	input, specs, err := buildInvokeInput(*addr, *service, *method, *argTypesCSV, *argsJSON, *assertionsJSON, *timeoutMS)
 	if err != nil {
 		fmt.Fprintln(env.Stderr, "invoke:", err)
 		return 2
 	}
 
-	resp := executeInvokePayload(payload)
-	resp.RequestID = protocol.NewRequestID(protocol.OpInvoke)
-	if err := writeResponse(env.Stdout, resp); err != nil {
-		fmt.Fprintln(env.Stderr, "invoke: write response:", err)
+	result := executeInvoke(input, specs)
+	result.RequestID = app.NewRequestID("invoke")
+	if err := writeResult(env.Stdout, result); err != nil {
+		fmt.Fprintln(env.Stderr, "invoke: write result:", err)
 		return 1
 	}
-	if !resp.OK {
+	if !result.OK {
 		return 1
 	}
 	return 0
 }
 
-func buildInvokePayload(addr, service, method, argTypesCSV, argsJSON, assertionsJSON string, timeoutMS int) (protocol.InvokePayload, error) {
-	payload := protocol.InvokePayload{
-		Address:      addr,
-		Service:      service,
-		Method:       method,
-		ArgTypes:     splitTrim(argTypesCSV),
-		RPCTimeoutMS: timeoutMS,
+type assertionSpec struct {
+	Path   string      `json:"path"`
+	Equals interface{} `json:"equals,omitempty"`
+	Exists *bool       `json:"exists,omitempty"`
+}
+
+func buildInvokeInput(addr, service, method, argTypesCSV, argsJSON, assertionsJSON string, timeoutMS int) (app.InvocationInput, []assertionSpec, error) {
+	input := app.InvocationInput{
+		Address:             addr,
+		Service:             service,
+		Method:              method,
+		ParamTypes:          splitTrim(argTypesCSV),
+		HasOrderedArguments: true,
+		TimeoutMS:           timeoutMS,
 	}
 	var argsArr []interface{}
 	dec := json.NewDecoder(strings.NewReader(argsJSON))
 	dec.UseNumber()
 	if err := dec.Decode(&argsArr); err != nil {
-		return payload, fmt.Errorf("invalid --args-json: %w", err)
+		return input, nil, fmt.Errorf("invalid --args-json: %w", err)
 	}
-	payload.Args = argsArr
-	if len(payload.ArgTypes) != len(payload.Args) {
-		return payload, fmt.Errorf("argTypes (%d) and args (%d) length mismatch", len(payload.ArgTypes), len(payload.Args))
+	input.OrderedArguments = argsArr
+	if len(input.ParamTypes) != len(input.OrderedArguments) {
+		return input, nil, fmt.Errorf("argTypes (%d) and args (%d) length mismatch", len(input.ParamTypes), len(input.OrderedArguments))
 	}
+	var specs []assertionSpec
 	if assertionsJSON != "" {
-		var specs []protocol.AssertionSpec
 		if err := json.Unmarshal([]byte(assertionsJSON), &specs); err != nil {
-			return payload, fmt.Errorf("invalid --assertions-json: %w", err)
+			return input, nil, fmt.Errorf("invalid --assertions-json: %w", err)
 		}
-		payload.Assertions = specs
 	}
-	return payload, nil
+	return input, specs, nil
+}
+
+func executeInvoke(input app.InvocationInput, specs []assertionSpec) app.Result {
+	service := app.New(nil)
+	plan, err := service.PlanInvocation(context.Background(), input)
+	if err != nil {
+		return app.RenderFailure(app.CodeBadRequest, err.Error(), app.DomainErrorDetails(err))
+	}
+	exec := service.ExecuteInvocation(context.Background(), plan)
+	if exec.OK {
+		applyAssertions(&exec, specs)
+	}
+	return app.RenderExecution(exec)
+}
+
+func applyAssertions(exec *app.InvocationExecution, specs []assertionSpec) {
+	if exec == nil || len(specs) == 0 {
+		return
+	}
+	assertions := make([]presentation.Assertion, len(specs))
+	for i, item := range specs {
+		assertions[i] = presentation.Assertion{Path: item.Path, Equals: item.Equals, Exists: item.Exists}
+	}
+	out, failed := presentation.EvaluateAssertions(exec.Data["result"], assertions)
+	exec.Data["assertions"] = out
+	if failed > 0 {
+		exec.OK = false
+		exec.Code = app.CodeAssertionFailed
+		exec.Error = &app.ExecutionError{Message: fmt.Sprintf("%d of %d assertions failed", failed, len(out))}
+	}
 }
 
 func splitTrim(csv string) []string {

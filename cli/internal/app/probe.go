@@ -26,6 +26,7 @@ type ProbeResult struct {
 	TimeoutMS   int                    `json:"timeoutMs"`
 	Diagnostics Diagnostics            `json:"diagnostics,omitempty"`
 	Error       *ExecutionError        `json:"error,omitempty"`
+	Code        string                 `json:"-"`
 	Meta        map[string]interface{} `json:"meta,omitempty"`
 }
 
@@ -90,6 +91,7 @@ func (s *Service) ProbeEndpoint(ctx context.Context, input ProbeInput) ProbeResu
 		_ = conn.Close()
 		return result
 	}
+	result.Code = errorCode(err)
 	result.Error = &ExecutionError{
 		Message: err.Error(),
 		Details: map[string]interface{}{
@@ -124,6 +126,7 @@ func probeFailure(input ProbeInput, code string, err error, timeoutMS int, sourc
 			"address":        input.Address,
 		}},
 		Error: &ExecutionError{Message: err.Error()},
-		Meta:  map[string]interface{}{"runtime": "go", "code": code},
+		Code:  code,
+		Meta:  map[string]interface{}{"runtime": "go"},
 	}
 }

@@ -116,7 +116,7 @@ Use `dryRun=true` to inspect the endpoint, parameter types, ordered arguments, a
 
 Set `rawResult=true` when debugging serialization or response shape problems. The response then includes both the normal flattened `result` and the decoded Java object shape as `rawResult`.
 
-Assertions are intentionally not part of `sofarpc_invoke`. For assertion-based exact reproduction, use `sofarpc-cli exec --stdin` or the CLI `invoke` command.
+Assertions are intentionally not part of `sofarpc_invoke`. For assertion-based exact reproduction, use `sofarpc-cli invoke --assertions-json`.
 
 ## Config File
 
@@ -156,7 +156,7 @@ sofarpc-cli server add user-test 10.0.0.1:12200 --project user
 sofarpc-cli server list --json
 ```
 
-The `exec --stdin`, `ping`, and `invoke` commands are available for exact reproduction.
+The `invoke` and `ping` commands are available for exact reproduction; both emit the same structured result contract the MCP tools return.
 
 For invoke reproduction:
 
@@ -191,12 +191,12 @@ Schema cache is stored under `~/.sofarpc/cache/schema/` and invalidated by sourc
 
 ## Runtime Boundaries
 
-The pure-Go runtime covers direct BOLT generic invocation and the common Hessian2 value shapes used by DTO-style requests and responses. Declared Java argument and DTO field types are used for numeric encoding, so values such as `Integer`, `Long`, and `Double` do not depend on Go's JSON number shape.
+The pure-Go runtime covers direct BOLT generic invocation and the common Hessian2 value shapes used by DTO-style requests and responses. Declared Java argument and DTO field types are used for numeric encoding, so values such as `Integer`, `Long`, and `Double` do not depend on Go's JSON number shape. The current Java compatibility status is tracked in `docs/compatibility-matrix.md`.
 
 Known limits:
 
 - object reference preservation is not implemented for request encoding; cyclic request values are rejected.
-- `java.util.Date`, `byte[]`, complex enum payloads, and provider-specific Hessian extensions need dedicated compatibility tests before relying on them broadly.
+- `BigInteger`, Go request encoding for `java.util.Date`, complex enum payloads, and provider-specific Hessian extensions need more compatibility work before relying on them broadly.
 - map keys are flattened to strings in the normal `result`; use `rawResult=true` when key type matters during diagnosis.
 
 ## Security Boundaries

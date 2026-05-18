@@ -1,9 +1,10 @@
-package direct
+package presentation
 
 import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ type AssertionOutcome struct {
 	Message  string      `json:"message,omitempty"`
 }
 
-func flattenValue(v interface{}) interface{} {
+func Flatten(v interface{}) interface{} {
 	switch x := v.(type) {
 	case map[string]interface{}:
 		if fields, ok := x["fields"].(map[string]interface{}); ok {
@@ -34,32 +35,32 @@ func flattenValue(v interface{}) interface{} {
 			}
 			out := make(map[string]interface{}, len(fields))
 			for _, key := range fieldOrder(x, fields) {
-				out[key] = flattenValue(fields[key])
+				out[key] = Flatten(fields[key])
 			}
 			return out
 		}
 		if entries, ok := x["entries"].(map[string]interface{}); ok {
 			out := make(map[string]interface{}, len(entries))
 			for k, v := range entries {
-				out[k] = flattenValue(v)
+				out[k] = Flatten(v)
 			}
 			return out
 		}
 		if items, ok := x["items"].([]interface{}); ok {
-			return flattenValue(items)
+			return Flatten(items)
 		}
 		out := make(map[string]interface{}, len(x))
 		for k, v := range x {
 			if k == "fieldNames" {
 				continue
 			}
-			out[k] = flattenValue(v)
+			out[k] = Flatten(v)
 		}
 		return out
 	case []interface{}:
 		out := make([]interface{}, len(x))
 		for i, v := range x {
-			out[i] = flattenValue(v)
+			out[i] = Flatten(v)
 		}
 		return out
 	default:
@@ -115,7 +116,7 @@ func flattenJavaOptional(fields map[string]interface{}) (interface{}, bool) {
 	}
 	for _, key := range []string{"value", "val"} {
 		if value, ok := fields[key]; ok {
-			return flattenValue(value), true
+			return Flatten(value), true
 		}
 	}
 	return nil, false
@@ -137,7 +138,7 @@ func flattenJavaOptionalNumber(fields map[string]interface{}, floating bool) (in
 		} else if n, ok := int64FromValue(value); ok {
 			return n, true
 		}
-		return flattenValue(value), true
+		return Flatten(value), true
 	}
 	return nil, false
 }
@@ -214,7 +215,7 @@ func flattenJavaNumber(value interface{}) interface{} {
 		}
 		return x
 	default:
-		return flattenValue(x)
+		return Flatten(x)
 	}
 }
 
@@ -335,4 +336,13 @@ func cloneJSONValue(v interface{}) interface{} {
 		return v
 	}
 	return out
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

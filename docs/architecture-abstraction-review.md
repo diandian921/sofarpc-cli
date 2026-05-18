@@ -1,8 +1,10 @@
 # Architecture Abstraction Review
 
-This document summarizes the desired abstraction shape for the pure-Go
-SofaRPC agent runtime. It focuses on long-term code structure and product
-clarity, not on immediate feature scope.
+This document summarizes the abstraction shape for the pure-Go SofaRPC agent
+runtime. It is a guardrail, not a mandate to keep adding layers. The current
+highest-risk area is SofaRPC/Hessian compatibility against real Java endpoints;
+structural cleanup is valuable only when it makes that risk easier to test,
+debug, or contain.
 
 ## Current Assessment
 
@@ -10,20 +12,53 @@ The project is already MCP-first at the product boundary: agents call
 `sofarpc-mcp`, and the runtime invokes SofaRPC directly from Go.
 
 The internal abstractions now have a single application stack for invoke and
-probe. Remaining gaps are narrower:
+probe. The useful architecture work already landed:
+
+- MCP and CLI invoke/probe paths converge through `internal/app`.
+- `InvocationPlan` is the planning boundary for execution.
+- `TypedValue` is the only internal representation for Java-aware arguments.
+- MCP session concerns are separated from tool behavior.
+
+Remaining gaps are narrower:
 
 - MCP still owns some non-invoke workflow details such as config and doctor
   response shaping.
-- Result flattening still lives in `internal/direct` rather than a renderer
-  layer.
-- Hessian encode/decode is still concrete direct-runtime code rather than a
-  formal codec port.
+- `direct.Invoke` still returns both flattened and raw result shapes for
+  compatibility, but flattening itself now lives in `internal/presentation`.
 - Error and diagnostic information exists in a minimal form, but recovery hints
   are not yet complete.
 
-The current code is practical and deliverable. The main improvement area is to
-introduce a clearer application core so MCP, CLI, schema, codec, and transport
-do not leak into each other.
+The current code is practical and deliverable. The main improvement area is no
+longer "add more abstraction"; it is "make the protocol surface executable and
+trustworthy."
+
+## Priority Reset
+
+The product succeeds or fails on two hard surfaces:
+
+1. Pure-Go Hessian/SofaRPC wire compatibility with real Java implementations.
+2. Local Java source parsing accuracy for the interfaces agents ask to test.
+
+The remaining engineering investment should prioritize executable contract
+tests and visible compatibility status over additional interface seams.
+
+Concrete priority:
+
+1. Keep the abstraction stop line explicit.
+2. Done: `exec --stdin` and `internal/protocol` were removed (no real
+   consumer). MCP and CLI now emit one shared rendered contract, `app.Result`,
+   built by `app.RenderExecution`/`RenderProbe`/`RenderFailure`.
+3. Done: flattening and assertion evaluation were extracted into
+   `internal/presentation`, so the stable contract is
+   `decode -> decoded tree -> presentation JSON`.
+4. Expand the codec compatibility harness with the hybrid model: default CI
+   runs signed golden bytes; optional JVM oracle tests generate and validate the
+   corpus.
+5. Add a parallel parser golden corpus for real Java facade/DTO snippets.
+
+Do not introduce `Codec`, `EndpointResolver`, `Policy`, or similar interfaces
+just because the conceptual boundary exists. Add an interface only when a
+second implementation or a concrete test fake is actually needed.
 
 ## Implementation Status
 
@@ -32,31 +67,33 @@ codebase status is:
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Application layer | Implemented | MCP invoke/resolve/probe and CLI invoke/ping/exec now route through `internal/app`. |
+| Application layer | Implemented | MCP invoke/resolve/probe and CLI invoke/ping now route through `internal/app`. |
 | `InvocationPlan` | Implemented | Invocation entry points converge on `PlanInvocation` before execution. |
 | `TypedValue` | Implemented | Java type metadata is carried by `internal/javavalue`; user argument maps and the Hessian writer no longer use `@type`, `__type`, or `__fieldTypes` as an encoding path. |
 | MCP session/dispatcher | Implemented | JSON-RPC read/write, async dispatch, cancellation, and stdout locking live in `internal/mcp/session.go`. |
 | Source index port | Implemented | `internal/app.SourceIndex` hides local Java source indexing behind an interface. |
 | Probe use case | Implemented | `ProbeEndpoint` is an app use case; MCP and CLI both use it. |
-| CLI/exec migration | Implemented | `sofarpc-cli invoke`, `ping`, and `exec --stdin` no longer use a separate invoker stack. |
+| CLI migration | Implemented | `sofarpc-cli invoke`/`ping` route through app use cases and emit the shared `app.Result` contract. |
 | Legacy invoker package | Removed | `internal/invoker` was deleted after CLI and MCP moved to app use cases. |
-| Endpoint resolver port | Partial | Explicit address and configured server resolution are centralized in app code, but not yet exposed as a separate `EndpointResolver` interface. |
+| `exec --stdin` + `internal/protocol` | Removed | No real consumer existed. The stdin envelope, the `internal/protocol` package, and the root `protocol/` schema/fixtures were deleted. Single rendered contract is `app.Result`. |
+| Endpoint resolution | Implemented enough | Explicit address and configured server resolution are centralized in app code. Do not add an `EndpointResolver` interface until there is a second resolver implementation or a real test need. |
 | Domain error model | Partial | Minimal `DomainError{Kind, Message, Details}` exists for planning errors; recovery hints are not complete. |
-| Renderer layer | Not implemented | Result flattening still lives in `internal/direct`; MCP/CLI protocol rendering is adapter code. |
-| Codec port | Not implemented | Hessian encode/decode still lives in `internal/direct`; no `Codec` interface yet. |
-| Compatibility matrix | Not implemented | Compatibility samples exist as tests, but no visible matrix document is maintained yet. |
+| Presentation renderer | Implemented | `internal/presentation` owns result flattening and assertion evaluation as pure functions. No renderer strategy interface exists. |
+| Codec interface | Deferred | Hessian encode/decode still lives in `internal/direct`. The next step is Java compatibility tests, not a `Codec` port. |
+| Compatibility matrix | Partial | `docs/compatibility-matrix.md` is backed by signed Java Hessian golden bytes in default tests and optional JVM oracle tests under the `hessian_oracle` build tag. Expand this before adding more codec surface. |
+| Parser golden corpus | Partial | A first facade/DTO golden fixture exists under `internal/schema/testdata/golden`; expand it with Lombok, records, nested generics, annotations, and real facade shapes. |
 | Performance budget | Not implemented | Plan/probe diagnostics expose timings, but no thresholds or benchmark gate exist yet. |
 | Dependency rule enforcement | Not implemented | Boundaries are cleaner, but no automated package-boundary test exists yet. |
 
-## Desired Layering
+## Boundary Model
 
-The ideal dependency direction is:
+The useful dependency direction is:
 
 ```text
-Inbound Adapter -> Application Use Case -> Plan -> Policy -> Codec -> Transport -> Renderer
+Inbound Adapter -> Application Use Case -> Plan -> Direct Runtime -> Presentation
 ```
 
-Concrete package shape can evolve toward:
+Conceptual package shape:
 
 ```text
 internal/mcp
@@ -71,24 +108,26 @@ internal/app
   diagnostics.go   Timing, warnings, and structured troubleshooting output
 
 internal/schema
-  index.go         SourceIndex and SchemaSnapshot
+  index.go         source indexing and SchemaSnapshot
   parser.go        Java source parser implementation
 
 internal/direct
   client.go        SofaRPC client over BOLT
   transport.go     BOLT request/response transport
+  hessian_*.go     Hessian encode/decode implementation
 
-internal/codec
-  hessian.go       Hessian encode/decode implementation
-  values.go        Java-aware value model
+internal/presentation
+  result.go        Flatten decoded Java object trees into agent-friendly JSON
+  assertions       Assertion evaluation for CLI reproduction
 
 internal/config
-  store.go         ConfigStore port and file-backed implementation
+  store.go         file-backed configuration
 ```
 
 The exact package names are less important than the boundary: adapters translate
 requests, the application layer decides what should happen, and direct/codec
-layers only execute already-planned work.
+layers only execute already-planned work. This model is not permission to add
+interfaces before they have a second consumer.
 
 ## Core Domain Vocabulary
 
@@ -189,31 +228,24 @@ The snapshot answers questions such as:
 Planner code should decide how to handle ambiguity, missing schema, fallback,
 and warnings.
 
-### EndpointResolver
+### Endpoint Resolution
 
 Source resolution and endpoint resolution are separate concerns.
 
-```go
-type EndpointResolver interface {
-    ResolveEndpoint(ctx context.Context, req EndpointRequest) (Endpoint, error)
-}
-```
+For now this should remain concrete app code. If a second resolver source
+appears, such as registry integration, then an `EndpointResolver` interface may
+be worth introducing. Before that point, a helper function is simpler and more
+idiomatic Go.
 
-This keeps future sources such as config files, explicit address, local project
-settings, or registry integration from being mixed into schema parsing.
+### Hessian Codec
 
-### Codec Port
+Hessian encode/decode is the core correctness risk. The immediate need is not a
+`Codec` interface; it is executable compatibility coverage against real Java
+Hessian/SofaRPC implementations.
 
-Hessian should be modeled as an implementation of a codec contract.
-
-```go
-type Codec interface {
-    EncodeInvocation(plan InvocationPlan) ([]byte, error)
-    DecodeResponse(data []byte, expected JavaType) (TypedValue, error)
-}
-```
-
-This isolates Hessian compatibility work from MCP and application logic.
+After a compatibility harness exists, a codec boundary may be considered if it
+reduces testing friction or if a second codec appears. Until then, keep the code
+concrete and heavily tested.
 
 ### Renderer
 
@@ -224,7 +256,9 @@ Codec result -> TypedValue -> Renderer -> MCP/CLI JSON output
 ```
 
 `rawResult`, flattening, preserved `@type`, and map-key rendering should be
-renderer strategies, not codec behavior.
+presentation behavior, not transport behavior. The first extraction should be a
+small pure function package plus contract tests, not a pluggable renderer
+strategy.
 
 ### Policy
 
@@ -238,7 +272,9 @@ Examples:
 - Whether unresolved schema may still invoke.
 - Whether fallback from named arguments to ordered arguments is allowed.
 
-This can start as an `ExecutionPolicy` struct passed into application use cases.
+This can start as concrete fields passed into application use cases. Do not add
+a policy interface until there is a second policy source or a test that cannot
+be expressed cleanly without one.
 
 ### Diagnostics
 
@@ -300,6 +336,22 @@ Agent-facing errors should include recovery hints where possible:
 Pure-Go SofaRPC compatibility is a core product risk. It should be represented
 as a contract test matrix, not only ordinary unit tests.
 
+The harness has two modes:
+
+- Default CI: Go tests decode signed Java-generated golden bytes and assert the
+  frozen contract. No JVM is required.
+- Optional oracle: `go test -tags hessian_oracle ./internal/direct` compiles a
+  local Java Hessian helper and verifies both directions against hessian-lite.
+  This is the path for refreshing or adding golden samples.
+
+Direction matters:
+
+- Decode direction: Java Hessian bytes -> Go decode can be covered by signed
+  golden bytes.
+- Encode direction: Go bytes -> Java Hessian decode cannot be proven by golden
+  bytes alone. It needs the optional JVM oracle when creating or refreshing
+  samples.
+
 Important samples:
 
 - primitives and boxed primitives
@@ -319,6 +371,29 @@ Important samples:
 
 These tests define the supported protocol surface.
 
+## Parser Contract
+
+Codec compatibility is only half the correctness surface. If source parsing
+resolves the wrong method signature or DTO fields, the runtime can encode the
+wrong call correctly.
+
+The parser should maintain a parallel golden corpus:
+
+```text
+realistic Java facade/DTO snippet -> expected MethodSignature and DTO schema
+```
+
+High-priority parser samples:
+
+- annotated facade parameters
+- Chinese Javadoc recall
+- nested generic return and parameter types
+- DTO fields with `byte[]`, `BigDecimal`, and collections
+- Lombok-style DTOs
+- Java records
+- nested interfaces
+- overloaded methods
+
 ## Current Design Smells To Retire
 
 - Magic metadata keys inside user values.
@@ -337,18 +412,18 @@ cost of future features.
 This review folds the 22 abstraction points from the discussion into the
 following sections:
 
-1. Application layer: covered by `Desired Layering` and `Application Layer`.
+1. Application layer: covered by `Boundary Model` and `Application Layer`.
 2. First-class `InvocationPlan`: covered by `InvocationPlan`.
 3. Type metadata outside user values: covered by `TypedValue`.
 4. Schema provides facts, not policy: covered by `SourceIndex and SchemaSnapshot`.
-5. MCP server as a thin shell: covered by `Desired Layering` and `Application Layer`.
-6. Direct runtime as a narrow client: covered by `Desired Layering`, `Codec Port`,
+5. MCP server as a thin shell: covered by `Boundary Model` and `Application Layer`.
+6. Direct runtime as a narrow client: covered by `Boundary Model`, `Hessian Codec`,
    and `Current Design Smells To Retire`.
-7. Port/adapter boundary: covered by `Desired Layering`.
+7. Port/adapter boundary: covered by `Boundary Model`.
 8. Stable domain vocabulary: covered by `Core Domain Vocabulary`.
 9. Plan and execute separation: covered by `InvocationPlan`.
-10. Config not read directly by every layer: covered by `Desired Layering` through
-    the `internal/config` boundary and the application use cases.
+10. Config not read directly by every layer: covered by `Boundary Model` through
+    the config boundary and the application use cases.
 11. Domain error model: covered by `Error Model`.
 12. Return value as a domain model, not only JSON: covered by `TypedValue` and
     `Renderer`.
@@ -356,9 +431,9 @@ following sections:
 14. Tool definitions decoupled from use cases: covered by `Application Layer`.
 15. Invocation lifecycle: covered by `Diagnostics` and should become the standard
     execution timeline from receive to render.
-16. Independent endpoint resolution: covered by `EndpointResolver`.
-17. Codec as a first-class port: covered by `Codec Port`.
-18. Normalizer and renderer separation: covered by `TypedValue`, `Codec Port`,
+16. Independent endpoint resolution: covered by `Endpoint Resolution`.
+17. Codec correctness: covered by `Hessian Codec` and `Compatibility Contract`.
+18. Normalizer and renderer separation: covered by `TypedValue`, `Hessian Codec`,
     and `Renderer`.
 19. Policy layer: covered by `Policy`.
 20. Diagnostics as product output: covered by `Diagnostics`.
@@ -372,14 +447,14 @@ follows:
 
 - Metadata injection with `__fieldTypes`: resolved by `TypedValue`.
 - Overloaded MCP `Run()` orchestration: resolved by extracting MCP session and
-  dispatcher concerns from `Desired Layering`.
+  dispatcher concerns from `Boundary Model`.
 - Duplicate `tools/call` decoding for async scheduling: resolved by making MCP
   a thin adapter that decodes once and passes a typed command to application use
   cases.
 - Schema parser decisions leaking into invocation: reduced by `SourceIndex`,
   `SchemaSnapshot`, and planner-owned policy decisions.
 - Hessian writer accumulating dynamic switches: reduced by `TypedValue` and
-  `Codec Port`.
+  should now be controlled by real compatibility contract tests.
 - Silent schema annotation fallback: addressed by `Diagnostics`, `Warnings`,
   and the `Error Model`.
 
@@ -398,7 +473,7 @@ testable over time.
 Package dependency direction should be intentional and enforceable:
 
 ```text
-cmd -> inbound adapters -> application -> outbound ports -> implementations
+cmd -> inbound adapters -> application -> concrete implementations
 ```
 
 Expected direction:
@@ -406,8 +481,8 @@ Expected direction:
 ```text
 internal/mcp      -> internal/app
 internal/cli      -> internal/app
-internal/app      -> schema/direct/codec/config ports
-internal/direct   -> internal/codec and transport internals
+internal/app      -> schema/direct/config helpers
+internal/direct   -> transport and hessian internals
 internal/schema   -> parser internals
 ```
 
@@ -416,7 +491,7 @@ Reverse dependencies should be avoided:
 - `internal/app` should not import `internal/mcp` or CLI packages.
 - `internal/direct` should not know MCP tool schemas or JSON-RPC envelopes.
 - `internal/schema` should not decide invocation fallback policy.
-- `internal/codec` should not render MCP or CLI output.
+- Hessian encode/decode should not render MCP or CLI output.
 
 Eventually this should be checked by a lightweight package-boundary test or
 `go list` script, so the architecture is executable instead of only documented.
@@ -434,19 +509,17 @@ cmd/sofarpc-mcp
   load config
   construct ConfigStore
   construct SourceIndex
-  construct EndpointResolver
-  construct Codec
-  construct RpcClient
-  construct Application
+  construct direct runtime client
+  construct application services
   construct MCP server
 
 cmd/sofarpc-cli
-  construct the same Application
+  construct the same application services
   expose human-facing commands
 ```
 
 This keeps MCP and CLI behavior aligned and makes use cases easy to test with
-fake ports.
+small fakes where they are actually useful.
 
 ### Test Strategy
 
@@ -611,18 +684,35 @@ all supported platforms.
 
 ## Recommended Refactor Order
 
-1. Introduce `InvocationPlan` and move `dryRun` to `PlanInvocation`.
-2. Introduce `TypedValue` and remove `__fieldTypes` from user-shaped maps.
-3. Extract MCP session/dispatcher from the current server loop.
-4. Split `EndpointResolver` from source/schema resolution.
-5. Move flatten/raw output into a renderer layer.
-6. Replace string-matched errors with domain error kinds.
-7. Move Hessian encode/decode behind a codec contract.
-8. Formalize the compatibility test matrix.
+Done:
 
-The first two steps provide the biggest architecture payoff. Once
-`InvocationPlan` and `TypedValue` are stable, MCP, CLI, schema, and codec can
-evolve independently.
+1. Introduce `InvocationPlan` and move `dryRun` to planning.
+2. Introduce `TypedValue` and remove magic metadata keys from user-shaped maps.
+3. Extract MCP session/dispatcher from the server loop.
+4. Route MCP and CLI through the same app stack and remove the legacy invoker.
+5. Replace string-matched planning errors with stable domain error kinds.
+6. Remove `exec --stdin` and `internal/protocol`; MCP and CLI emit one shared
+   `app.Result` contract.
+7. Extract result flattening and assertion evaluation into
+   `internal/presentation`.
+
+Next:
+
+1. Expand codec golden coverage with the hybrid model: signed Java golden bytes
+   in default CI, optional JVM oracle under `hessian_oracle` for generation and
+   bidirectional verification.
+2. Expand parser golden coverage for real facade/DTO syntax.
+3. Move final rendering ownership fully out of `direct.Invoke` once app callers
+   can consume raw decoded results directly.
+4. Add package-boundary and performance checks once the compatibility and parser
+   harnesses are stable.
+
+Deferred unless a second implementation appears:
+
+- `Codec` interface.
+- `EndpointResolver` interface.
+- Pluggable renderer strategy.
+- Policy interface.
 
 ## Non-Goals
 
@@ -633,5 +723,7 @@ This review does not require:
 - Building a full Java parser immediately.
 - Managing saved test cases.
 - Adding assertions to MCP invoke.
+- Adding `Codec`, `EndpointResolver`, `Policy`, or renderer interfaces before a
+  second implementation or concrete testing need exists.
 
 The goal is a smaller and cleaner agent runtime, not a broader product surface.

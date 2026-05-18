@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/sofarpc/cli/internal/javavalue"
@@ -259,9 +260,10 @@ func (w *writer) writeList(class string, values []interface{}) error {
 
 func (w *writer) writeString(s string) error {
 	n := utf16Length(s)
+	encoded := hessianStringBytes(s)
 	if n <= 0x1f {
 		w.buf = append(w.buf, byte(n))
-		w.buf = append(w.buf, s...)
+		w.buf = append(w.buf, encoded...)
 		return nil
 	}
 	if n > math.MaxUint16 {
@@ -269,19 +271,21 @@ func (w *writer) writeString(s string) error {
 	}
 	w.buf = append(w.buf, 'S')
 	w.writeUint16(uint16(n))
-	w.buf = append(w.buf, s...)
+	w.buf = append(w.buf, encoded...)
 	return nil
 }
 
 func (w *writer) writeLenString(s string) {
+	encoded := hessianStringBytes(s)
 	w.writeInt(int64(utf16Length(s)))
-	w.buf = append(w.buf, s...)
+	w.buf = append(w.buf, encoded...)
 }
 
 func (w *writer) writeType(s string) {
+	encoded := hessianStringBytes(s)
 	w.buf = append(w.buf, 't')
 	w.writeUint16(uint16(utf16Length(s)))
-	w.buf = append(w.buf, s...)
+	w.buf = append(w.buf, encoded...)
 }
 
 func (w *writer) writeLength(n int) {
@@ -323,6 +327,13 @@ func (w *writer) writeUint64(n uint64) {
 }
 
 func (w *writer) writeJavaScalar(javaType string, v interface{}) (bool, error) {
+	if isByteArrayType(javaType) {
+		b, ok := byteSliceValue(v)
+		if !ok {
+			return true, fmt.Errorf("cannot encode %T as %s", v, javaType)
+		}
+		return true, w.writeBytes(b)
+	}
 	base := eraseJavaType(javaType)
 	if base == "" {
 		return false, nil
@@ -380,15 +391,32 @@ func (w *writer) writeJavaScalar(javaType string, v interface{}) (bool, error) {
 			return true, fmt.Errorf("cannot encode %T as %s", v, base)
 		}
 		return true, w.writeString(s)
-	case "java.math.BigDecimal", "java.math.BigInteger":
+	case "java.math.BigDecimal":
 		s, ok := decimalString(v)
 		if !ok {
 			return true, fmt.Errorf("cannot encode %T as %s", v, base)
 		}
 		return true, w.writeTypedObject(typedObject{name: base, fields: map[string]interface{}{"value": s}})
+	case "java.math.BigInteger":
+		return true, fmt.Errorf("java.math.BigInteger encoding is not supported")
 	default:
 		return false, nil
 	}
+}
+
+func (w *writer) writeBytes(b []byte) error {
+	if len(b) <= 0x0f {
+		w.buf = append(w.buf, byte(0x20+len(b)))
+		w.buf = append(w.buf, b...)
+		return nil
+	}
+	if len(b) > math.MaxUint16 {
+		return fmt.Errorf("bytes too long: %d", len(b))
+	}
+	w.buf = append(w.buf, 'B')
+	w.writeUint16(uint16(len(b)))
+	w.buf = append(w.buf, b...)
+	return nil
 }
 
 func eraseJavaType(t string) string {
@@ -400,6 +428,12 @@ func eraseJavaType(t string) string {
 		t = strings.TrimSuffix(t, "[]")
 	}
 	return t
+}
+
+func isByteArrayType(t string) bool {
+	t = strings.TrimSpace(t)
+	t = strings.TrimPrefix(t, "final ")
+	return t == "byte[]" || t == "java.lang.Byte[]"
 }
 
 func numberValue(n json.Number) interface{} {
@@ -429,6 +463,34 @@ func utf16Length(s string) int {
 		}
 	}
 	return n
+}
+
+func hessianStringBytes(s string) []byte {
+	out := make([]byte, 0, len(s))
+	for _, r := range s {
+		if r <= 0xffff {
+			out = appendHessianUTF8Unit(out, uint16(r))
+			continue
+		}
+		hi, lo := utf16.EncodeRune(r)
+		out = appendHessianUTF8Unit(out, uint16(hi))
+		out = appendHessianUTF8Unit(out, uint16(lo))
+	}
+	return out
+}
+
+func appendHessianUTF8Unit(out []byte, unit uint16) []byte {
+	switch {
+	case unit < 0x80:
+		return append(out, byte(unit))
+	case unit < 0x800:
+		return append(out, 0xc0|byte(unit>>6), 0x80|byte(unit&0x3f))
+	default:
+		return append(out,
+			0xe0|byte(unit>>12),
+			0x80|byte((unit>>6)&0x3f),
+			0x80|byte(unit&0x3f))
+	}
 }
 
 func int64Value(v interface{}) (int64, bool) {
@@ -559,6 +621,34 @@ func decimalString(v interface{}) (string, bool) {
 		return strconv.FormatFloat(x, 'f', -1, 64), true
 	default:
 		return "", false
+	}
+}
+
+func byteSliceValue(v interface{}) ([]byte, bool) {
+	switch x := v.(type) {
+	case []byte:
+		return append([]byte(nil), x...), true
+	case []interface{}:
+		out := make([]byte, len(x))
+		for i, item := range x {
+			n, ok := int64Value(item)
+			if !ok || n < -128 || n > 255 {
+				return nil, false
+			}
+			out[i] = byte(n)
+		}
+		return out, true
+	case []int:
+		out := make([]byte, len(x))
+		for i, item := range x {
+			if item < -128 || item > 255 {
+				return nil, false
+			}
+			out[i] = byte(item)
+		}
+		return out, true
+	default:
+		return nil, false
 	}
 }
 
