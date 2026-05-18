@@ -1,10 +1,12 @@
 # SofaRPC Compatibility Matrix
 
 This matrix tracks the pure-Go direct BOLT/Hessian2 runtime against real Java
-Hessian behavior. Default tests use signed Java-generated golden bytes and do
-not require a JVM. The optional oracle test,
+Hessian behavior. Default tests use oracle-bound Java-generated golden bytes
+and do not require a JVM. The optional oracle test,
 `go test -tags hessian_oracle ./internal/direct`, compiles and runs a local
 Java Hessian helper when `javac`, `java`, and a local Hessian jar are available.
+That oracle test verifies the checked-in golden hex matches Java helper output
+byte-for-byte.
 
 Decode coverage means Java Hessian bytes are frozen as golden input and decoded
 by Go in CI. Encode coverage means the optional JVM oracle has verified that Go

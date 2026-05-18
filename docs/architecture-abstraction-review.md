@@ -23,10 +23,10 @@ Remaining gaps are narrower:
 
 - MCP still owns some non-invoke workflow details such as config and doctor
   response shaping.
-- `direct.Invoke` still returns both flattened and raw result shapes for
-  compatibility, but flattening itself now lives in `internal/presentation`.
 - Error and diagnostic information exists in a minimal form, but recovery hints
   are not yet complete.
+- Performance smoke checks are opt-in so default correctness tests do not depend
+  on wall-clock timing.
 
 The current code is practical and deliverable. The main improvement area is no
 longer "add more abstraction"; it is "make the protocol surface executable and
@@ -51,10 +51,10 @@ Concrete priority:
 3. Done: flattening and assertion evaluation were extracted into
    `internal/presentation`, so the stable contract is
    `decode -> decoded tree -> presentation JSON`.
-4. Expand the codec compatibility harness with the hybrid model: default CI
-   runs signed golden bytes; optional JVM oracle tests generate and validate the
-   corpus.
-5. Add a parallel parser golden corpus for real Java facade/DTO snippets.
+4. Done: the codec compatibility harness uses a hybrid model. Default CI runs
+   oracle-bound golden bytes; optional JVM oracle tests verify the corpus
+   byte-for-byte and validate bidirectional encode/decode behavior.
+5. Done: parser golden fixtures cover realistic Java facade/DTO snippets.
 
 Do not introduce `Codec`, `EndpointResolver`, `Policy`, or similar interfaces
 just because the conceptual boundary exists. Add an interface only when a
@@ -80,10 +80,10 @@ codebase status is:
 | Domain error model | Partial | Minimal `DomainError{Kind, Message, Details}` exists for planning errors; recovery hints are not complete. |
 | Presentation renderer | Implemented | `internal/presentation` owns result flattening and assertion evaluation as pure functions. No renderer strategy interface exists. |
 | Codec interface | Deferred | Hessian encode/decode still lives in `internal/direct`. The next step is Java compatibility tests, not a `Codec` port. |
-| Compatibility matrix | Partial | `docs/compatibility-matrix.md` is backed by signed Java Hessian golden bytes, presentation JSON assertions, and optional JVM oracle tests under the `hessian_oracle` build tag. It now covers nested DTO/list/map/null response shapes; expand parser and provider samples before claiming more codec surface. |
+| Compatibility matrix | Partial | `docs/compatibility-matrix.md` is backed by oracle-bound Java Hessian golden bytes, presentation JSON assertions, and optional JVM oracle tests under the `hessian_oracle` build tag. The oracle test verifies checked-in golden hex against Java helper output byte-for-byte. Expand provider samples before claiming more codec surface. |
 | Parser golden corpus | Partial | Golden fixtures under `internal/schema/testdata/golden` now cover the sales facade shape plus a modern Java fixture with method annotations, parameter annotations, Lombok-style DTO fields, records, nested generics, and overloaded facade methods. Expand with more real facade samples before claiming broad parser compatibility. |
-| Performance budget | Not implemented | Plan/probe diagnostics expose timings, but no thresholds or benchmark gate exist yet. |
-| Dependency rule enforcement | Not implemented | Boundaries are cleaner, but no automated package-boundary test exists yet. |
+| Performance budget | Implemented opt-in | `internal/perf` is behind the `perf` build tag. It logs conservative smoke timings for MCP startup, schema build/warm load, explicit planning, and presentation flattening; hard budget enforcement requires `SOFARPC_ENFORCE_PERF_BUDGET=1`. Default `go test ./...` stays wall-clock independent. |
+| Dependency rule enforcement | Implemented | `internal/arch` runs `go list` package-boundary checks for app/direct/schema/presentation dependency direction. |
 
 ## Boundary Model
 
@@ -344,16 +344,17 @@ as a contract test matrix, not only ordinary unit tests.
 
 The harness has two modes:
 
-- Default CI: Go tests decode signed Java-generated golden bytes and assert the
+- Default CI: Go tests decode oracle-bound Java golden bytes and assert the
   frozen decode and presentation contracts. No JVM is required.
 - Optional oracle: `go test -tags hessian_oracle ./internal/direct` compiles a
-  local Java Hessian helper and verifies both directions against hessian-lite.
-  This is the path for refreshing or adding golden samples.
+  local Java Hessian helper, verifies checked-in golden hex against Java helper
+  output byte-for-byte, and verifies both directions against hessian-lite. This
+  is the path for refreshing or adding golden samples.
 
 Direction matters:
 
-- Decode direction: Java Hessian bytes -> Go decode can be covered by signed
-  golden bytes.
+- Decode direction: Java Hessian bytes -> Go decode can be covered by
+  oracle-bound golden bytes.
 - Encode direction: Go bytes -> Java Hessian decode cannot be proven by golden
   bytes alone. It needs the optional JVM oracle when creating or refreshing
   samples.
@@ -511,8 +512,8 @@ Reverse dependencies should be avoided:
 - `internal/schema` should not decide invocation fallback policy.
 - Hessian encode/decode should not render MCP or CLI output.
 
-Eventually this should be checked by a lightweight package-boundary test or
-`go list` script, so the architecture is executable instead of only documented.
+This is checked by `internal/arch` package-boundary tests using `go list`, so
+the architecture is executable instead of only documented.
 
 ### Composition Root
 
@@ -713,17 +714,17 @@ Done:
    `app.Result` contract.
 7. Extract result flattening and assertion evaluation into
    `internal/presentation`.
+8. Move final presentation ownership out of `direct.Invoke`; direct returns raw
+   decoded Java object trees and app owns flattening.
+9. Add package-boundary tests for app/direct/schema/presentation dependency
+   direction.
 
 Next:
 
-1. Expand codec golden coverage with the hybrid model: signed Java golden bytes
-   in default CI, optional JVM oracle under `hessian_oracle` for generation and
-   bidirectional verification.
-2. Expand parser golden coverage for real facade/DTO syntax.
-3. Move final rendering ownership fully out of `direct.Invoke` once app callers
-   can consume raw decoded results directly.
-4. Add package-boundary and performance checks once the compatibility and parser
-   harnesses are stable.
+1. Expand codec golden coverage with more real provider samples.
+2. Expand parser golden coverage with more real facade/DTO syntax.
+3. Refine performance budgets with representative real-project and real-endpoint
+   baselines.
 
 Deferred unless a second implementation appears:
 

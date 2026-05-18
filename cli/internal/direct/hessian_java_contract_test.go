@@ -292,6 +292,25 @@ func TestHessianJavaContractJavaEncodedValuesReadableByGo(t *testing.T) {
 	}
 }
 
+func TestHessianJavaContractGoldenBytesMatchJavaOracle(t *testing.T) {
+	contract := requireJavaHessianContract(t)
+
+	for _, tc := range hessianJavaGoldenCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := contract.run(t, "encode", tc.name)
+			if got != tc.hex {
+				t.Fatalf("golden hex drifted from Java oracle\ncase: %s\njava:   %s\ngolden: %s", tc.name, got, tc.hex)
+			}
+		})
+	}
+	t.Run("big-integer", func(t *testing.T) {
+		got := contract.run(t, "encode", "big-integer")
+		if got != hessianBigIntegerGoldenHex {
+			t.Fatalf("BigInteger golden hex drifted from Java oracle\njava:   %s\ngolden: %s", got, hessianBigIntegerGoldenHex)
+		}
+	})
+}
+
 func requireJavaHessianContract(t *testing.T) javaHessianContract {
 	t.Helper()
 	javaContractOnce.Do(func() {
