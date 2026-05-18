@@ -18,7 +18,7 @@ EOF
 }
 
 uninstall() {
-    rm -f "$BIN_DIR/sofarpc-cli" "$BIN_DIR/sofarpc-mcp" "$INSTALL_ROOT/lib/sofarpc-engine.jar"
+    rm -f "$BIN_DIR/sofarpc-cli" "$BIN_DIR/sofarpc-mcp"
     echo "Uninstalled binaries. Kept config and cache under $INSTALL_ROOT."
 }
 
@@ -60,16 +60,11 @@ if [ ! -f "$CONFIG_FILE" ]; then
 JSON
 fi
 
-echo "[3/4] Removing obsolete sidecar artifact if present..."
-if [ -x "$BIN_DIR/sofarpc-cli" ]; then
-    "$BIN_DIR/sofarpc-cli" engine stop >/dev/null 2>&1 || "$BIN_DIR/sofarpc-cli" daemon stop >/dev/null 2>&1 || true
-fi
-rm -f "$INSTALL_ROOT/lib/sofarpc-engine.jar"
-
-echo "[4/4] Installing to $INSTALL_ROOT..."
+echo "[3/4] Installing to $INSTALL_ROOT..."
 install -m 0755 "$CLI_SRC" "$BIN_DIR/sofarpc-cli"
 install -m 0755 "$MCP_SRC" "$BIN_DIR/sofarpc-mcp"
 
+echo "[4/4] Done."
 echo "Installed:"
 echo "  $BIN_DIR/sofarpc-cli"
 echo "  $BIN_DIR/sofarpc-mcp"

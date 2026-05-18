@@ -10,7 +10,7 @@
 - `internal/invoker`: protocol envelope adapter for `invoke` and `ping`.
 - `internal/schema`: local Java source parser for service and DTO discovery.
 
-There is no Java Engine, JVM sidecar, local TCP control plane, token file, or daemon lifecycle.
+There is no sidecar runtime, local TCP control plane, token file, or managed process lifecycle.
 
 ## Invocation
 

@@ -12,8 +12,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if ($Uninstall) {
   Remove-Item -Force -ErrorAction SilentlyContinue `
     (Join-Path $BinDir "sofarpc-cli.exe"), `
-    (Join-Path $BinDir "sofarpc-mcp.exe"), `
-    (Join-Path $InstallRoot "lib/sofarpc-engine.jar")
+    (Join-Path $BinDir "sofarpc-mcp.exe")
   Write-Host "Uninstalled binaries. Kept config and cache under $InstallRoot."
   exit 0
 }
@@ -35,14 +34,6 @@ $McpSrc = Join-Path $ScriptDir "sofarpc-mcp.exe"
 if (!(Test-Path $CliSrc) -or !(Test-Path $McpSrc)) {
   throw "install.ps1 expects sofarpc-cli.exe and sofarpc-mcp.exe next to the script. Build a release package first."
 }
-
-$InstalledCli = Join-Path $BinDir "sofarpc-cli.exe"
-if (Test-Path $InstalledCli) {
-  try { & $InstalledCli engine stop | Out-Null } catch {
-    try { & $InstalledCli daemon stop | Out-Null } catch {}
-  }
-}
-Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $InstallRoot "lib/sofarpc-engine.jar")
 
 Copy-Item -Force $CliSrc (Join-Path $BinDir "sofarpc-cli.exe")
 Copy-Item -Force $McpSrc (Join-Path $BinDir "sofarpc-mcp.exe")
