@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-
-	"github.com/sofarpc/cli/internal/presentation"
 )
 
 const (
@@ -54,8 +52,7 @@ type Request struct {
 }
 
 type Outcome struct {
-	Result      interface{}
-	RawResult   interface{}
+	AppResponse interface{}
 	Elapsed     time.Duration
 	Diagnostics map[string]interface{}
 }
@@ -133,8 +130,7 @@ func Invoke(ctx context.Context, req Request) (Outcome, error) {
 		return Outcome{Elapsed: elapsed, Diagnostics: responseDiagnostics(resp, targetService, id)}, &RemoteError{Message: msg}
 	}
 	return Outcome{
-		Result:      presentation.Flatten(decoded.AppResponse),
-		RawResult:   decoded.AppResponse,
+		AppResponse: decoded.AppResponse,
 		Elapsed:     elapsed,
 		Diagnostics: responseDiagnostics(resp, targetService, id),
 	}, nil

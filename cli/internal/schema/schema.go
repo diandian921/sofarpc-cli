@@ -73,9 +73,9 @@ type Index struct {
 var (
 	packageRE   = regexp.MustCompile(`(?m)^\s*package\s+([A-Za-z_][\w.]*)\s*;`)
 	importRE    = regexp.MustCompile(`(?m)^\s*import\s+([A-Za-z_][\w.]*\.[A-Za-z_]\w*)\s*;`)
-	typeKindRE  = regexp.MustCompile(`(?m)^\s*(?:public\s+)?(?:abstract\s+)?(?:final\s+)?(interface|class|enum)\s+([A-Za-z_]\w*)\b`)
-	methodRE    = regexp.MustCompile(`(?s)(/\*\*.*?\*/)?\s*(?:public\s+)?(?:default\s+)?(?:static\s+)?(?:<[^;{}()]+>\s*)?([A-Za-z_][\w.<>\[\]?,\s]*?)\s+([A-Za-z_]\w*)\s*\(([^{};]*)\)\s*(?:;|\{)`)
-	fieldRE     = regexp.MustCompile(`(?m)^\s*(?:private|protected|public)\s+(?:static\s+)?(?:final\s+)?([A-Za-z_][\w.<>\[\]?,\s]*)\s+([A-Za-z_]\w*)\s*(?:=|;)`)
+	typeKindRE  = regexp.MustCompile(`(?m)^\s*(?:public\s+)?(?:abstract\s+)?(?:final\s+)?(interface|class|enum|record)\s+([A-Za-z_]\w*)\b`)
+	methodRE    = regexp.MustCompile(`(?s)(/\*\*.*?\*/)?\s*(?:@[A-Za-z_][\w.]*\s*(?:\([^;{}]*?\))?\s*)*(?:public\s+)?(?:default\s+)?(?:static\s+)?(?:<[^;{}()]+>\s*)?([A-Za-z_][\w.<>\[\]?,\s]*?)\s+([A-Za-z_]\w*)\s*\(([^{};]*)\)\s*(?:;|\{)`)
+	fieldRE     = regexp.MustCompile(`(?m)^\s*(?:@[A-Za-z_][\w.]*\s*(?:\([^;{}]*?\))?\s*)*(?:private|protected|public)\s+(?:static\s+)?(?:final\s+)?([A-Za-z_][\w.<>\[\]?,\s]*)\s+([A-Za-z_]\w*)\s*(?:=|;)`)
 	enumValueRE = regexp.MustCompile(`(?s)\benum\s+[A-Za-z_]\w*\s*\{(.*?)\}`)
 )
 
@@ -313,9 +313,12 @@ func parseTypes(body, pkg, typeName, path string, imports map[string]string) map
 		}
 		fqn := pkg + "." + m[2]
 		schema := TypeSchema{Type: fqn, Kind: m[1], SourceFile: path, Imports: imports}
-		if m[1] == "enum" {
+		switch m[1] {
+		case "enum":
 			schema.EnumValues = parseEnumValues(body)
-		} else {
+		case "record":
+			schema.Fields = parseRecordFields(body, m[2])
+		default:
 			schema.Fields = parseFields(body)
 		}
 		out[fqn] = schema
@@ -358,6 +361,20 @@ func parseFields(body string) []Field {
 			continue
 		}
 		fields = append(fields, Field{Name: m[2], Type: cleanType(m[1])})
+	}
+	return fields
+}
+
+func parseRecordFields(body string, typeName string) []Field {
+	re := regexp.MustCompile(`(?s)\brecord\s+` + regexp.QuoteMeta(typeName) + `\s*\((.*?)\)`)
+	m := re.FindStringSubmatch(body)
+	if len(m) != 2 {
+		return nil
+	}
+	params := parseParameters(m[1])
+	fields := make([]Field, 0, len(params))
+	for _, p := range params {
+		fields = append(fields, Field{Name: p.Name, Type: p.Type})
 	}
 	return fields
 }
@@ -553,15 +570,47 @@ func cleanJavadoc(raw string) string {
 }
 
 func stripAnnotations(s string) string {
-	fields := strings.Fields(s)
-	var out []string
-	for _, field := range fields {
-		if strings.HasPrefix(field, "@") {
+	var out strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] != '@' {
+			out.WriteByte(s[i])
+			i++
 			continue
 		}
-		out = append(out, field)
+		i++
+		for i < len(s) && isJavaIdentByte(s[i]) {
+			i++
+		}
+		for i < len(s) && unicode.IsSpace(rune(s[i])) {
+			i++
+		}
+		if i < len(s) && s[i] == '(' {
+			depth := 0
+			for i < len(s) {
+				switch s[i] {
+				case '(':
+					depth++
+				case ')':
+					depth--
+				}
+				i++
+				if depth == 0 {
+					break
+				}
+			}
+		}
+		for i < len(s) && unicode.IsSpace(rune(s[i])) {
+			i++
+		}
 	}
-	return strings.Join(out, " ")
+	return strings.Join(strings.Fields(out.String()), " ")
+}
+
+func isJavaIdentByte(b byte) bool {
+	return b == '_' || b == '$' || b == '.' ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= 'a' && b <= 'z') ||
+		(b >= '0' && b <= '9')
 }
 
 func firstSubmatch(re *regexp.Regexp, s string) string {

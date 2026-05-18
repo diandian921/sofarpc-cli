@@ -193,7 +193,7 @@ func TestBuildRequestContentRejectsDeepTypedArguments(t *testing.T) {
 	}
 }
 
-func TestInvokeRoundTripFlattensResponse(t *testing.T) {
+func TestInvokeRoundTripReturnsDecodedAppResponse(t *testing.T) {
 	responseContent := successResponse(t, typedObject{
 		name: "com.example.OperationResult",
 		fields: map[string]interface{}{
@@ -224,28 +224,21 @@ func TestInvokeRoundTripFlattensResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	raw := out.RawResult.(map[string]interface{})
-	if raw["type"] != "com.example.OperationResult" {
-		t.Fatalf("raw result = %#v", raw)
+	appResponse := out.AppResponse.(map[string]interface{})
+	if appResponse["type"] != "com.example.OperationResult" {
+		t.Fatalf("app response = %#v", appResponse)
 	}
-	result := out.Result.(map[string]interface{})
-	if result["success"] != true || result["code"] != int64(0) {
-		t.Fatalf("bad result: %#v", result)
+	fields := appResponse["fields"].(map[string]interface{})
+	if fields["success"] != true || fields["code"] != int64(0) {
+		t.Fatalf("bad fields: %#v", fields)
 	}
-	data := result["data"].(map[string]interface{})
+	data := fields["data"].(map[string]interface{})["fields"].(map[string]interface{})
 	if data["mpCode"] != int64(433905635109773312) {
 		t.Fatalf("bad data: %#v", data)
 	}
-	amount, ok := data["totalAssets"].(json.Number)
-	if !ok || amount.String() != "113795.2485" {
+	amount := data["totalAssets"].(map[string]interface{})["fields"].(map[string]interface{})
+	if amount["value"] != "113795.2485" {
 		t.Fatalf("totalAssets = %#v", data["totalAssets"])
-	}
-	body, err := json.Marshal(data)
-	if err != nil {
-		t.Fatalf("marshal data: %v", err)
-	}
-	if string(body) != `{"mpCode":433905635109773312,"totalAssets":113795.2485}` {
-		t.Fatalf("bad JSON: %s", body)
 	}
 }
 

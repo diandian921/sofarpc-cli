@@ -80,8 +80,8 @@ codebase status is:
 | Domain error model | Partial | Minimal `DomainError{Kind, Message, Details}` exists for planning errors; recovery hints are not complete. |
 | Presentation renderer | Implemented | `internal/presentation` owns result flattening and assertion evaluation as pure functions. No renderer strategy interface exists. |
 | Codec interface | Deferred | Hessian encode/decode still lives in `internal/direct`. The next step is Java compatibility tests, not a `Codec` port. |
-| Compatibility matrix | Partial | `docs/compatibility-matrix.md` is backed by signed Java Hessian golden bytes in default tests and optional JVM oracle tests under the `hessian_oracle` build tag. Expand this before adding more codec surface. |
-| Parser golden corpus | Partial | A first facade/DTO golden fixture exists under `internal/schema/testdata/golden`; expand it with Lombok, records, nested generics, annotations, and real facade shapes. |
+| Compatibility matrix | Partial | `docs/compatibility-matrix.md` is backed by signed Java Hessian golden bytes, presentation JSON assertions, and optional JVM oracle tests under the `hessian_oracle` build tag. It now covers nested DTO/list/map/null response shapes; expand parser and provider samples before claiming more codec surface. |
+| Parser golden corpus | Partial | Golden fixtures under `internal/schema/testdata/golden` now cover the sales facade shape plus a modern Java fixture with method annotations, parameter annotations, Lombok-style DTO fields, records, nested generics, and overloaded facade methods. Expand with more real facade samples before claiming broad parser compatibility. |
 | Performance budget | Not implemented | Plan/probe diagnostics expose timings, but no thresholds or benchmark gate exist yet. |
 | Dependency rule enforcement | Not implemented | Boundaries are cleaner, but no automated package-boundary test exists yet. |
 
@@ -90,8 +90,14 @@ codebase status is:
 The useful dependency direction is:
 
 ```text
-Inbound Adapter -> Application Use Case -> Plan -> Direct Runtime -> Presentation
+Inbound Adapter -> Application Use Case -> Direct Runtime
+                                  \-> Presentation
 ```
+
+`internal/direct` returns decoded Java object trees. It does not flatten,
+render, or choose agent-facing JSON shapes. The application use case owns the
+decision to pass decoded values through `internal/presentation` before MCP or
+CLI adapters render the shared `app.Result` contract.
 
 Conceptual package shape:
 
@@ -339,7 +345,7 @@ as a contract test matrix, not only ordinary unit tests.
 The harness has two modes:
 
 - Default CI: Go tests decode signed Java-generated golden bytes and assert the
-  frozen contract. No JVM is required.
+  frozen decode and presentation contracts. No JVM is required.
 - Optional oracle: `go test -tags hessian_oracle ./internal/direct` compiles a
   local Java Hessian helper and verifies both directions against hessian-lite.
   This is the path for refreshing or adding golden samples.
@@ -371,6 +377,11 @@ Important samples:
 
 These tests define the supported protocol surface.
 
+The current default corpus covers boxed numeric values, non-BMP strings,
+`BigDecimal`, Java Date wire values, `byte[]`, map/list/null samples, DTOs, and
+a nested DTO response with list/map/null fields. The optional oracle also
+verifies Go-encoded nested DTO values against Java hessian-lite.
+
 ## Parser Contract
 
 Codec compatibility is only half the correctness surface. If source parsing
@@ -393,6 +404,11 @@ High-priority parser samples:
 - Java records
 - nested interfaces
 - overloaded methods
+
+Current coverage includes Chinese Javadocs, nested generics, DTO collection
+fields, Lombok-style DTO fields, Java records, nested interfaces, overloaded
+facade methods, and method and parameter annotations. More real project facade
+samples remain the highest-value next parser work.
 
 ## Current Design Smells To Retire
 
@@ -481,7 +497,7 @@ Expected direction:
 ```text
 internal/mcp      -> internal/app
 internal/cli      -> internal/app
-internal/app      -> schema/direct/config helpers
+internal/app      -> schema/direct/presentation/config helpers
 internal/direct   -> transport and hessian internals
 internal/schema   -> parser internals
 ```
@@ -490,6 +506,8 @@ Reverse dependencies should be avoided:
 
 - `internal/app` should not import `internal/mcp` or CLI packages.
 - `internal/direct` should not know MCP tool schemas or JSON-RPC envelopes.
+- `internal/direct` should not import `internal/presentation`; it returns raw
+  decoded Java values only.
 - `internal/schema` should not decide invocation fallback policy.
 - Hessian encode/decode should not render MCP or CLI output.
 

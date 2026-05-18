@@ -45,6 +45,24 @@ public final class HessianContractHelper {
         }
     }
 
+    public static final class ComplexResponse implements Serializable {
+        public QueryResponse primary;
+        public List<QueryResponse> history;
+        public Map<String, Object> attributes;
+        public List<Object> mixed;
+
+        public ComplexResponse() {
+        }
+
+        public ComplexResponse(QueryResponse primary, List<QueryResponse> history,
+                Map<String, Object> attributes, List<Object> mixed) {
+            this.primary = primary;
+            this.history = history;
+            this.attributes = attributes;
+            this.mixed = mixed;
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
             throw new IllegalArgumentException("missing mode");
@@ -57,6 +75,10 @@ public final class HessianContractHelper {
             case "decode-query-request":
                 requireArgs(args, 2);
                 System.out.println(describe(readAs(fromHex(args[1]), QueryRequest.class)));
+                return;
+            case "decode-complex-response":
+                requireArgs(args, 2);
+                System.out.println(describe(readAs(fromHex(args[1]), ComplexResponse.class)));
                 return;
             case "encode":
                 requireArgs(args, 2);
@@ -117,6 +139,16 @@ public final class HessianContractHelper {
                 return map;
             case "query-response":
                 return new QueryResponse(Boolean.TRUE, new BigDecimal("113795.2485"), Arrays.asList("A", "B"));
+            case "nested-response":
+                LinkedHashMap<String, Object> attrs = new LinkedHashMap<String, Object>();
+                attrs.put("mpCode", Long.valueOf(433905635109773312L));
+                attrs.put("nullable", null);
+                attrs.put("ratio", Double.valueOf(2.0d));
+                return new ComplexResponse(
+                        new QueryResponse(Boolean.TRUE, new BigDecimal("1.23"), Arrays.asList("P")),
+                        Arrays.asList(new QueryResponse(Boolean.FALSE, new BigDecimal("0.00"), Arrays.asList("H"))),
+                        attrs,
+                        new ArrayList<Object>(Arrays.asList(null, "x", Long.valueOf(9L))));
             case "date":
                 return new Date(0L);
             case "bytes":
@@ -142,6 +174,14 @@ public final class HessianContractHelper {
             return "QueryResponse{success=" + describe(v.success)
                     + ",amount=" + describe(v.amount)
                     + ",tags=" + describe(v.tags)
+                    + "}";
+        }
+        if (value instanceof ComplexResponse) {
+            ComplexResponse v = (ComplexResponse) value;
+            return "ComplexResponse{primary=" + describe(v.primary)
+                    + ",history=" + describe(v.history)
+                    + ",attributes=" + describe(v.attributes)
+                    + ",mixed=" + describe(v.mixed)
                     + "}";
         }
         if (value instanceof byte[]) {

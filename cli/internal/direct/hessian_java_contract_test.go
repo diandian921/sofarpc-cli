@@ -111,6 +111,39 @@ func TestHessianJavaContractGoEncodedValuesReadableByJava(t *testing.T) {
 			mode: "decode-query-request",
 			want: "QueryRequest{mpCode=java.lang.Long:433905635109773312,ratio=java.lang.Double:2.0,emoji=java.lang.String:a🙂b}",
 		},
+		{
+			name: "nested dto",
+			value: javavalue.Object("HessianContractHelper$ComplexResponse", map[string]javavalue.TypedValue{
+				"primary": javavalue.Object("HessianContractHelper$QueryResponse", map[string]javavalue.TypedValue{
+					"success": javavalue.Scalar("java.lang.Boolean", true),
+					"amount":  javavalue.Scalar("java.math.BigDecimal", "1.23"),
+					"tags": javavalue.List("java.util.ArrayList", []javavalue.TypedValue{
+						javavalue.Scalar("java.lang.String", "P"),
+					}),
+				}),
+				"history": javavalue.List("java.util.ArrayList", []javavalue.TypedValue{
+					javavalue.Object("HessianContractHelper$QueryResponse", map[string]javavalue.TypedValue{
+						"success": javavalue.Scalar("java.lang.Boolean", false),
+						"amount":  javavalue.Scalar("java.math.BigDecimal", "0.00"),
+						"tags": javavalue.List("java.util.ArrayList", []javavalue.TypedValue{
+							javavalue.Scalar("java.lang.String", "H"),
+						}),
+					}),
+				}),
+				"attributes": javavalue.Map("java.util.LinkedHashMap", []javavalue.MapEntry{
+					{Key: javavalue.Scalar("java.lang.String", "mpCode"), Value: javavalue.Scalar("java.lang.Long", json.Number("433905635109773312"))},
+					{Key: javavalue.Scalar("java.lang.String", "nullable"), Value: javavalue.Scalar("", nil)},
+					{Key: javavalue.Scalar("java.lang.String", "ratio"), Value: javavalue.Scalar("java.lang.Double", json.Number("2.0"))},
+				}),
+				"mixed": javavalue.List("java.util.ArrayList", []javavalue.TypedValue{
+					javavalue.Scalar("", nil),
+					javavalue.Scalar("java.lang.String", "x"),
+					javavalue.Scalar("java.lang.Long", json.Number("9")),
+				}),
+			}),
+			mode: "decode-complex-response",
+			want: "ComplexResponse{primary=QueryResponse{success=java.lang.Boolean:true,amount=java.math.BigDecimal:1.23,tags=List[java.lang.String:P]},history=List[QueryResponse{success=java.lang.Boolean:false,amount=java.math.BigDecimal:0.00,tags=List[java.lang.String:H]}],attributes=Map{java.lang.String:mpCode=java.lang.Long:433905635109773312,java.lang.String:nullable=null,java.lang.String:ratio=java.lang.Double:2.0},mixed=List[null,java.lang.String:x,java.lang.Long:9]}",
+		},
 	}
 
 	for _, tc := range cases {
@@ -216,6 +249,28 @@ func TestHessianJavaContractJavaEncodedValuesReadableByGo(t *testing.T) {
 				tags := listItems(t, fields["tags"])
 				if len(tags) != 2 || tags[0] != "A" || tags[1] != "B" {
 					t.Fatalf("tags = %#v", tags)
+				}
+			},
+		},
+		{
+			name: "nested-response",
+			check: func(t *testing.T, got interface{}) {
+				fields := objectFields(t, got, "HessianContractHelper$ComplexResponse")
+				primary := objectFields(t, fields["primary"], "HessianContractHelper$QueryResponse")
+				if primary["success"] != true {
+					t.Fatalf("primary = %#v", primary)
+				}
+				history := listItems(t, fields["history"])
+				if len(history) != 1 {
+					t.Fatalf("history = %#v", history)
+				}
+				attrs := mapEntries(t, fields["attributes"])
+				if attrs["mpCode"] != int64(433905635109773312) || attrs["nullable"] != nil || attrs["ratio"] != float64(2) {
+					t.Fatalf("attributes = %#v", attrs)
+				}
+				mixed := listItems(t, fields["mixed"])
+				if len(mixed) != 3 || mixed[0] != nil || mixed[1] != "x" || mixed[2] != int64(9) {
+					t.Fatalf("mixed = %#v", mixed)
 				}
 			},
 		},

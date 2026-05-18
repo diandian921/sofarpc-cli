@@ -8,6 +8,7 @@ import (
 	"github.com/sofarpc/cli/internal/appconfig"
 	"github.com/sofarpc/cli/internal/direct"
 	"github.com/sofarpc/cli/internal/javavalue"
+	"github.com/sofarpc/cli/internal/presentation"
 	"github.com/sofarpc/cli/internal/schema"
 )
 
@@ -160,12 +161,12 @@ func (s *Service) ExecuteInvocation(ctx context.Context, plan InvocationPlan) In
 		}
 	}
 	data := map[string]interface{}{
-		"result":      out.Result,
+		"result":      presentation.Flatten(out.AppResponse),
 		"elapsedMs":   out.Elapsed.Milliseconds(),
 		"diagnostics": out.Diagnostics,
 	}
 	if plan.RawResult {
-		data["rawResult"] = out.RawResult
+		data["rawResult"] = out.AppResponse
 	}
 	return InvocationExecution{
 		OK:   true,

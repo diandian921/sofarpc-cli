@@ -10,7 +10,8 @@
   execution.
 - `internal/javavalue`: Java-aware typed value model passed from planning to the
   Hessian encoder.
-- `internal/direct`: BOLT frame codec, Hessian2 reader/writer, and request/response transport.
+- `internal/direct`: BOLT frame codec, Hessian2 reader/writer, request/response
+  transport, and raw Java response decoding.
 - `internal/presentation`: pure result flattening and assertion evaluation for
   agent-friendly JSON.
 - `internal/schema`: local Java source parser for service and DTO discovery.
@@ -26,12 +27,13 @@ The direct runtime sends a SofaRPC generic invocation over BOLT:
 3. Build a `SofaRequest`.
 4. Encode request and arguments with Hessian2.
 5. Send a BOLT RPC request frame to the configured provider address.
-6. Decode `SofaResponse`.
-7. Flatten DTO-like Hessian objects into JSON-friendly maps through
-   `internal/presentation`.
+6. Decode `SofaResponse` into a raw Java object tree in `internal/direct`.
+7. Flatten DTO-like Hessian objects into JSON-friendly maps in the application
+   use case through `internal/presentation`.
 
-`java.math.BigDecimal` values are normalized to JSON numbers. `BigInteger`
-currently has limited support; see `compatibility-matrix.md`.
+`java.math.BigDecimal` values are normalized to JSON numbers. `byte[]` response
+values use Go's standard JSON base64 representation. `BigInteger` currently has
+limited support; see `compatibility-matrix.md`.
 DTO field type metadata is carried in the internal typed value model rather than
 in user argument maps.
 Set `rawResult=true` on MCP invoke when the decoded Java object shape is needed for troubleshooting.
