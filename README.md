@@ -2,75 +2,78 @@
 
 MCP-first SofaRPC testing toolkit for agents.
 
-The primary entrypoint is `sofarpc-mcp`, a stdio MCP server. `sofarpc-cli` is kept for human configuration, diagnostics, and exact reproduction. Invocation runs through a pure-Go direct BOLT/Hessian2 runtime; no Java process or sidecar is required.
+The primary entrypoint is `sofarpc-mcp`, a stdio MCP server. `sofarpc` is kept for human configuration, diagnostics, and exact reproduction. Invocation runs through a pure-Go direct BOLT/Hessian2 runtime; no Java process or sidecar is required.
 
 ## What Gets Installed
 
 ```text
-~/.sofarpc/
+~/.sofarpc/                 (override with SOFARPC_HOME)
   bin/
+    sofarpc
     sofarpc-mcp
-    sofarpc-cli
   config.json
-  logs/
   cache/
     schema/
 ```
 
-`config.json`, logs, and cache are not overwritten on upgrade.
+`config.json` and cache are never overwritten; upgrade just replaces the
+binaries at the same canonical path.
 
 ## Install
 
-From source:
+From a release tarball (no Go toolchain needed):
 
 ```bash
-./scripts/install.sh
-export PATH="$HOME/.sofarpc/bin:$PATH"
+tar -xzf sofarpc-vX.Y.Z-darwin-arm64.tar.gz
+cd sofarpc-vX.Y.Z-darwin-arm64
+./install.sh
 ```
 
-Build a release package:
+Or with Go (the module lives in the repo's `cli/` subdirectory, so the path
+carries that segment):
+
+```bash
+go install github.com/diandian921/sofarpc-cli/cli/cmd/sofarpc@latest
+go install github.com/diandian921/sofarpc-cli/cli/cmd/sofarpc-mcp@latest
+# call the just-installed binary by absolute path (GOBIN, else GOPATH/bin):
+BIN="$(go env GOBIN)"; BIN="${BIN:-$(go env GOPATH)/bin}"
+"$BIN/sofarpc" self-install
+```
+
+For a pinned beta the module is a subdirectory module, so publish/select tags
+prefixed with `cli/` (e.g. tag `cli/v0.1.0-beta.2`); the install selector is
+still the bare `@v0.1.0-beta.2`.
+
+`install.sh` is a thin bootstrap; all install logic is in `sofarpc
+self-install`, which creates the layout above and prints a PATH hint if
+`~/.sofarpc/bin` is not on `PATH` (it never edits shell profiles).
+
+Build release archives for the full platform matrix:
 
 ```bash
 ./scripts/package.sh
 ```
 
-The package contains:
-
-```text
-sofarpc-mcp
-sofarpc-cli
-install.sh
-install.ps1
-```
-
-Requirements: Go 1.19+ when building from source. Release packages contain prebuilt binaries.
+Each archive contains `sofarpc`, `sofarpc-mcp`, `README.md`, `install.sh`,
+`install.ps1`; a single `SHA256SUMS` covers all archives. Requirements: Go
+1.19+ when building from source.
 
 ## MCP Configuration
 
-Example MCP server command:
+Do not hand-write host config. Register with the host's own CLI via:
 
-```json
-{
-  "mcpServers": {
-    "sofarpc": {
-      "command": "~/.sofarpc/bin/sofarpc-mcp"
-    }
-  }
-}
+```bash
+sofarpc setup claude          # or: codex, or: all
+sofarpc setup all --dry-run   # preview the exact commands, mutate nothing
 ```
 
-To hide config write tools:
-
-```json
-{
-  "mcpServers": {
-    "sofarpc": {
-      "command": "~/.sofarpc/bin/sofarpc-mcp",
-      "args": ["--disable-config-write"]
-    }
-  }
-}
-```
+`setup` registers the fully expanded absolute path to `sofarpc-mcp` (never
+`~`), propagates `SOFARPC_HOME` only when it is non-default, and verifies the
+binary with `sofarpc-mcp --selftest` before touching host config. Re-run
+behavior is host-dependent: Codex exposes `mcp get --json` so setup is
+exactly idempotent (matching entry → no-op); Claude has no JSON read-back, so
+setup is existence-safe — it will not silently overwrite an existing entry and
+requires `--force` to replace one.
 
 ## MCP Tools
 
@@ -116,7 +119,7 @@ Use `dryRun=true` to inspect the endpoint, parameter types, ordered arguments, a
 
 Set `rawResult=true` when debugging serialization or response shape problems. The response then includes both the normal flattened `result` and the decoded Java object shape as `rawResult`.
 
-Assertions are intentionally not part of `sofarpc_invoke`. For assertion-based exact reproduction, use `sofarpc-cli invoke --assertions-json`.
+Assertions are intentionally not part of `sofarpc_invoke`. For assertion-based exact reproduction, use `sofarpc invoke --assertions-json`.
 
 ## Config File
 
@@ -151,9 +154,9 @@ versions are rejected with `CONFIG_UNSUPPORTED_VERSION`.
 Use CLI for setup and diagnostics:
 
 ```bash
-sofarpc-cli project add user /Users/me/workspace/user-service --prefix com.company.user
-sofarpc-cli server add user-test 10.0.0.1:12200 --project user
-sofarpc-cli server list --json
+sofarpc project add user /Users/me/workspace/user-service --prefix com.company.user
+sofarpc server add user-test 10.0.0.1:12200 --project user
+sofarpc server list --json
 ```
 
 The `invoke` and `ping` commands are available for exact reproduction; both emit the same structured result contract the MCP tools return.
@@ -161,7 +164,7 @@ The `invoke` and `ping` commands are available for exact reproduction; both emit
 For invoke reproduction:
 
 ```bash
-sofarpc-cli invoke \
+sofarpc invoke \
   --address user-test \
   --service com.example.UserService \
   --method getUser \
@@ -225,3 +228,9 @@ Some tests open loopback ports. In restricted sandboxes, they need permission to
 
 - [Pure-Go runtime](docs/pure-go-runtime.md)
 - [Architecture abstraction review](docs/architecture-abstraction-review.md)
+- [Install and host setup first-principles design](docs/install-and-host-setup-first-principles.md)
+
+Historical notes:
+
+- [Install and host setup first-principles review](docs/install-and-host-setup-first-principles-review.md)
+- [Superseded install and host setup decision](docs/install-and-host-setup.md)

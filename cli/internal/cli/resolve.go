@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"github.com/sofarpc/cli/internal/alias"
-	"github.com/sofarpc/cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-cli/cli/internal/alias"
+	"github.com/diandian921/sofarpc-cli/cli/internal/appconfig"
 )
 
 // resolveAddress turns input into a concrete host:port using the user's

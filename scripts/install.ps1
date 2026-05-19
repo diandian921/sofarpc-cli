@@ -1,44 +1,55 @@
-param(
-  [switch]$Uninstall
-)
-
+# Thin bootstrap. All install logic lives in `sofarpc self-install`; this
+# script only locates/builds the binaries and hands off to it, calling the
+# binary by absolute path (never PATH-resolved) to avoid the self-install
+# PATH trap.
 $ErrorActionPreference = "Stop"
-$InstallRoot = if ($env:SOFARPC_HOME) { $env:SOFARPC_HOME } else { Join-Path $HOME ".sofarpc" }
-$BinDir = Join-Path $InstallRoot "bin"
-$CacheDir = Join-Path $InstallRoot "cache"
-$ConfigFile = Join-Path $InstallRoot "config.json"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-if ($Uninstall) {
-  Remove-Item -Force -ErrorAction SilentlyContinue `
-    (Join-Path $BinDir "sofarpc-cli.exe"), `
-    (Join-Path $BinDir "sofarpc-mcp.exe")
-  Write-Host "Uninstalled binaries. Kept config and cache under $InstallRoot."
-  exit 0
+$Cli = Join-Path $ScriptDir "sofarpc.exe"
+$Mcp = Join-Path $ScriptDir "sofarpc-mcp.exe"
+
+if ((Test-Path $Cli) -and (Test-Path $Mcp)) {
+  & $Cli self-install --mcp-path $Mcp @args
+  exit $LASTEXITCODE
 }
 
-New-Item -ItemType Directory -Force $BinDir, $CacheDir | Out-Null
-
-if (!(Test-Path $ConfigFile)) {
-  @'
-{
-  "projects": {},
-  "servers": {}
+if (!(Get-Command go -ErrorAction SilentlyContinue)) {
+  throw "go not found and no packaged binaries present next to install.ps1"
 }
-'@ | Set-Content -Encoding UTF8 $ConfigFile
+function Invoke-CheckedNative {
+  param(
+    [string]$Description,
+    [scriptblock]$Command
+  )
+  & $Command
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Description failed with exit code $LASTEXITCODE"
+  }
 }
-
-$CliSrc = Join-Path $ScriptDir "sofarpc-cli.exe"
-$McpSrc = Join-Path $ScriptDir "sofarpc-mcp.exe"
-
-if (!(Test-Path $CliSrc) -or !(Test-Path $McpSrc)) {
-  throw "install.ps1 expects sofarpc-cli.exe and sofarpc-mcp.exe next to the script. Build a release package first."
+$RepoRoot = Split-Path -Parent $ScriptDir
+# Subdirectory module: match cli/vX.Y.Z tags, then strip the prefix so the
+# stamped version stays consistent with install.sh / package.sh.
+try { $Version = (git -C $RepoRoot describe --tags --match 'cli/v*' --always 2>$null) } catch { $Version = "dev" }
+if (-not $Version) { $Version = "dev" }
+$Version = $Version -replace '^cli/', ''
+$BuildDir = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ([System.Guid]::NewGuid())) -Force
+$Cli = Join-Path $BuildDir "sofarpc.exe"
+$Mcp = Join-Path $BuildDir "sofarpc-mcp.exe"
+$PushedLocation = $false
+$ExitCode = 1
+try {
+  Push-Location (Join-Path $RepoRoot "cli")
+  $PushedLocation = $true
+  Invoke-CheckedNative "go build sofarpc" { go build -ldflags "-X main.BuildVersion=$Version" -o $Cli ./cmd/sofarpc }
+  Invoke-CheckedNative "go build sofarpc-mcp" { go build -ldflags "-X main.BuildVersion=$Version" -o $Mcp ./cmd/sofarpc-mcp }
+  Pop-Location
+  $PushedLocation = $false
+  & $Cli self-install --mcp-path $Mcp @args
+  $ExitCode = $LASTEXITCODE
+} finally {
+  if ($PushedLocation) {
+    Pop-Location
+  }
+  Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $BuildDir
 }
-
-Copy-Item -Force $CliSrc (Join-Path $BinDir "sofarpc-cli.exe")
-Copy-Item -Force $McpSrc (Join-Path $BinDir "sofarpc-mcp.exe")
-
-Write-Host "Installed:"
-Write-Host "  $(Join-Path $BinDir "sofarpc-cli.exe")"
-Write-Host "  $(Join-Path $BinDir "sofarpc-mcp.exe")"
-Write-Host "Add $BinDir to PATH if needed."
+exit $ExitCode

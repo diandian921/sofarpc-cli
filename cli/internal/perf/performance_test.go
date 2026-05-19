@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sofarpc/cli/internal/app"
-	"github.com/sofarpc/cli/internal/mcp"
-	"github.com/sofarpc/cli/internal/presentation"
-	"github.com/sofarpc/cli/internal/schema"
+	"github.com/diandian921/sofarpc-cli/cli/internal/app"
+	"github.com/diandian921/sofarpc-cli/cli/internal/mcp"
+	"github.com/diandian921/sofarpc-cli/cli/internal/presentation"
+	"github.com/diandian921/sofarpc-cli/cli/internal/schema"
 )
 
 func TestPerformanceBudgets(t *testing.T) {

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sofarpc/cli/internal/app"
-	"github.com/sofarpc/cli/internal/appconfig"
-	"github.com/sofarpc/cli/internal/schema"
+	"github.com/diandian921/sofarpc-cli/cli/internal/app"
+	"github.com/diandian921/sofarpc-cli/cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-cli/cli/internal/schema"
 )
 
 type Server struct {
@@ -87,6 +87,30 @@ func (s *Server) Run() int {
 		stderr = io.Discard
 	}
 	return newSession(s, in, out, stderr).run()
+}
+
+// SelfTest brings up the server machinery — config path resolution, app
+// service, tool list, and the initialize/tools/list request path — and exits
+// without serving stdio. A config that points at a broken binary fails here
+// instead of at first agent use.
+func (s *Server) SelfTest() error {
+	if _, err := appconfig.DefaultPath(); err != nil {
+		return fmt.Errorf("config path: %w", err)
+	}
+	if s.application() == nil {
+		return errors.New("app service is nil")
+	}
+	if len(s.tools()) == 0 {
+		return errors.New("no tools registered")
+	}
+	ctx := context.Background()
+	if resp, _ := s.handle(ctx, request{Method: "initialize"}); resp.Error != nil {
+		return fmt.Errorf("initialize failed: %s", resp.Error.Message)
+	}
+	if resp, _ := s.handle(ctx, request{Method: "tools/list"}); resp.Error != nil {
+		return fmt.Errorf("tools/list failed: %s", resp.Error.Message)
+	}
+	return nil
 }
 
 func (r request) isNotification() bool {

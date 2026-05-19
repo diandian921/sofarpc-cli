@@ -1,11 +1,11 @@
 # Pure-Go Runtime
 
-`sofarpc-mcp` and `sofarpc-cli` invoke SofaRPC directly from Go.
+`sofarpc-mcp` and `sofarpc` invoke SofaRPC directly from Go.
 
 ## Runtime Shape
 
 - `sofarpc-mcp`: stdio MCP server for agents.
-- `sofarpc-cli`: human-facing config, diagnostics, and reproduction tool.
+- `sofarpc`: human-facing config, diagnostics, and reproduction tool.
 - `internal/app`: application use cases for resolve, invocation planning, and
   execution.
 - `internal/javavalue`: Java-aware typed value model passed from planning to the
@@ -62,7 +62,7 @@ FQN plus optional `method` for schema description.
 - `arguments` for schema-guided named arguments when local source can resolve the method.
 - `dryRun=true` to return the resolved plan without sending a SofaRPC request.
 
-Assertions are not exposed on the MCP invoke tool. They remain available on the `sofarpc-cli invoke --assertions-json` reproduction path, where the caller owns the exact request contract. There is no separate protocol envelope; MCP and CLI emit one shared rendered result contract.
+Assertions are not exposed on the MCP invoke tool. They remain available on the `sofarpc invoke --assertions-json` reproduction path, where the caller owns the exact request contract. There is no separate protocol envelope; MCP and CLI emit one shared rendered result contract.
 
 ## Known Limits
 

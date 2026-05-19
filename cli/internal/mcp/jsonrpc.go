@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sofarpc/cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-cli/cli/internal/appconfig"
 )
 
 func handleWithRecover(req request, fn func() (response, bool)) (resp response, shouldReply bool) {

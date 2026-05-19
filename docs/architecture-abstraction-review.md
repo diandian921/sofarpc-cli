@@ -75,7 +75,7 @@ codebase status is:
 | MCP session/dispatcher | Implemented | JSON-RPC read/write, async dispatch, cancellation, and stdout locking live in `internal/mcp/session.go`. |
 | Source index port | Implemented | `internal/app.SourceIndex` hides local Java source indexing behind an interface. |
 | Probe use case | Implemented | `ProbeEndpoint` is an app use case; MCP and CLI both use it. |
-| CLI migration | Implemented | `sofarpc-cli invoke`/`ping` route through app use cases and emit the shared `app.Result` contract. |
+| CLI migration | Implemented | `sofarpc invoke`/`ping` route through app use cases and emit the shared `app.Result` contract. |
 | Legacy invoker package | Removed | `internal/invoker` was deleted after CLI and MCP moved to app use cases. |
 | `exec --stdin` + `internal/protocol` | Removed | No real consumer existed. The stdin envelope, the `internal/protocol` package, and the root `protocol/` schema/fixtures were deleted. Single rendered contract is `app.Result`. |
 | Endpoint resolution | Implemented enough | Explicit address and configured server resolution are centralized in app code. Do not add an `EndpointResolver` interface until there is a second resolver implementation or a real test need. |
@@ -537,7 +537,7 @@ cmd/sofarpc-mcp
   construct application services
   construct MCP server
 
-cmd/sofarpc-cli
+cmd/sofarpc
   construct the same application services
   expose human-facing commands
 ```

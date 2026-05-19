@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/diandian921/sofarpc-cli/cli/internal/appconfig"
 )
 
 type cacheFile struct {
@@ -50,11 +52,11 @@ func LoadOrBuildIndex(project Project) (*Index, error) {
 }
 
 func CleanupUnused(maxAge time.Duration) error {
-	home, err := os.UserHomeDir()
+	home, err := appconfig.Home()
 	if err != nil {
 		return err
 	}
-	root := filepath.Join(home, ".sofarpc", "cache", "schema", "projects")
+	root := filepath.Join(home, "cache", "schema", "projects")
 	cutoff := time.Now().Add(-maxAge).Unix()
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -80,7 +82,7 @@ func CleanupUnused(maxAge time.Duration) error {
 }
 
 func CachePath(project Project) (string, error) {
-	home, err := os.UserHomeDir()
+	home, err := appconfig.Home()
 	if err != nil {
 		return "", err
 	}
@@ -90,7 +92,7 @@ func CachePath(project Project) (string, error) {
 	if name == "" {
 		name = "project"
 	}
-	return filepath.Join(home, ".sofarpc", "cache", "schema", "projects", name+"-"+workspaceHash, "index.json"), nil
+	return filepath.Join(home, "cache", "schema", "projects", name+"-"+workspaceHash, "index.json"), nil
 }
 
 func SourceFingerprint(workspace string) (string, error) {

@@ -69,19 +69,19 @@ func (e *ConfigError) Unwrap() error {
 }
 
 func DefaultPath() (string, error) {
-	home, err := os.UserHomeDir()
+	root, err := Home()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".sofarpc", "config.json"), nil
+	return filepath.Join(root, "config.json"), nil
 }
 
 func DefaultLockPath() (string, error) {
-	home, err := os.UserHomeDir()
+	root, err := Home()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".sofarpc", "state", "config.lock"), nil
+	return filepath.Join(root, "state", "config.lock"), nil
 }
 
 func DefaultConfig() Config {

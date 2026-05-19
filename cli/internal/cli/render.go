@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/sofarpc/cli/internal/app"
+	"github.com/diandian921/sofarpc-cli/cli/internal/app"
 )
 
 // writeResult emits one rendered result as a single JSON line.

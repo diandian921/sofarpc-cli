@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sofarpc/cli/internal/javavalue"
+	"github.com/diandian921/sofarpc-cli/cli/internal/javavalue"
 )
 
 func TestBuildRequestContentWrapsTopLevelDTO(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/sofarpc/cli/internal/presentation"
+	"github.com/diandian921/sofarpc-cli/cli/internal/presentation"
 )
 
 func TestHessianJavaGoldenDecode(t *testing.T) {

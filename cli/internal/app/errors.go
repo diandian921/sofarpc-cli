@@ -6,7 +6,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/sofarpc/cli/internal/direct"
+	"github.com/diandian921/sofarpc-cli/cli/internal/direct"
 )
 
 const (

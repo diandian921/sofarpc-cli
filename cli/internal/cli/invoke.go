@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sofarpc/cli/internal/app"
-	"github.com/sofarpc/cli/internal/presentation"
+	"github.com/diandian921/sofarpc-cli/cli/internal/app"
+	"github.com/diandian921/sofarpc-cli/cli/internal/presentation"
 )
 
 // runInvoke is the human-facing shortcut for an invocation. It maps flat flags

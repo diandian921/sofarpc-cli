@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/sofarpc/cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-cli/cli/internal/appconfig"
 )
 
 func (s *Service) Resolve(ctx context.Context, input ResolveInput) (ResolveResult, error) {

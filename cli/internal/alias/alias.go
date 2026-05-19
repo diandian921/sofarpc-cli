@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/diandian921/sofarpc-cli/cli/internal/appconfig"
 )
 
 // Server is one registry entry.
@@ -34,13 +36,14 @@ var aliasPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 // It is intentionally lax; the direct runtime validates the final request.
 var hostPortPattern = regexp.MustCompile(`^[^\s]+:\d+$`)
 
-// DefaultPath returns ~/.sofarpc/servers.json.
+// DefaultPath returns <SOFARPC_HOME>/servers.json, defaulting to
+// ~/.sofarpc/servers.json.
 func DefaultPath() (string, error) {
-	home, err := os.UserHomeDir()
+	home, err := appconfig.Home()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".sofarpc", "servers.json"), nil
+	return filepath.Join(home, "servers.json"), nil
 }
 
 // Load reads the registry from path. A missing file returns an empty registry,

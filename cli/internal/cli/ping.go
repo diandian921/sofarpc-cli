@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/sofarpc/cli/internal/app"
+	"github.com/diandian921/sofarpc-cli/cli/internal/app"
 )
 
 func runPing(args []string, env Env) int {
@@ -19,7 +19,7 @@ func runPing(args []string, env Env) int {
 		return 2
 	}
 	if len(rest) != 1 {
-		fmt.Fprintln(env.Stderr, "usage: sofarpc-cli ping <host:port|server> [--service <name>] [--timeout-ms <ms>]")
+		fmt.Fprintln(env.Stderr, "usage: sofarpc ping <host:port|server> [--service <name>] [--timeout-ms <ms>]")
 		return 2
 	}
 	addr, err := resolveAddress(rest[0])

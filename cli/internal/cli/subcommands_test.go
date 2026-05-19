@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/sofarpc/cli/internal/app"
+	"github.com/diandian921/sofarpc-cli/cli/internal/app"
 )
 
 func tempHome(t *testing.T) (string, func()) {

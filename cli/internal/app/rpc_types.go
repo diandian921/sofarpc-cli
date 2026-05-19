@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sofarpc/cli/internal/javavalue"
-	"github.com/sofarpc/cli/internal/schema"
+	"github.com/diandian921/sofarpc-cli/cli/internal/javavalue"
+	"github.com/diandian921/sofarpc-cli/cli/internal/schema"
 )
 
 const maxTypePlanDepth = 128

@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/sofarpc/cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-cli/cli/internal/appconfig"
 )
 
 func runProject(args []string, env Env) int {
@@ -37,7 +37,7 @@ func runProjectAdd(args []string, env Env) int {
 		return 2
 	}
 	if len(rest) != 2 {
-		fmt.Fprintln(env.Stderr, "usage: sofarpc-cli project add <name> <workspaceRoot> [--prefix <java.package>] [--overwrite]")
+		fmt.Fprintln(env.Stderr, "usage: sofarpc project add <name> <workspaceRoot> [--prefix <java.package>] [--overwrite]")
 		return 2
 	}
 	path, lock, err := configPaths()
@@ -94,7 +94,7 @@ func runProjectRemove(args []string, env Env) int {
 		return 2
 	}
 	if len(rest) != 1 {
-		fmt.Fprintln(env.Stderr, "usage: sofarpc-cli project remove <name> --confirm [--cascade]")
+		fmt.Fprintln(env.Stderr, "usage: sofarpc project remove <name> --confirm [--cascade]")
 		return 2
 	}
 	path, lock, err := configPaths()

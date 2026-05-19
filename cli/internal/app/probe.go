@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/sofarpc/cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-cli/cli/internal/appconfig"
 )
 
 type ProbeInput struct {

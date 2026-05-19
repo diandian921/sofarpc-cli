@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sofarpc/cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-cli/cli/internal/appconfig"
 )
 
 // runServer manages configured RPC servers in ~/.sofarpc/config.json.
@@ -47,7 +47,7 @@ func runServerAdd(args []string, env Env) int {
 		return 2
 	}
 	if len(rest) != 2 {
-		fmt.Fprintln(env.Stderr, "usage: sofarpc-cli server add <name> <host:port> --project <project> [--timeout-ms <ms>] [--attachment k=v]")
+		fmt.Fprintln(env.Stderr, "usage: sofarpc server add <name> <host:port> --project <project> [--timeout-ms <ms>] [--attachment k=v]")
 		return 2
 	}
 	name, addr := rest[0], rest[1]
@@ -127,7 +127,7 @@ func runServerRemove(args []string, env Env) int {
 		return 2
 	}
 	if len(rest) != 1 {
-		fmt.Fprintln(env.Stderr, "usage: sofarpc-cli server remove <name> --confirm")
+		fmt.Fprintln(env.Stderr, "usage: sofarpc server remove <name> --confirm")
 		return 2
 	}
 	name := rest[0]

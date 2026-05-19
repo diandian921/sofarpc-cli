@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/sofarpc/cli/internal/appconfig"
-	"github.com/sofarpc/cli/internal/javavalue"
-	"github.com/sofarpc/cli/internal/schema"
+	"github.com/diandian921/sofarpc-cli/cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-cli/cli/internal/javavalue"
+	"github.com/diandian921/sofarpc-cli/cli/internal/schema"
 )
 
 type ConfigStore interface {

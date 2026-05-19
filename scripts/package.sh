@@ -1,35 +1,79 @@
 #!/usr/bin/env bash
+# Cross-compile the release matrix and emit OS-appropriate archives plus a
+# single SHA256SUMS. tar.gz for macOS/Linux (preserves the executable bit);
+# zip for Windows (native). Each archive carries both binaries, README.md, and
+# the thin bootstrap scripts.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-VERSION="${VERSION:-$(git -C "$REPO_ROOT" describe --tags --always 2>/dev/null || echo dev)}"
-GOOS_VALUE="${GOOS:-$(go env GOOS)}"
-GOARCH_VALUE="${GOARCH:-$(go env GOARCH)}"
+# The Go module lives in cli/, so release tags are prefixed (cli/vX.Y.Z) per
+# Go's subdirectory-module rule. Match only those tags so a stray root tag
+# (vX.Y.Z) is not picked up, then strip the prefix for archive/display names
+# so the package path never contains a slash.
+VERSION="${VERSION:-$(git -C "$REPO_ROOT" describe --tags --match 'cli/v*' --always 2>/dev/null || echo dev)}"
+VERSION="${VERSION#cli/}"
 DIST_DIR="$REPO_ROOT/dist"
-WORK_DIR="$DIST_DIR/sofarpc-$VERSION-$GOOS_VALUE-$GOARCH_VALUE"
-EXT=""
-if [ "$GOOS_VALUE" = "windows" ]; then
-    EXT=".exe"
-fi
+
+# Default matrix; override with PLATFORMS="os/arch os/arch ...".
+PLATFORMS="${PLATFORMS:-darwin/arm64 darwin/amd64 linux/amd64 windows/amd64}"
 
 command -v go >/dev/null || { echo "error: go not found in PATH" >&2; exit 1; }
-command -v zip >/dev/null || { echo "error: zip not found in PATH" >&2; exit 1; }
+command -v tar >/dev/null || { echo "error: tar not found in PATH" >&2; exit 1; }
+case " $PLATFORMS " in
+    *" windows/"*) command -v zip >/dev/null || { echo "error: zip not found in PATH" >&2; exit 1; } ;;
+esac
 
-rm -rf "$WORK_DIR"
-mkdir -p "$WORK_DIR" "$DIST_DIR"
+mkdir -p "$DIST_DIR"
+ARCHIVES=()
 
-echo "[1/3] Building Go binaries for $GOOS_VALUE/$GOARCH_VALUE..."
-(cd "$REPO_ROOT/cli" && GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" go build -ldflags "-X main.BuildVersion=$VERSION" -o "$WORK_DIR/sofarpc-cli$EXT" ./cmd/sofarpc)
-(cd "$REPO_ROOT/cli" && GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" go build -ldflags "-X main.BuildVersion=$VERSION" -o "$WORK_DIR/sofarpc-mcp$EXT" ./cmd/sofarpc-mcp)
+for platform in $PLATFORMS; do
+    GOOS_VALUE="${platform%/*}"
+    GOARCH_VALUE="${platform#*/}"
+    EXT=""
+    [ "$GOOS_VALUE" = "windows" ] && EXT=".exe"
 
-echo "[2/3] Adding install scripts..."
-cp "$REPO_ROOT/scripts/install.sh" "$WORK_DIR/install.sh"
-cp "$REPO_ROOT/scripts/install.ps1" "$WORK_DIR/install.ps1"
+    WORK_DIR="$DIST_DIR/sofarpc-$VERSION-$GOOS_VALUE-$GOARCH_VALUE"
+    rm -rf "$WORK_DIR"
+    mkdir -p "$WORK_DIR"
 
-echo "[3/3] Creating package..."
-PACKAGE="$DIST_DIR/sofarpc-$VERSION-$GOOS_VALUE-$GOARCH_VALUE.zip"
-rm -f "$PACKAGE"
-(cd "$WORK_DIR" && zip -qr "$PACKAGE" .)
+    echo "[build] $GOOS_VALUE/$GOARCH_VALUE"
+    (cd "$REPO_ROOT/cli" && GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
+        go build -ldflags "-X main.BuildVersion=$VERSION" -o "$WORK_DIR/sofarpc$EXT" ./cmd/sofarpc)
+    (cd "$REPO_ROOT/cli" && GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
+        go build -ldflags "-X main.BuildVersion=$VERSION" -o "$WORK_DIR/sofarpc-mcp$EXT" ./cmd/sofarpc-mcp)
 
-echo "$PACKAGE"
+    cp "$REPO_ROOT/README.md" "$WORK_DIR/README.md"
+    cp "$REPO_ROOT/scripts/install.sh" "$WORK_DIR/install.sh"
+    cp "$REPO_ROOT/scripts/install.ps1" "$WORK_DIR/install.ps1"
+
+    base="sofarpc-$VERSION-$GOOS_VALUE-$GOARCH_VALUE"
+    if [ "$GOOS_VALUE" = "windows" ]; then
+        archive="$DIST_DIR/$base.zip"
+        rm -f "$archive"
+        (cd "$WORK_DIR" && zip -qr "$archive" .)
+    else
+        archive="$DIST_DIR/$base.tar.gz"
+        rm -f "$archive"
+        tar -czf "$archive" -C "$DIST_DIR" "$base"
+    fi
+    ARCHIVES+=("$archive")
+    echo "[pack]  $archive"
+done
+
+echo "[sums]  $DIST_DIR/SHA256SUMS"
+(
+    cd "$DIST_DIR"
+    : > SHA256SUMS
+    for a in "${ARCHIVES[@]}"; do
+        name="$(basename "$a")"
+        if command -v sha256sum >/dev/null; then
+            sha256sum "$name" >> SHA256SUMS
+        else
+            shasum -a 256 "$name" >> SHA256SUMS
+        fi
+    done
+)
+
+printf '%s\n' "${ARCHIVES[@]}"
+echo "$DIST_DIR/SHA256SUMS"

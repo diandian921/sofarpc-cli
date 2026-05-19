@@ -10,7 +10,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/sofarpc/cli/internal/javavalue"
+	"github.com/diandian921/sofarpc-cli/cli/internal/javavalue"
 )
 
 const maxHessianDepth = 128

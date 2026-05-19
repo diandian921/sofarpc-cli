@@ -1,6 +1,6 @@
 package mcp
 
-import "github.com/sofarpc/cli/internal/appconfig"
+import "github.com/diandian921/sofarpc-cli/cli/internal/appconfig"
 
 func loadConfig() (appconfig.Config, error) {
 	path, err := appconfig.DefaultPath()
