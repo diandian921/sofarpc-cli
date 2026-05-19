@@ -1,11 +1,11 @@
 # Install and Host Setup — First-Principles Design
 
-Status: target decision, not yet implemented.
+Status: implemented beta design.
 
-A from-scratch redesign of the install and host-registration shape. It does not
-patch `install-and-host-setup.md`; it rederives the design from one principle
-and keeps only what follows from it. Written in English to stay consistent with
-`README.md` and `CONTEXT.md`.
+This document records the implemented install and host-registration shape. It
+does not patch `install-and-host-setup.md`; it rederives the design from one
+principle and keeps only what follows from it. Written in English to stay
+consistent with `README.md` and `CONTEXT.md`.
 
 This revision folds in the fixes from
 `install-and-host-setup-first-principles-review.md`. The five review items
@@ -69,7 +69,7 @@ learns a different path.
 ## Binary Names and Module Paths
 
 Final command names are `sofarpc` and `sofarpc-mcp`. The legacy name
-`sofarpc-cli` is dropped (see Migration).
+`sofarpc-cli` is dropped (see Implementation Status).
 
 **Decided — Option B.** The Go module lives in the repo's `cli/` subdirectory,
 so the module path must include that segment to be resolvable. `cli/go.mod`
@@ -289,28 +289,32 @@ SHA256SUMS
 
 `.tar.gz` for macOS/Linux preserves the executable bit; `.zip` is native on
 Windows. Each archive contains `sofarpc`, `sofarpc-mcp`, `README.md`, and the
-bootstrap script. No `.pkg`/`.msi`/notarization during beta.
+bootstrap scripts. No `.pkg`/`.msi`/notarization during beta.
 
-## Migration From Current State
+## Implementation Status
 
-A rename and a packaging rewrite, not greenfield. Honest delta:
+The beta implementation now matches this target shape:
 
-- **Module-path decision — done (Option B).** go.mod is
+- **Module-path decision — done (Option B).** `cli/go.mod` is
   `github.com/diandian921/sofarpc-cli/cli` (the module lives in the repo's
   `cli/` subdirectory, so the path carries that segment); all internal
   imports rewritten. The `go install` channel is now advertisable alongside
   the tarball.
-- **Command rename** `sofarpc-cli` → `sofarpc`. Touches `scripts/install.sh`
-  (build target, install, `--uninstall`), `scripts/package.sh`, `README.md`,
-  and stray prebuilt binaries under `cli/`. `dist/sofarpc-v0.1.0-beta.1-*`
-  already ships `sofarpc-cli`; beta does a clean break (no compat shim).
-- **Packaging rewrite** `scripts/package.sh` currently emits a single-host
-  `.zip`, git-describe version, no `SHA256SUMS`, and omits `README.md`. It
-  needs a cross-compile matrix, `.tar.gz`, checksums, README inclusion.
-- **Delivery order**, each step shippable and testable alone: module-path
-  decision → command rename → `self-install` (absorbs the rename and the
-  install scripts) → canonical-path indirection → declarative `setup` →
-  `sofarpc-mcp --selftest` → `package.sh` rewrite.
+- **Command rename — done.** The installed human CLI is `sofarpc`; the MCP
+  server is `sofarpc-mcp`. No `sofarpc-cli` compatibility shim is shipped for
+  beta.
+- **Self-install — done.** `sofarpc self-install` owns the cross-platform
+  install logic, verifies the `sofarpc`/`sofarpc-mcp` delivery set, and creates
+  config/cache scaffolding without overwriting user config.
+- **Canonical host setup — done.** `sofarpc setup claude|codex|all` registers
+  the expanded absolute path to `sofarpc-mcp`, propagates non-default
+  `SOFARPC_HOME`, and uses host CLIs rather than parsing or writing host
+  config files.
+- **Binary self-test — done.** `sofarpc-mcp --selftest` verifies that the MCP
+  server can initialize and enumerate tools without starting a stdio session.
+- **Packaging rewrite — done.** `scripts/package.sh` emits the cross-platform
+  release matrix, uses `.tar.gz` for macOS/Linux and `.zip` for Windows,
+  includes `README.md` plus bootstrap scripts, and writes `SHA256SUMS`.
 
 ## Non-Goals
 
