@@ -48,6 +48,31 @@ func TestBuildRequestContentWrapsTopLevelDTO(t *testing.T) {
 	}
 }
 
+func TestBuildRequestContentIncludesAttachmentsInRequestProps(t *testing.T) {
+	content, _, err := buildRequestContent(Request{
+		Service:  "com.example.Facade",
+		Method:   "query",
+		ArgTypes: []string{"java.lang.String"},
+		Args:     []interface{}{javavalue.Scalar("java.lang.String", "u001")},
+		Attachments: map[string]string{
+			"tenant":         "blue",
+			"trace-context":  "abc",
+			"generic.revise": "false",
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildRequestContent: %v", err)
+	}
+	req := readSofaRequest(t, content)
+	props := req["requestProps"].(map[string]interface{})
+	if props["tenant"] != "blue" || props["trace-context"] != "abc" {
+		t.Fatalf("attachments missing from requestProps: %#v", props)
+	}
+	if props["generic.revise"] != "true" || props["sofa_head_generic_type"] != genericType || props["type"] != invokeTypeSync {
+		t.Fatalf("runtime requestProps were not preserved: %#v", props)
+	}
+}
+
 func TestDeclaredNumericTypesChooseHessianTags(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -72,6 +97,20 @@ func TestDeclaredNumericTypesChooseHessianTags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func readSofaRequest(t *testing.T, content []byte) map[string]interface{} {
+	t.Helper()
+	r := &reader{data: content}
+	root, err := r.readValue()
+	if err != nil {
+		t.Fatalf("read SofaRequest: %v", err)
+	}
+	obj := root.(map[string]interface{})
+	if obj["type"] != requestClass {
+		t.Fatalf("request type = %#v", obj["type"])
+	}
+	return obj["fields"].(map[string]interface{})
 }
 
 func TestTypedValueDTOFieldTypesDriveNumericEncoding(t *testing.T) {

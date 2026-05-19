@@ -15,6 +15,11 @@ import java.util.List;
 import java.util.Map;
 
 public final class HessianContractHelper {
+    public enum Status {
+        ACTIVE,
+        INACTIVE
+    }
+
     public static final class QueryRequest implements Serializable {
         public Long mpCode;
         public Double ratio;
@@ -42,6 +47,30 @@ public final class HessianContractHelper {
             this.success = success;
             this.amount = amount;
             this.tags = tags;
+        }
+    }
+
+    public static final class EnumRequest implements Serializable {
+        public Status status;
+
+        public EnumRequest() {
+        }
+
+        public EnumRequest(Status status) {
+            this.status = status;
+        }
+    }
+
+    public static final class EnumResponse implements Serializable {
+        public Status status;
+        public List<Status> history;
+
+        public EnumResponse() {
+        }
+
+        public EnumResponse(Status status, List<Status> history) {
+            this.status = status;
+            this.history = history;
         }
     }
 
@@ -79,6 +108,14 @@ public final class HessianContractHelper {
             case "decode-complex-response":
                 requireArgs(args, 2);
                 System.out.println(describe(readAs(fromHex(args[1]), ComplexResponse.class)));
+                return;
+            case "decode-status":
+                requireArgs(args, 2);
+                System.out.println(describe(readAs(fromHex(args[1]), Status.class)));
+                return;
+            case "decode-enum-request":
+                requireArgs(args, 2);
+                System.out.println(describe(readAs(fromHex(args[1]), EnumRequest.class)));
                 return;
             case "encode":
                 requireArgs(args, 2);
@@ -153,6 +190,10 @@ public final class HessianContractHelper {
                 return new Date(0L);
             case "bytes":
                 return new byte[] {0x01, 0x02, (byte) 0xff};
+            case "enum":
+                return Status.ACTIVE;
+            case "enum-response":
+                return new EnumResponse(Status.ACTIVE, Arrays.asList(Status.INACTIVE));
             default:
                 throw new IllegalArgumentException("unknown case: " + name);
         }
@@ -183,6 +224,19 @@ public final class HessianContractHelper {
                     + ",attributes=" + describe(v.attributes)
                     + ",mixed=" + describe(v.mixed)
                     + "}";
+        }
+        if (value instanceof EnumRequest) {
+            EnumRequest v = (EnumRequest) value;
+            return "EnumRequest{status=" + describe(v.status) + "}";
+        }
+        if (value instanceof EnumResponse) {
+            EnumResponse v = (EnumResponse) value;
+            return "EnumResponse{status=" + describe(v.status)
+                    + ",history=" + describe(v.history)
+                    + "}";
+        }
+        if (value instanceof Status) {
+            return "Status:" + ((Status) value).name();
         }
         if (value instanceof byte[]) {
             return "byte[]:" + toHex((byte[]) value);

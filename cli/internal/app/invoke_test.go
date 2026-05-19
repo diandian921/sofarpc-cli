@@ -106,6 +106,34 @@ func TestTypedValueForJavaTypeKeepsByteArrayScalar(t *testing.T) {
 	}
 }
 
+func TestTypedValueForJavaTypeEncodesEnumAsJavaObject(t *testing.T) {
+	types := map[string]schema.TypeSchema{
+		"com.example.Status": {
+			Type:       "com.example.Status",
+			Kind:       "enum",
+			EnumValues: []string{"ACTIVE", "INACTIVE"},
+		},
+	}
+	typed := typedValueForJavaType("ACTIVE", "com.example.Status", types, 0)
+	if typed.Kind != javavalue.KindObject || typed.JavaType != "com.example.Status" {
+		t.Fatalf("typed enum = %#v", typed)
+	}
+	name := typed.Fields["name"]
+	if name.Kind != javavalue.KindScalar || name.JavaType != "java.lang.String" || name.Scalar != "ACTIVE" {
+		t.Fatalf("typed enum name = %#v", name)
+	}
+
+	wrapped := typedValueForJavaType(map[string]interface{}{"name": "INACTIVE"}, "com.example.Status", types, 0)
+	if wrapped.Fields["name"].Scalar != "INACTIVE" {
+		t.Fatalf("wrapped enum name = %#v", wrapped.Fields["name"])
+	}
+
+	nullEnum := typedValueForJavaType(nil, "com.example.Status", types, 0)
+	if nullEnum.Kind != javavalue.KindScalar || nullEnum.JavaType != "com.example.Status" || nullEnum.Scalar != nil {
+		t.Fatalf("null enum = %#v", nullEnum)
+	}
+}
+
 func TestPlanNamedArgumentsUsesSourceIndexPort(t *testing.T) {
 	cfg := appconfig.Config{
 		Projects: map[string]appconfig.Project{
@@ -113,11 +141,12 @@ func TestPlanNamedArgumentsUsesSourceIndexPort(t *testing.T) {
 		},
 		Servers: map[string]appconfig.Server{
 			"user-test": {
-				Address:   "127.0.0.1:12200",
-				Project:   "user",
-				Protocol:  "bolt",
-				TimeoutMS: 5000,
-				AppName:   "test",
+				Address:     "127.0.0.1:12200",
+				Project:     "user",
+				Protocol:    "bolt",
+				TimeoutMS:   5000,
+				AppName:     "test",
+				Attachments: map[string]string{"tenant": "blue"},
 			},
 		},
 	}
@@ -152,6 +181,14 @@ func TestPlanNamedArgumentsUsesSourceIndexPort(t *testing.T) {
 	}
 	if plan.Arguments[0].Kind != javavalue.KindObject || plan.Arguments[0].Fields["id"].JavaType != "java.lang.Long" {
 		t.Fatalf("arguments = %#v", plan.Arguments)
+	}
+	req := directRequestFromPlan(plan)
+	if req.Attachments["tenant"] != "blue" {
+		t.Fatalf("direct request attachments = %#v", req.Attachments)
+	}
+	plan.Endpoint.Attachments["tenant"] = "mutated"
+	if req.Attachments["tenant"] != "blue" {
+		t.Fatalf("direct request attachments should be copied, got %#v", req.Attachments)
 	}
 }
 

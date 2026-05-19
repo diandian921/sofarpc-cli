@@ -15,5 +15,7 @@ public class PositionQuery {
     @Deprecated
     private List<String> states;
 
+    private PositionStatus status;
+
     private Map<String, List<BigDecimal>> amountFilters;
 }

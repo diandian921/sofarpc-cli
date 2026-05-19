@@ -70,7 +70,7 @@ Assertions are not exposed on the MCP invoke tool. They remain available on the 
 - Schema discovery uses local Java source only.
 - External jar parents and generated DTO fields are not loaded.
 - Request encoding rejects cyclic values and does not preserve shared object references.
-- Go request encoding for `java.util.Date`, `BigInteger`, enum-heavy payloads, and provider-specific Hessian extensions require more compatibility work before being treated as supported.
+- Go request encoding for `java.util.Date`, `BigInteger`, enum payloads without source schema, and provider-specific Hessian extensions require more compatibility work before being treated as broadly supported. Schema-known enum parameters and DTO fields are covered by Hessian oracle tests.
 - Flattened map keys are strings; use `rawResult=true` for response-shape diagnosis when key type matters.
 - `sofarpc_probe` is a TCP reachability check; it does not prove service or method existence.
 

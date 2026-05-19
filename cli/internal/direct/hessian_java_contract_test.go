@@ -102,6 +102,20 @@ func TestHessianJavaContractGoEncodedValuesReadableByJava(t *testing.T) {
 			want:  "byte[]:0102ff",
 		},
 		{
+			name: "enum",
+			value: javavalue.Object("HessianContractHelper$Status", map[string]javavalue.TypedValue{
+				"name": javavalue.Scalar("java.lang.String", "ACTIVE"),
+			}),
+			mode: "decode-status",
+			want: "Status:ACTIVE",
+		},
+		{
+			name:  "null enum",
+			value: javavalue.Scalar("HessianContractHelper$Status", nil),
+			mode:  "decode-status",
+			want:  "null",
+		},
+		{
 			name: "dto",
 			value: javavalue.Object("HessianContractHelper$QueryRequest", map[string]javavalue.TypedValue{
 				"mpCode": javavalue.Scalar("java.lang.Long", json.Number("433905635109773312")),
@@ -110,6 +124,24 @@ func TestHessianJavaContractGoEncodedValuesReadableByJava(t *testing.T) {
 			}),
 			mode: "decode-query-request",
 			want: "QueryRequest{mpCode=java.lang.Long:433905635109773312,ratio=java.lang.Double:2.0,emoji=java.lang.String:a🙂b}",
+		},
+		{
+			name: "dto with enum field",
+			value: javavalue.Object("HessianContractHelper$EnumRequest", map[string]javavalue.TypedValue{
+				"status": javavalue.Object("HessianContractHelper$Status", map[string]javavalue.TypedValue{
+					"name": javavalue.Scalar("java.lang.String", "ACTIVE"),
+				}),
+			}),
+			mode: "decode-enum-request",
+			want: "EnumRequest{status=Status:ACTIVE}",
+		},
+		{
+			name: "dto with null enum field",
+			value: javavalue.Object("HessianContractHelper$EnumRequest", map[string]javavalue.TypedValue{
+				"status": javavalue.Scalar("HessianContractHelper$Status", nil),
+			}),
+			mode: "decode-enum-request",
+			want: "EnumRequest{status=null}",
 		},
 		{
 			name: "nested dto",
@@ -249,6 +281,33 @@ func TestHessianJavaContractJavaEncodedValuesReadableByGo(t *testing.T) {
 				tags := listItems(t, fields["tags"])
 				if len(tags) != 2 || tags[0] != "A" || tags[1] != "B" {
 					t.Fatalf("tags = %#v", tags)
+				}
+			},
+		},
+		{
+			name: "enum",
+			check: func(t *testing.T, got interface{}) {
+				fields := objectFields(t, got, "HessianContractHelper$Status")
+				if fields["name"] != "ACTIVE" {
+					t.Fatalf("fields = %#v", fields)
+				}
+			},
+		},
+		{
+			name: "enum-response",
+			check: func(t *testing.T, got interface{}) {
+				fields := objectFields(t, got, "HessianContractHelper$EnumResponse")
+				status := objectFields(t, fields["status"], "HessianContractHelper$Status")
+				if status["name"] != "ACTIVE" {
+					t.Fatalf("status = %#v", status)
+				}
+				history := listItems(t, fields["history"])
+				if len(history) != 1 {
+					t.Fatalf("history = %#v", history)
+				}
+				item := objectFields(t, history[0], "HessianContractHelper$Status")
+				if item["name"] != "INACTIVE" {
+					t.Fatalf("history[0] = %#v", item)
 				}
 			},
 		},

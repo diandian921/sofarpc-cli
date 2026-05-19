@@ -102,8 +102,16 @@ func TestParserGoldenModernJavaFacade(t *testing.T) {
 	assertFields(t, desc.Types["com.acme.modern.dto.PositionQuery"], map[string]string{
 		"mpCode":        "Long",
 		"states":        "List<String>",
+		"status":        "PositionStatus",
 		"amountFilters": "Map<String, List<BigDecimal>>",
 	})
+	status := desc.Types["com.acme.modern.dto.PositionStatus"]
+	if status.Kind != "enum" {
+		t.Fatalf("PositionStatus kind = %q; schema=%#v", status.Kind, status)
+	}
+	if len(status.EnumValues) != 2 || status.EnumValues[0] != "ACTIVE" || status.EnumValues[1] != "INACTIVE" {
+		t.Fatalf("PositionStatus enum values = %#v", status.EnumValues)
+	}
 	assertFields(t, desc.Types["com.acme.modern.dto.PositionRecord"], map[string]string{
 		"id":     "Long",
 		"amount": "BigDecimal",

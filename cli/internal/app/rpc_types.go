@@ -70,6 +70,9 @@ func typedValueForJavaType(value interface{}, javaType string, types map[string]
 	if isByteArrayType(javaType) {
 		return javavalue.Scalar(javaType, value)
 	}
+	if typ, ok := types[eraseRPCGeneric(javaType)]; ok && typ.Kind == "enum" {
+		return enumTypedValue(value, typ.Type)
+	}
 	switch raw := value.(type) {
 	case map[string]interface{}:
 		typ, ok := types[eraseRPCGeneric(javaType)]
@@ -112,6 +115,20 @@ func typedValueForJavaType(value interface{}, javaType string, types map[string]
 	default:
 		return javavalue.Scalar(javaType, value)
 	}
+}
+
+func enumTypedValue(value interface{}, javaType string) javavalue.TypedValue {
+	if value == nil {
+		return javavalue.Scalar(javaType, nil)
+	}
+	if raw, ok := value.(map[string]interface{}); ok {
+		if name, exists := raw["name"]; exists {
+			value = name
+		}
+	}
+	return javavalue.Object(javaType, map[string]javavalue.TypedValue{
+		"name": javavalue.Scalar("java.lang.String", value),
+	})
 }
 
 func shouldWrapJavaObject(javaType string) bool {

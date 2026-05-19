@@ -40,15 +40,16 @@ func init() {
 
 // Request is the pure-Go direct invoke surface.
 type Request struct {
-	Address  string
-	Service  string
-	Method   string
-	ArgTypes []string
-	Args     []interface{}
-	Timeout  time.Duration
-	Version  string
-	UniqueID string
-	AppName  string
+	Address     string
+	Service     string
+	Method      string
+	ArgTypes    []string
+	Args        []interface{}
+	Timeout     time.Duration
+	Version     string
+	UniqueID    string
+	AppName     string
+	Attachments map[string]string
 }
 
 type Outcome struct {
@@ -163,11 +164,7 @@ func nextRequestID() uint32 {
 
 func buildRequestContent(req Request) ([]byte, string, error) {
 	targetService := targetServiceName(req.Service, req.Version, req.UniqueID)
-	props := map[string]interface{}{
-		"sofa_head_generic_type": genericType,
-		"type":                   invokeTypeSync,
-		"generic.revise":         "true",
-	}
+	props := requestProps(req.Attachments)
 	w := newWriter()
 	if err := w.writeObject(requestClass,
 		[]string{"targetAppName", "methodName", "targetServiceUniqueName", "requestProps", "methodArgSigs"},
@@ -184,6 +181,21 @@ func buildRequestContent(req Request) ([]byte, string, error) {
 		}
 	}
 	return w.bytes(), targetService, nil
+}
+
+func requestProps(attachments map[string]string) map[string]interface{} {
+	props := make(map[string]interface{}, len(attachments)+3)
+	for k, v := range attachments {
+		key := strings.TrimSpace(k)
+		if key == "" {
+			continue
+		}
+		props[key] = v
+	}
+	props["sofa_head_generic_type"] = genericType
+	props["type"] = invokeTypeSync
+	props["generic.revise"] = "true"
+	return props
 }
 
 func targetServiceName(service, version, uniqueID string) string {

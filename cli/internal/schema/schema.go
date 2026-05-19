@@ -208,13 +208,13 @@ func Describe(idx *Index, service string, methodFilter string) (Description, err
 		desc.Methods = append(desc.Methods, method)
 		for _, typ := range referencedTypes(method.ReturnType) {
 			if schema, ok := resolveType(idx, typ, method.Package, method.Imports); ok {
-				desc.Types[schema.Type] = schema
+				addDescribedType(idx, desc.Types, schema)
 			}
 		}
 		for _, p := range method.Parameters {
 			for _, typ := range referencedTypes(p.Type) {
 				if schema, ok := resolveType(idx, typ, method.Package, method.Imports); ok {
-					desc.Types[schema.Type] = schema
+					addDescribedType(idx, desc.Types, schema)
 				}
 			}
 		}
@@ -225,6 +225,36 @@ func Describe(idx *Index, service string, methodFilter string) (Description, err
 	desc.Stats["methodCount"] = len(desc.Methods)
 	desc.Stats["typeCount"] = len(desc.Types)
 	return desc, nil
+}
+
+func addDescribedType(idx *Index, out map[string]TypeSchema, schema TypeSchema) {
+	if schema.Type == "" {
+		return
+	}
+	if _, exists := out[schema.Type]; exists {
+		return
+	}
+	out[schema.Type] = schema
+	if len(schema.Fields) == 0 {
+		return
+	}
+	pkg := packageFromType(schema.Type)
+	for _, field := range schema.Fields {
+		for _, typ := range referencedTypes(field.Type) {
+			child, ok := resolveType(idx, typ, pkg, schema.Imports)
+			if !ok {
+				continue
+			}
+			addDescribedType(idx, out, child)
+		}
+	}
+}
+
+func packageFromType(fqn string) string {
+	if i := strings.LastIndex(fqn, "."); i >= 0 {
+		return fqn[:i]
+	}
+	return ""
 }
 
 func Tokenize(s string) []string {

@@ -52,8 +52,10 @@ Concrete priority:
    `internal/presentation`, so the stable contract is
    `decode -> decoded tree -> presentation JSON`.
 4. Done: the codec compatibility harness uses a hybrid model. Default CI runs
-   oracle-bound golden bytes; optional JVM oracle tests verify the corpus
-   byte-for-byte and validate bidirectional encode/decode behavior.
+   oracle-bound Hessian golden bytes; optional JVM oracle tests verify the
+   corpus byte-for-byte and validate bidirectional encode/decode behavior.
+   Optional BOLT oracle tests use `sofa-bolt-go` to verify frame and simplemap
+   compatibility against an independent implementation.
 5. Done: parser golden fixtures cover realistic Java facade/DTO snippets.
 
 Do not introduce `Codec`, `EndpointResolver`, `Policy`, or similar interfaces
@@ -80,7 +82,7 @@ codebase status is:
 | Domain error model | Partial | Minimal `DomainError{Kind, Message, Details}` exists for planning errors; recovery hints are not complete. |
 | Presentation renderer | Implemented | `internal/presentation` owns result flattening and assertion evaluation as pure functions. No renderer strategy interface exists. |
 | Codec interface | Deferred | Hessian encode/decode still lives in `internal/direct`. The next step is Java compatibility tests, not a `Codec` port. |
-| Compatibility matrix | Partial | `docs/compatibility-matrix.md` is backed by oracle-bound Java Hessian golden bytes, presentation JSON assertions, and optional JVM oracle tests under the `hessian_oracle` build tag. The oracle test verifies checked-in golden hex against Java helper output byte-for-byte. Expand provider samples before claiming more codec surface. |
+| Compatibility matrix | Partial | `docs/compatibility-matrix.md` is backed by oracle-bound Java Hessian golden bytes, presentation JSON assertions, optional JVM oracle tests under the `hessian_oracle` build tag, and optional BOLT frame oracle tests under the `bolt_oracle` build tag. The Hessian oracle test verifies checked-in golden hex against Java helper output byte-for-byte. Expand provider samples before claiming more codec surface. |
 | Parser golden corpus | Partial | Golden fixtures under `internal/schema/testdata/golden` now cover the sales facade shape plus a modern Java fixture with method annotations, parameter annotations, Lombok-style DTO fields, records, nested generics, and overloaded facade methods. Expand with more real facade samples before claiming broad parser compatibility. |
 | Performance budget | Implemented opt-in | `internal/perf` is behind the `perf` build tag. It logs conservative smoke timings for MCP startup, schema build/warm load, explicit planning, and presentation flattening; hard budget enforcement requires `SOFARPC_ENFORCE_PERF_BUDGET=1`. Default `go test ./...` stays wall-clock independent. |
 | Dependency rule enforcement | Implemented | `internal/arch` runs `go list` package-boundary checks for app/direct/schema/presentation dependency direction. |
@@ -350,6 +352,9 @@ The harness has two modes:
   local Java Hessian helper, verifies checked-in golden hex against Java helper
   output byte-for-byte, and verifies both directions against hessian-lite. This
   is the path for refreshing or adding golden samples.
+- Optional BOLT oracle: `go test -tags bolt_oracle ./internal/direct` uses
+  `sofa-bolt-go` to verify request frames, response frames, and simplemap
+  headers against an independent implementation.
 
 Direction matters:
 

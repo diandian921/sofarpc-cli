@@ -135,15 +135,7 @@ func (s *Service) planExplicitAddressInvocation(input InvocationInput, start tim
 }
 
 func (s *Service) ExecuteInvocation(ctx context.Context, plan InvocationPlan) InvocationExecution {
-	out, err := direct.Invoke(ctx, direct.Request{
-		Address:  plan.Endpoint.Address,
-		Service:  plan.Service,
-		Method:   plan.Method.Name,
-		ArgTypes: plan.Method.ParamTypes,
-		Args:     plan.DirectArgs(),
-		Timeout:  plan.Timeout,
-		AppName:  plan.Endpoint.AppName,
-	})
+	out, err := direct.Invoke(ctx, directRequestFromPlan(plan))
 	if err != nil {
 		return InvocationExecution{
 			OK:   false,
@@ -174,6 +166,30 @@ func (s *Service) ExecuteInvocation(ctx context.Context, plan InvocationPlan) In
 		Data: data,
 		Meta: map[string]interface{}{"runtime": "go", "transport": "direct-bolt"},
 	}
+}
+
+func directRequestFromPlan(plan InvocationPlan) direct.Request {
+	return direct.Request{
+		Address:     plan.Endpoint.Address,
+		Service:     plan.Service,
+		Method:      plan.Method.Name,
+		ArgTypes:    plan.Method.ParamTypes,
+		Args:        plan.DirectArgs(),
+		Timeout:     plan.Timeout,
+		AppName:     plan.Endpoint.AppName,
+		Attachments: copyStringMap(plan.Endpoint.Attachments),
+	}
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func (s *Service) planArguments(ctx context.Context, projectName string, project appconfig.Project, service, method string, input InvocationInput) ([]javavalue.TypedValue, []string, []PlanWarning, error) {

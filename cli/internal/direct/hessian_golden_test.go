@@ -54,6 +54,12 @@ func TestHessianJavaGoldenDecode(t *testing.T) {
 				t.Fatalf("got %#v", got)
 			}
 		},
+		"enum": func(t *testing.T, got interface{}) {
+			fields := goldenObjectFields(t, got, "HessianContractHelper$Status")
+			if fields["name"] != "ACTIVE" {
+				t.Fatalf("fields = %#v", fields)
+			}
+		},
 		"query-response": func(t *testing.T, got interface{}) {
 			fields := goldenObjectFields(t, got, "HessianContractHelper$QueryResponse")
 			if fields["success"] != true {
@@ -66,6 +72,21 @@ func TestHessianJavaGoldenDecode(t *testing.T) {
 			tags := goldenListItems(t, fields["tags"])
 			if len(tags) != 2 || tags[0] != "A" || tags[1] != "B" {
 				t.Fatalf("tags = %#v", tags)
+			}
+		},
+		"enum-response": func(t *testing.T, got interface{}) {
+			fields := goldenObjectFields(t, got, "HessianContractHelper$EnumResponse")
+			status := goldenObjectFields(t, fields["status"], "HessianContractHelper$Status")
+			if status["name"] != "ACTIVE" {
+				t.Fatalf("status = %#v", status)
+			}
+			history := goldenListItems(t, fields["history"])
+			if len(history) != 1 {
+				t.Fatalf("history = %#v", history)
+			}
+			item := goldenObjectFields(t, history[0], "HessianContractHelper$Status")
+			if item["name"] != "INACTIVE" {
+				t.Fatalf("history[0] = %#v", item)
 			}
 		},
 		"nested-response": func(t *testing.T, got interface{}) {
