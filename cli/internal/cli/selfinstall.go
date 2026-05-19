@@ -49,7 +49,7 @@ func runSelfInstall(args []string, env Env) int {
 	ext := exeExt()
 
 	if *uninstall {
-		for _, name := range []string{"sofarpc", "sofarpc-mcp"} {
+		for _, name := range installedBinaryNames() {
 			_ = os.Remove(filepath.Join(binDir, name+ext))
 		}
 		fmt.Fprintf(env.Stdout, "Uninstalled binaries. Kept config and cache under %s\n", root)
@@ -102,6 +102,7 @@ func runSelfInstall(args []string, env Env) int {
 		fmt.Fprintf(env.Stderr, "self-install: install sofarpc-mcp: %v\n", err)
 		return 1
 	}
+	removeLegacyBinaries(binDir, ext)
 	deQuarantine(target, mcpTarget)
 
 	fmt.Fprintf(env.Stdout, "Installed:\n  %s\n  %s\n", target, mcpTarget)
@@ -187,6 +188,14 @@ func ensureScaffold(env Env, root, binDir string) error {
 	}
 	_ = env
 	return nil
+}
+
+func installedBinaryNames() []string {
+	return []string{"sofarpc", "sofarpc-mcp", "sofarpc-cli"}
+}
+
+func removeLegacyBinaries(binDir, ext string) {
+	_ = os.Remove(filepath.Join(binDir, "sofarpc-cli"+ext))
 }
 
 func copyExecutable(src, dst string) error {

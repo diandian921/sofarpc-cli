@@ -86,6 +86,29 @@ func TestSelfInstallFreshInstall(t *testing.T) {
 	}
 }
 
+func TestSelfInstallRemovesLegacyCliBinary(t *testing.T) {
+	src := newFakeSource(t)
+	root := t.TempDir()
+	stubExecutable(t, src.sofarpc)
+	stubVersions(t, map[string]string{"sofarpc-mcp": "v1.0.0"})
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(binDir, "sofarpc-cli")
+	if err := os.WriteFile(legacy, []byte("legacy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, errOut := runSI(t, root, "v1.0.0")
+	if code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, errOut)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatalf("legacy sofarpc-cli should be removed during install, stat err=%v", err)
+	}
+}
+
 func TestSelfInstallVersionMismatchRefused(t *testing.T) {
 	src := newFakeSource(t)
 	root := t.TempDir()
@@ -277,6 +300,9 @@ func TestSelfInstallUninstallKeepsConfig(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "bin", "sofarpc")); err == nil {
 		t.Fatal("binary should be removed after uninstall")
+	}
+	if _, err := os.Stat(filepath.Join(root, "bin", "sofarpc-cli")); err == nil {
+		t.Fatal("legacy binary should be removed after uninstall")
 	}
 	if _, err := os.Stat(filepath.Join(root, "config.json")); err != nil {
 		t.Fatal("config.json must be preserved after uninstall")
