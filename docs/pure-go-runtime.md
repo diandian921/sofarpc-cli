@@ -1,11 +1,13 @@
 # Pure-Go Runtime
 
-`sofarpc-mcp` and `sofarpc` invoke SofaRPC directly from Go.
+`sofarpc` invokes SofaRPC directly from Go. The human CLI and MCP server are
+served by one binary; MCP hosts launch the `sofarpc mcp` subcommand.
 
 ## Runtime Shape
 
-- `sofarpc-mcp`: stdio MCP server for agents.
-- `sofarpc`: human-facing config, diagnostics, and reproduction tool.
+- `sofarpc mcp`: stdio MCP server for agents.
+- `sofarpc`: human-facing config, diagnostics, reproduction, and MCP hosting
+  command.
 - `internal/app`: application use cases for resolve, invocation planning, and
   execution.
 - `internal/javavalue`: Java-aware typed value model passed from planning to the
