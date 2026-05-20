@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/diandian921/sofarpc-cli/internal/app"
 	"github.com/diandian921/sofarpc-cli/internal/appconfig"
 )
 
@@ -34,6 +35,21 @@ func handleWithRecover(req request, fn func() (response, bool)) (resp response, 
 
 func toolOK(summary string, data interface{}) toolResult {
 	return toolResult{Content: []content{{Type: "text", Text: summary}}, StructuredContent: data}
+}
+
+// toolErrRendered emits an MCP error result whose StructuredContent is the
+// single app.Result rendering — same shape as success and exec-failure paths,
+// so the agent always reads ok / code / error.nextTool from one contract.
+func toolErrRendered(resp app.Result) toolResult {
+	message := ""
+	if resp.Error != nil {
+		message = resp.Error.Message
+	}
+	return toolResult{
+		Content:           []content{{Type: "text", Text: message}},
+		StructuredContent: resp,
+		IsError:           !resp.OK,
+	}
 }
 
 func toolErr(summary string, err error) toolResult {

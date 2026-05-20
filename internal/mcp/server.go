@@ -510,7 +510,11 @@ func (s *Server) invoke(ctx context.Context, args map[string]interface{}) toolRe
 	}
 	plan, err := s.application().PlanInvocation(ctx, input)
 	if err != nil {
-		return toolErr("invocation planning failed", err)
+		// Render through the app contract so the agent receives stable code,
+		// DomainError kind, and a nextTool recovery hint (the kinds raised
+		// here — SERVICE_NOT_FOUND, METHOD_AMBIGUOUS, ARGUMENT_TYPE_MISMATCH —
+		// are exactly the ones an agent needs to recover from).
+		return toolErrRendered(app.RenderFailure(app.CodeBadRequest, err.Error(), app.DomainErrorDetails(err)))
 	}
 	requestID := app.NewRequestID("invoke")
 	planData := plan.Display()

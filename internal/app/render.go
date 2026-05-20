@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+
+	"github.com/diandian921/sofarpc-cli/internal/appconfig"
 )
 
 // Result is the single agent-facing rendered contract. MCP tool responses and
@@ -17,11 +19,52 @@ type Result struct {
 	Meta      map[string]interface{} `json:"meta,omitempty"`
 }
 
-// ResultError carries diagnostic info on non-SUCCESS results.
+// ResultError carries diagnostic info on non-SUCCESS results. NextTool is a
+// machine-readable recovery hint: the agent should call that MCP tool next
+// instead of re-deriving the recovery step from the prose message.
 type ResultError struct {
-	Message string                 `json:"message"`
-	Cause   string                 `json:"cause,omitempty"`
-	Details map[string]interface{} `json:"details,omitempty"`
+	Message  string                 `json:"message"`
+	Cause    string                 `json:"cause,omitempty"`
+	NextTool string                 `json:"nextTool,omitempty"`
+	Details  map[string]interface{} `json:"details,omitempty"`
+}
+
+// newResultError builds a ResultError with a recovery hint derived from the
+// stable code/kind, so every failure path emits a consistent nextTool.
+func newResultError(code, message, cause string, details map[string]interface{}) *ResultError {
+	return &ResultError{
+		Message:  message,
+		Cause:    cause,
+		NextTool: nextToolFor(code, details),
+		Details:  details,
+	}
+}
+
+// nextToolFor maps a stable failure code (refined by DomainError kind when
+// present) to the MCP tool an agent should call to recover. An empty string
+// means no specific next step.
+func nextToolFor(code string, details map[string]interface{}) string {
+	if kind, _ := details["kind"].(string); kind != "" {
+		switch ErrorKind(kind) {
+		case ErrProjectNotFound, ErrServerNotFound:
+			return "sofarpc_config"
+		case ErrEndpointNotFound:
+			return "sofarpc_resolve"
+		case ErrServiceNotFound, ErrMethodNotFound, ErrMethodAmbiguous, ErrArgumentTypeMismatch:
+			return "sofarpc_describe"
+		}
+	}
+	switch code {
+	case CodeConnectFailed, CodeRPCTimeout:
+		return "sofarpc_probe"
+	case CodeBadRequest:
+		return "sofarpc_describe"
+	case CodeInvokeFailed, CodeInternalError:
+		return "sofarpc_doctor"
+	case appconfig.CodeConfigInvalid, appconfig.CodeConfigUnsupported:
+		return "sofarpc_doctor"
+	}
+	return ""
 }
 
 // NewRequestID returns a short, unique-ish identifier prefixed with the op.
@@ -46,11 +89,7 @@ func RenderExecution(exec InvocationExecution) Result {
 		result.Data = body
 	}
 	if !exec.OK && exec.Error != nil {
-		result.Error = &ResultError{
-			Message: exec.Error.Message,
-			Cause:   exec.Error.Cause,
-			Details: exec.Error.Details,
-		}
+		result.Error = newResultError(exec.Code, exec.Error.Message, exec.Error.Cause, exec.Error.Details)
 	}
 	return result
 }
@@ -63,14 +102,10 @@ func RenderProbe(probe ProbeResult) Result {
 			code = CodeConnectFailed
 		}
 		return Result{
-			OK:   false,
-			Code: code,
-			Error: &ResultError{
-				Message: probe.Error.Message,
-				Cause:   probe.Error.Cause,
-				Details: probe.Error.Details,
-			},
-			Meta: probe.Meta,
+			OK:    false,
+			Code:  code,
+			Error: newResultError(code, probe.Error.Message, probe.Error.Cause, probe.Error.Details),
+			Meta:  probe.Meta,
 		}
 	}
 	body, err := json.Marshal(map[string]interface{}{
@@ -89,12 +124,9 @@ func RenderProbe(probe ProbeResult) Result {
 // RenderFailure builds a non-OK result for a local failure before or during planning.
 func RenderFailure(code, message string, details map[string]interface{}) Result {
 	return Result{
-		OK:   false,
-		Code: code,
-		Error: &ResultError{
-			Message: message,
-			Details: details,
-		},
-		Meta: map[string]interface{}{"runtime": "go"},
+		OK:    false,
+		Code:  code,
+		Error: newResultError(code, message, "", details),
+		Meta:  map[string]interface{}{"runtime": "go"},
 	}
 }

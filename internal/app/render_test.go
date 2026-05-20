@@ -59,3 +59,43 @@ func TestRenderProbeDefaultsToConnectFailed(t *testing.T) {
 		t.Fatalf("empty probe code should default to CONNECT_FAILED, got %q", result.Code)
 	}
 }
+
+func TestNextToolForMapsCodesAndKinds(t *testing.T) {
+	cases := []struct {
+		name    string
+		code    string
+		details map[string]interface{}
+		want    string
+	}{
+		{"connect", CodeConnectFailed, nil, "sofarpc_probe"},
+		{"timeout", CodeRPCTimeout, nil, "sofarpc_probe"},
+		{"bad-request", CodeBadRequest, nil, "sofarpc_describe"},
+		{"invoke-failed", CodeInvokeFailed, nil, "sofarpc_doctor"},
+		{"internal", CodeInternalError, nil, "sofarpc_doctor"},
+		{"config-invalid", "CONFIG_INVALID", nil, "sofarpc_doctor"},
+		{"kind-project", CodeBadRequest, map[string]interface{}{"kind": string(ErrProjectNotFound)}, "sofarpc_config"},
+		{"kind-endpoint", CodeInvokeFailed, map[string]interface{}{"kind": string(ErrEndpointNotFound)}, "sofarpc_resolve"},
+		{"kind-method", CodeBadRequest, map[string]interface{}{"kind": string(ErrMethodAmbiguous)}, "sofarpc_describe"},
+		{"unknown", "WEIRD_CODE", nil, ""},
+		{"success", CodeSuccess, nil, ""},
+	}
+	for _, c := range cases {
+		if got := nextToolFor(c.code, c.details); got != c.want {
+			t.Fatalf("%s: nextToolFor(%q,%v)=%q want %q", c.name, c.code, c.details, got, c.want)
+		}
+	}
+}
+
+func TestRenderFailureSetsNextTool(t *testing.T) {
+	r := RenderFailure(CodeConnectFailed, "boom", nil)
+	if r.Error == nil || r.Error.NextTool != "sofarpc_probe" {
+		t.Fatalf("RenderFailure nextTool = %+v, want sofarpc_probe", r.Error)
+	}
+}
+
+func TestRenderSuccessHasNoNextTool(t *testing.T) {
+	r := RenderProbe(ProbeResult{Reachable: true, Address: "h:1", Meta: map[string]interface{}{}})
+	if r.Error != nil {
+		t.Fatalf("successful probe must have no error/nextTool, got %+v", r.Error)
+	}
+}
