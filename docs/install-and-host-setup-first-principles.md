@@ -71,34 +71,39 @@ learns a different path.
 Final command names are `sofarpc` and `sofarpc-mcp`. The legacy name
 `sofarpc-cli` is dropped (see Implementation Status).
 
-**Decided — Option B.** The Go module lives in the repo's `cli/` subdirectory,
-so the module path must include that segment to be resolvable. `cli/go.mod`
-declares `module github.com/diandian921/sofarpc-cli/cli` (Go 1.19). The path
-is now true today, so `go install` resolves:
+**Decided — Option B, module at repo root.** The Go module was moved from the
+`cli/` subdirectory to the repository root: `go.mod` declares
+`module github.com/diandian921/sofarpc-cli` (Go 1.19). A subdirectory module
+would have forced `cli/`-prefixed version tags and a `/cli` segment in every
+path — extra rules with no benefit. At the root, `go install` and tags are
+ordinary:
 
 ```bash
-go install github.com/diandian921/sofarpc-cli/cli/cmd/sofarpc@latest
-go install github.com/diandian921/sofarpc-cli/cli/cmd/sofarpc-mcp@latest
+go install github.com/diandian921/sofarpc-cli/cmd/sofarpc@latest
+go install github.com/diandian921/sofarpc-cli/cmd/sofarpc-mcp@latest
 ```
 
 Option A (moving the repo under a `github.com/sofarpc` org) was rejected for
 beta: there is no controlled neutral org, and "SOFARPC" is Ant Group's
 project/trademark — claiming that namespace without affiliation is a real
 risk, not a naming nicety. B keeps the module path honest with zero external
-dependency; a permanent path (a vanity import such as `go.sofarpc.dev/cli`)
-is deferred to GA and is a one-time, pre-GA migration.
+dependency; a permanent path (a vanity import such as `go.sofarpc.dev`) is
+deferred to GA and is a one-time, pre-GA migration.
 
-**Subdirectory-module tag rule.** Because the module is under `cli/`, Go
-resolves versions from tags prefixed with the module subdirectory:
-publish `cli/v0.1.0-beta.2`, not `v0.1.0-beta.2`. Users still write the bare
-selector — `go install …/cli/cmd/sofarpc@v0.1.0-beta.2` — and Go maps it to
-the `cli/v0.1.0-beta.2` tag. `package.sh`, `install.sh`, and `install.ps1`
-strip the `cli/` prefix from `git describe` so archive names and the stamped
-version never contain a slash. Pin a tag for reproducible beta testing;
+Release tags are plain `vX.Y.Z`. Pin a tag for reproducible beta testing;
 `@latest` for stable. Reproducibility comes from `sofarpc version`
 self-reporting the release version: release archives stamp it through
 `-ldflags`; `go install module@version` uses the Go module version recorded in
 build metadata.
+
+**Release prerequisite for the `go install` channel.** When the module moved
+to the repo root, the old subdirectory-era tags (`cli/v0.1.0-beta.2`,
+`cli/v0.1.0-beta.3`) became unresolvable under the new module path, and the
+pre-migration plain tag `v0.1.0-beta.1` no longer corresponds to a
+root-module commit. So `@latest` does *not* work until a new plain `vX.Y.Z`
+tag (e.g. `v0.1.0-beta.4`) is published on the post-migration commit. Until
+then the tarball channel is the only supported install path. Do not
+re-publish under a `cli/v*` tag — that path is dead.
 
 ## Acquisition Channels
 
@@ -295,11 +300,10 @@ bootstrap scripts. No `.pkg`/`.msi`/notarization during beta.
 
 The beta implementation now matches this target shape:
 
-- **Module-path decision — done (Option B).** `cli/go.mod` is
-  `github.com/diandian921/sofarpc-cli/cli` (the module lives in the repo's
-  `cli/` subdirectory, so the path carries that segment); all internal
-  imports rewritten. The `go install` channel is now advertisable alongside
-  the tarball.
+- **Module-path decision — done (Option B).** The Go module was moved to the
+  repository root: `go.mod` is `github.com/diandian921/sofarpc-cli`, all
+  internal imports rewritten, tags are plain `vX.Y.Z`. The `go install`
+  channel is advertisable alongside the tarball.
 - **Command rename — done.** The installed human CLI is `sofarpc`; the MCP
   server is `sofarpc-mcp`. No `sofarpc-cli` compatibility shim is shipped for
   beta.

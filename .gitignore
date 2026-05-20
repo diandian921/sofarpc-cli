@@ -6,9 +6,9 @@ reports/
 *.iml
 cases
 sofarpc-cli-skill-workspace
-cli/sofarpc
-cli/sofarpc-cli
-cli/sofarpc-mcp
+/sofarpc
+/sofarpc-mcp
+/sofarpc-cli
 dist/
 .claude/
 .codex-pet-runs/

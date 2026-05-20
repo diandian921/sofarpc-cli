@@ -7,12 +7,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-# The Go module lives in cli/, so release tags are prefixed (cli/vX.Y.Z) per
-# Go's subdirectory-module rule. Match only those tags so a stray root tag
-# (vX.Y.Z) is not picked up, then strip the prefix for archive/display names
-# so the package path never contains a slash.
-VERSION="${VERSION:-$(git -C "$REPO_ROOT" describe --tags --match 'cli/v*' --always 2>/dev/null || echo dev)}"
-VERSION="${VERSION#cli/}"
+# Module is at repo root: release tags are vX.Y.Z.
+VERSION="${VERSION:-$(git -C "$REPO_ROOT" describe --tags --match 'v*' --always 2>/dev/null || echo dev)}"
 DIST_DIR="$REPO_ROOT/dist"
 
 # Default matrix; override with PLATFORMS="os/arch os/arch ...".
@@ -38,9 +34,9 @@ for platform in $PLATFORMS; do
     mkdir -p "$WORK_DIR"
 
     echo "[build] $GOOS_VALUE/$GOARCH_VALUE"
-    (cd "$REPO_ROOT/cli" && GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
+    (cd "$REPO_ROOT" && GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
         go build -ldflags "-X main.BuildVersion=$VERSION" -o "$WORK_DIR/sofarpc$EXT" ./cmd/sofarpc)
-    (cd "$REPO_ROOT/cli" && GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
+    (cd "$REPO_ROOT" && GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
         go build -ldflags "-X main.BuildVersion=$VERSION" -o "$WORK_DIR/sofarpc-mcp$EXT" ./cmd/sofarpc-mcp)
 
     cp "$REPO_ROOT/README.md" "$WORK_DIR/README.md"

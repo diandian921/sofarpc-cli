@@ -29,20 +29,20 @@ cd sofarpc-vX.Y.Z-darwin-arm64
 ./install.sh
 ```
 
-Or with Go (the module lives in the repo's `cli/` subdirectory, so the path
-carries that segment):
+Or with Go (requires a published plain `vX.Y.Z` tag on a root-module commit;
+the legacy `cli/v*` tags from the subdirectory-module era are not resolvable
+under the current module path):
 
 ```bash
-go install github.com/diandian921/sofarpc-cli/cli/cmd/sofarpc@latest
-go install github.com/diandian921/sofarpc-cli/cli/cmd/sofarpc-mcp@latest
+go install github.com/diandian921/sofarpc-cli/cmd/sofarpc@vX.Y.Z
+go install github.com/diandian921/sofarpc-cli/cmd/sofarpc-mcp@vX.Y.Z
 # call the just-installed binary by absolute path (GOBIN, else GOPATH/bin):
 BIN="$(go env GOBIN)"; BIN="${BIN:-$(go env GOPATH)/bin}"
 "$BIN/sofarpc" self-install
 ```
 
-For a pinned beta the module is a subdirectory module, so publish/select tags
-prefixed with `cli/` (e.g. tag `cli/v0.1.0-beta.2`); the install selector is
-still the bare `@v0.1.0-beta.2`.
+`@latest` is only correct once a plain `vX.Y.Z` tag is cut on a root-module
+commit. Until then the tarball channel above is the supported install path.
 
 `install.sh` is a thin bootstrap; all install logic is in `sofarpc
 self-install`, which creates the layout above and prints a PATH hint if

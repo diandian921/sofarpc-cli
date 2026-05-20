@@ -27,18 +27,16 @@ function Invoke-CheckedNative {
   }
 }
 $RepoRoot = Split-Path -Parent $ScriptDir
-# Subdirectory module: match cli/vX.Y.Z tags, then strip the prefix so the
-# stamped version stays consistent with install.sh / package.sh.
-try { $Version = (git -C $RepoRoot describe --tags --match 'cli/v*' --always 2>$null) } catch { $Version = "dev" }
+# Module is at repo root: release tags are vX.Y.Z.
+try { $Version = (git -C $RepoRoot describe --tags --match 'v*' --always 2>$null) } catch { $Version = "dev" }
 if (-not $Version) { $Version = "dev" }
-$Version = $Version -replace '^cli/', ''
 $BuildDir = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ([System.Guid]::NewGuid())) -Force
 $Cli = Join-Path $BuildDir "sofarpc.exe"
 $Mcp = Join-Path $BuildDir "sofarpc-mcp.exe"
 $PushedLocation = $false
 $ExitCode = 1
 try {
-  Push-Location (Join-Path $RepoRoot "cli")
+  Push-Location $RepoRoot
   $PushedLocation = $true
   Invoke-CheckedNative "go build sofarpc" { go build -ldflags "-X main.BuildVersion=$Version" -o $Cli ./cmd/sofarpc }
   Invoke-CheckedNative "go build sofarpc-mcp" { go build -ldflags "-X main.BuildVersion=$Version" -o $Mcp ./cmd/sofarpc-mcp }
