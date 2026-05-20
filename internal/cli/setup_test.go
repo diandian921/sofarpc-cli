@@ -111,9 +111,16 @@ func isRemove(c hostCall) bool {
 
 func TestSetupCodexAddsWhenAbsent(t *testing.T) {
 	root := t.TempDir()
+	getCalls := 0
 	calls := stubHost(t, func(_ string, args []string) (string, string, int, error) {
 		if len(args) >= 2 && args[1] == "get" {
-			return "", "not found", 1, nil
+			getCalls++
+			if getCalls == 1 {
+				// First get: pre-add check, entry absent.
+				return "", "not found", 1, nil
+			}
+			// Subsequent get: post-add verification, entry now present.
+			return `{"command":"` + filepath.Join(root, "bin", "sofarpc") + `"}`, "", 0, nil
 		}
 		return "", "", 0, nil
 	})
@@ -140,6 +147,14 @@ func TestSetupCodexAddsWhenAbsent(t *testing.T) {
 	}
 	if !added {
 		t.Fatalf("expected codex mcp add to be called; out=%s", out)
+	}
+	// Verification banner must hand the user the actual subcommand form,
+	// not the legacy standalone binary name.
+	if !strings.Contains(out, "sofarpc mcp --selftest") {
+		t.Fatalf("success banner must reference 'sofarpc mcp --selftest', got: %s", out)
+	}
+	if strings.Contains(out, "sofarpc-mcp --selftest") {
+		t.Fatalf("success banner must not reference legacy 'sofarpc-mcp --selftest', got: %s", out)
 	}
 }
 

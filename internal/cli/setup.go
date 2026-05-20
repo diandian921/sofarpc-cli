@@ -79,7 +79,7 @@ func runSetup(args []string, env Env) int {
 	}
 
 	// Verify the binary layer before mutating any host config: never register a
-	// missing or broken sofarpc-mcp. Skipped for --dry-run (no mutation).
+	// missing or broken sofarpc binary. Skipped for --dry-run (no mutation).
 	if !*dryRun {
 		if err := mcpPreflight(entry.command); err != nil {
 			fmt.Fprintf(env.Stderr, "setup: binary check failed: %v\n", err)
@@ -265,7 +265,7 @@ func verifyRegistration(env Env, host, name string) {
 		fmt.Fprintf(env.Stderr, "%s: warning: post-setup verification could not confirm %q\n", host, name)
 		return
 	}
-	fmt.Fprintf(env.Stdout, "%s: verified %q is registered. Run 'sofarpc-mcp --selftest' to validate the binary.\n", host, name)
+	fmt.Fprintf(env.Stdout, "%s: verified %q is registered. Run 'sofarpc mcp --selftest' to validate the binary.\n", host, name)
 }
 
 // codexEntryMatches parses codex's --json output (its own machine-readable
