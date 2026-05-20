@@ -34,6 +34,8 @@ func Run(args []string, env Env) int {
 		return runProject(args[1:], env)
 	case "server":
 		return runServer(args[1:], env)
+	case "install":
+		return runInstall(args[1:], env)
 	case "self-install":
 		return runSelfInstall(args[1:], env)
 	case "setup":
@@ -77,12 +79,13 @@ func printUsage(w io.Writer) {
 	fmt.Fprint(w, `sofarpc — MCP-first SofaRPC CLI
 
 Usage:
+  sofarpc install [claude|codex|all]   Install the binary and (optionally) register it with hosts.
   sofarpc invoke [flags]               Invoke a SofaRPC method over direct BOLT/Hessian2.
   sofarpc ping <host:port|server>      Probe a target TCP address.
   sofarpc project add|list|remove      Manage local source projects.
   sofarpc server add|list|remove       Manage configured RPC servers.
-  sofarpc self-install [flags]         Install binaries into the canonical ~/.sofarpc layout.
-  sofarpc setup claude|codex|all       Register the MCP server with agent hosts.
+  sofarpc self-install [flags]         (advanced) Place the binary into ~/.sofarpc/bin only.
+  sofarpc setup claude|codex|all       (advanced) Register the MCP server with agent hosts.
   sofarpc mcp                          Run the stdio MCP server (invoked by hosts).
   sofarpc version                      Print build version.
 `)
