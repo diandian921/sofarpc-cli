@@ -33,6 +33,9 @@ var hostExec = func(name string, args ...string) (stdout string, stderr string, 
 type desiredEntry struct {
 	name    string
 	command string
+	// args is the argv tail passed to command; for the single-binary layout
+	// the MCP host launches `sofarpc mcp`, so args is ["mcp"].
+	args    []string
 	homeEnv string // non-empty only when SOFARPC_HOME is non-default
 }
 
@@ -101,17 +104,17 @@ func runSetup(args []string, env Env) int {
 }
 
 // mcpPreflight verifies the binary layer before registering: the command must
-// exist and pass --selftest. Package var so tests can stub it.
+// exist and `command mcp --selftest` must pass. Package var so tests can stub it.
 var mcpPreflight = func(command string) error {
 	if !fileExists(command) {
 		return fmt.Errorf("%s does not exist; run `sofarpc self-install` first", command)
 	}
-	out, errOut, code, err := hostExec(command, "--selftest")
+	out, errOut, code, err := hostExec(command, "mcp", "--selftest")
 	if err != nil {
-		return fmt.Errorf("cannot run %s --selftest: %v", command, err)
+		return fmt.Errorf("cannot run %s mcp --selftest: %v", command, err)
 	}
 	if code != 0 {
-		return fmt.Errorf("%s --selftest failed: %s", command, strings.TrimSpace(errOut+out))
+		return fmt.Errorf("%s mcp --selftest failed: %s", command, strings.TrimSpace(errOut+out))
 	}
 	return nil
 }
@@ -127,8 +130,8 @@ func buildDesiredEntry(name string) (desiredEntry, error) {
 	if err != nil {
 		return desiredEntry{}, err
 	}
-	command := filepath.Join(abs, "bin", "sofarpc-mcp"+exeExt())
-	entry := desiredEntry{name: name, command: command}
+	command := filepath.Join(abs, "bin", "sofarpc"+exeExt())
+	entry := desiredEntry{name: name, command: command, args: []string{"mcp"}}
 	def, err := defaultRootPath()
 	if err == nil && abs != def {
 		entry.homeEnv = abs
@@ -169,6 +172,7 @@ func setupCodex(env Env, entry desiredEntry, force, dryRun bool) int {
 		addArgs = append(addArgs, "--env", "SOFARPC_HOME="+entry.homeEnv)
 	}
 	addArgs = append(addArgs, entry.name, "--", entry.command)
+	addArgs = append(addArgs, entry.args...)
 
 	if dryRun {
 		printPlanned(env, "codex", addArgs)
@@ -205,6 +209,7 @@ func setupClaude(env Env, entry desiredEntry, scope string, force, dryRun bool) 
 		addArgs = append(addArgs, "-e", "SOFARPC_HOME="+entry.homeEnv)
 	}
 	addArgs = append(addArgs, entry.name, "--", entry.command)
+	addArgs = append(addArgs, entry.args...)
 
 	if dryRun {
 		printPlanned(env, "claude", addArgs)
@@ -276,10 +281,45 @@ func codexEntryMatches(jsonOut string, entry desiredEntry) bool {
 	if !jsonHasStringField(doc, "command", entry.command) {
 		return false
 	}
+	// All desired argv tail values must be present in the registered args.
+	// A stale entry pointing at the same binary but without "mcp" would
+	// otherwise falsely match yet fail to launch the MCP server.
+	for _, arg := range entry.args {
+		if !jsonArgsContain(doc, arg) {
+			return false
+		}
+	}
 	if entry.homeEnv != "" && !jsonEnvHas(doc, "SOFARPC_HOME", entry.homeEnv) {
 		return false
 	}
 	return true
+}
+
+// jsonArgsContain reports whether any "args" array in the tree contains the
+// given string value, accommodating flat or transport-nested codex shapes.
+func jsonArgsContain(node interface{}, value string) bool {
+	switch n := node.(type) {
+	case map[string]interface{}:
+		if args, ok := n["args"].([]interface{}); ok {
+			for _, v := range args {
+				if s, ok := v.(string); ok && s == value {
+					return true
+				}
+			}
+		}
+		for _, v := range n {
+			if jsonArgsContain(v, value) {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, v := range n {
+			if jsonArgsContain(v, value) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // jsonHasStringField reports whether any object in the tree has key mapping to
@@ -347,6 +387,7 @@ func missingHostCLI(env Env, host string, entry desiredEntry, cause error) int {
 			args = append(args, "--env", "SOFARPC_HOME="+entry.homeEnv)
 		}
 		args = append(args, entry.name, "--", entry.command)
+		args = append(args, entry.args...)
 		fmt.Fprintf(env.Stderr, "  %s\n", formatDisplayCommand("codex", args))
 	} else {
 		args := []string{"mcp", "add"}
@@ -354,6 +395,7 @@ func missingHostCLI(env Env, host string, entry desiredEntry, cause error) int {
 			args = append(args, "-e", "SOFARPC_HOME="+entry.homeEnv)
 		}
 		args = append(args, "--scope", "user", entry.name, "--", entry.command)
+		args = append(args, entry.args...)
 		fmt.Fprintf(env.Stderr, "  %s\n", formatDisplayCommand("claude", args))
 	}
 	return 1

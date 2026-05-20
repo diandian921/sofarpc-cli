@@ -71,14 +71,14 @@ func TestSetupPreflightRunsSelftest(t *testing.T) {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmdPath := filepath.Join(bin, "sofarpc-mcp")
+	cmdPath := filepath.Join(bin, "sofarpc")
 	if err := os.WriteFile(cmdPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	var selftested bool
 	prev := hostExec
 	hostExec = func(name string, args ...string) (string, string, int, error) {
-		if name == cmdPath && len(args) == 1 && args[0] == "--selftest" {
+		if name == cmdPath && len(args) == 2 && args[0] == "mcp" && args[1] == "--selftest" {
 			selftested = true
 			return "ok", "", 0, nil
 		}
@@ -95,7 +95,7 @@ func TestSetupPreflightRunsSelftest(t *testing.T) {
 		t.Fatalf("exit=%d stderr=%s", code, errBuf.String())
 	}
 	if !selftested {
-		t.Fatal("setup must run <command> --selftest as the binary-layer check")
+		t.Fatal("setup must run <command> mcp --selftest as the binary-layer check")
 	}
 }
 
@@ -126,9 +126,12 @@ func TestSetupCodexAddsWhenAbsent(t *testing.T) {
 		if isAdd(c) {
 			added = true
 			joined := strings.Join(c.args, " ")
-			want := filepath.Join(root, "bin", "sofarpc-mcp")
+			want := filepath.Join(root, "bin", "sofarpc")
 			if !strings.Contains(joined, want) {
 				t.Fatalf("add must register expanded path %q, got: %s", want, joined)
+			}
+			if !strings.HasSuffix(strings.TrimSpace(joined), " mcp") {
+				t.Fatalf("add must append mcp as the launch arg, got: %s", joined)
 			}
 			if strings.Contains(joined, "~") {
 				t.Fatalf("registered command must not contain ~: %s", joined)
@@ -142,13 +145,14 @@ func TestSetupCodexAddsWhenAbsent(t *testing.T) {
 
 func TestSetupCodexNoopWhenMatching(t *testing.T) {
 	root := t.TempDir()
-	command := filepath.Join(root, "bin", "sofarpc-mcp")
-	// SOFARPC_HOME is the temp root (non-default), so a truly-matching
-	// entry must also carry the env. Nested under "transport" and in env_vars
-	// form to prove the structured walk is not bound to a flat schema.
+	command := filepath.Join(root, "bin", "sofarpc")
+	// SOFARPC_HOME is the temp root (non-default), so a truly-matching entry
+	// must carry the env. Single-binary launch shape: command runs with
+	// args=["mcp"]. Nested under "transport" + env_vars form to prove the
+	// structured walk is not bound to a flat schema.
 	calls := stubHost(t, func(_ string, args []string) (string, string, int, error) {
 		if args[1] == "get" {
-			return `{"transport":{"command":"` + command + `","env_vars":[{"key":"SOFARPC_HOME","value":"` + root + `"}]}}`, "", 0, nil
+			return `{"transport":{"command":"` + command + `","args":["mcp"],"env_vars":[{"key":"SOFARPC_HOME","value":"` + root + `"}]}}`, "", 0, nil
 		}
 		return "", "", 0, nil
 	})
@@ -385,7 +389,7 @@ func TestSetupMissingHostCLIQuotesManualSnippet(t *testing.T) {
 	if !strings.Contains(errOut, "'SOFARPC_HOME="+root+"'") {
 		t.Fatalf("manual snippet must quote SOFARPC_HOME with spaces, got: %s", errOut)
 	}
-	if !strings.Contains(errOut, "'"+filepath.Join(root, "bin", "sofarpc-mcp")+"'") {
+	if !strings.Contains(errOut, "'"+filepath.Join(root, "bin", "sofarpc")+"'") {
 		t.Fatalf("manual snippet must quote command path with spaces, got: %s", errOut)
 	}
 }

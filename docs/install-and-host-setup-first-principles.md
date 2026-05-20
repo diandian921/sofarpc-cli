@@ -1,6 +1,15 @@
 # Install and Host Setup — First-Principles Design
 
-Status: implemented beta design.
+Status: original derivation, partially superseded by single-binary fold.
+
+> **Update:** the two-binary layout described below (`sofarpc` +
+> `sofarpc-mcp`) has been folded to a single binary. The MCP server is now a
+> subcommand: `sofarpc mcp`. The currently-targeted install shape lives in
+> [`single-binary-install-target.md`](./single-binary-install-target.md);
+> this document records the derivation and the invariants that survived the
+> fold — canonical-path indirection, never-parse-foreign-config, declarative
+> convergence, two-layer verification. Treat any "two binaries" / "the
+> `sofarpc-mcp` binary" wording below as historical context.
 
 This document records the implemented install and host-registration shape. It
 does not patch `install-and-host-setup.md`; it rederives the design from one

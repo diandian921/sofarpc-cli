@@ -32,7 +32,6 @@ var mkdirAll = os.MkdirAll
 func runSelfInstall(args []string, env Env) int {
 	fs := flag.NewFlagSet("self-install", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
-	mcpPath := fs.String("mcp-path", "", "explicit path to the sofarpc-mcp binary (overrides sibling lookup)")
 	allowDowngrade := fs.Bool("allow-downgrade", false, "permit installing an older version over a newer one")
 	force := fs.Bool("force", false, "implies --allow-downgrade")
 	uninstall := fs.Bool("uninstall", false, "remove installed binaries, keep config and cache")
@@ -65,24 +64,14 @@ func runSelfInstall(args []string, env Env) int {
 		selfSrc = resolved
 	}
 
-	mcpSrc, err := resolveMCPSource(*mcpPath, selfSrc, ext)
-	if err != nil {
-		fmt.Fprintf(env.Stderr, "self-install: %v\n", err)
-		return 1
-	}
-
-	if code := verifyDeliverySet(env, mcpSrc); code != 0 {
-		return code
-	}
-
 	target := filepath.Join(binDir, "sofarpc"+ext)
-	mcpTarget := filepath.Join(binDir, "sofarpc-mcp"+ext)
-	switch decideInstall(env.BuildVersion, target, mcpTarget, *allowDowngrade || *force) {
+	switch decideInstall(env.BuildVersion, target, *allowDowngrade || *force) {
 	case installNoop:
 		if err := ensureScaffold(env, root, binDir); err != nil {
 			fmt.Fprintf(env.Stderr, "self-install: %v\n", err)
 			return 1
 		}
+		removeLegacyBinaries(binDir, ext)
 		fmt.Fprintf(env.Stdout, "Already installed at version %s; nothing to do.\n", env.BuildVersion)
 		return 0
 	case installBlocked:
@@ -98,44 +87,11 @@ func runSelfInstall(args []string, env Env) int {
 		fmt.Fprintf(env.Stderr, "self-install: install sofarpc: %v\n", err)
 		return 1
 	}
-	if err := copyExecutable(mcpSrc, mcpTarget); err != nil {
-		fmt.Fprintf(env.Stderr, "self-install: install sofarpc-mcp: %v\n", err)
-		return 1
-	}
 	removeLegacyBinaries(binDir, ext)
-	deQuarantine(target, mcpTarget)
+	deQuarantine(target)
 
-	fmt.Fprintf(env.Stdout, "Installed:\n  %s\n  %s\n", target, mcpTarget)
+	fmt.Fprintf(env.Stdout, "Installed:\n  %s\n", target)
 	printPathHint(env, binDir)
-	return 0
-}
-
-func resolveMCPSource(explicit, selfSrc, ext string) (string, error) {
-	if explicit != "" {
-		if !fileExists(explicit) {
-			return "", fmt.Errorf("--mcp-path %q does not exist", explicit)
-		}
-		return explicit, nil
-	}
-	sibling := filepath.Join(filepath.Dir(selfSrc), "sofarpc-mcp"+ext)
-	if !fileExists(sibling) {
-		return "", fmt.Errorf("sofarpc-mcp not found next to %s; pass --mcp-path (no PATH fallback by design)", selfSrc)
-	}
-	return sibling, nil
-}
-
-// verifyDeliverySet refuses to install a half-new pair: sofarpc and
-// sofarpc-mcp ship together and must report identical version metadata.
-func verifyDeliverySet(env Env, mcpSrc string) int {
-	mcpVer, err := binVersion(mcpSrc, "--version")
-	if err != nil {
-		fmt.Fprintf(env.Stderr, "self-install: read sofarpc-mcp version: %v\n", err)
-		return 1
-	}
-	if mcpVer != env.BuildVersion {
-		fmt.Fprintf(env.Stderr, "self-install: version mismatch (sofarpc %s vs sofarpc-mcp %s); refusing to install a half-new pair\n", env.BuildVersion, mcpVer)
-		return 1
-	}
 	return 0
 }
 
@@ -147,10 +103,10 @@ const (
 	installBlocked
 )
 
-// decideInstall treats sofarpc and sofarpc-mcp as one delivery set: a no-op
-// requires BOTH installed targets to exist at the source version. A present
-// but missing/stale sofarpc-mcp forces a (re)install even when the CLI matches.
-func decideInstall(srcVersion, sofarpcTarget, mcpTarget string, downgradeAllowed bool) installDecision {
+// decideInstall compares the source binary version against the installed
+// sofarpc target: same version → no-op; semver older without --allow-downgrade
+// → blocked; otherwise → proceed.
+func decideInstall(srcVersion, sofarpcTarget string, downgradeAllowed bool) installDecision {
 	if !fileExists(sofarpcTarget) {
 		return installProceed
 	}
@@ -159,12 +115,6 @@ func decideInstall(srcVersion, sofarpcTarget, mcpTarget string, downgradeAllowed
 		return installProceed
 	}
 	if tgtVersion == srcVersion {
-		if !fileExists(mcpTarget) {
-			return installProceed
-		}
-		if mcpVer, err := binVersion(mcpTarget, "--version"); err != nil || mcpVer != srcVersion {
-			return installProceed
-		}
 		return installNoop
 	}
 	cmp, comparable := compareSemver(srcVersion, tgtVersion)
@@ -194,8 +144,13 @@ func installedBinaryNames() []string {
 	return []string{"sofarpc", "sofarpc-mcp", "sofarpc-cli"}
 }
 
+// removeLegacyBinaries best-effort deletes binaries from previous layouts.
+// Only fixed names that we ourselves used to install are touched — no
+// recursive scan, never any user-placed file.
 func removeLegacyBinaries(binDir, ext string) {
-	_ = os.Remove(filepath.Join(binDir, "sofarpc-cli"+ext))
+	for _, name := range []string{"sofarpc-mcp", "sofarpc-cli"} {
+		_ = os.Remove(filepath.Join(binDir, name+ext))
+	}
 }
 
 func copyExecutable(src, dst string) error {

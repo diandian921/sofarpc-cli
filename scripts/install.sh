@@ -7,16 +7,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [ -x "$SCRIPT_DIR/sofarpc" ] && [ -x "$SCRIPT_DIR/sofarpc-mcp" ]; then
-    exec "$SCRIPT_DIR/sofarpc" self-install --mcp-path "$SCRIPT_DIR/sofarpc-mcp" "$@"
+if [ -x "$SCRIPT_DIR/sofarpc" ]; then
+    exec "$SCRIPT_DIR/sofarpc" self-install "$@"
 fi
 
-command -v go >/dev/null || { echo "error: go not found and no packaged binaries present" >&2; exit 1; }
+command -v go >/dev/null || { echo "error: go not found and no packaged binary present" >&2; exit 1; }
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Module is at repo root: release tags are vX.Y.Z.
 VERSION="$(git -C "$REPO_ROOT" describe --tags --match 'v*' --always 2>/dev/null || echo dev)"
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 (cd "$REPO_ROOT" && go build -ldflags "-X main.BuildVersion=$VERSION" -o "$BUILD_DIR/sofarpc" ./cmd/sofarpc)
-(cd "$REPO_ROOT" && go build -ldflags "-X main.BuildVersion=$VERSION" -o "$BUILD_DIR/sofarpc-mcp" ./cmd/sofarpc-mcp)
-exec "$BUILD_DIR/sofarpc" self-install --mcp-path "$BUILD_DIR/sofarpc-mcp" "$@"
+exec "$BUILD_DIR/sofarpc" self-install "$@"

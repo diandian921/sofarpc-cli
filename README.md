@@ -2,7 +2,7 @@
 
 MCP-first SofaRPC testing toolkit for agents.
 
-The primary entrypoint is `sofarpc-mcp`, a stdio MCP server. `sofarpc` is kept for human configuration, diagnostics, and exact reproduction. Invocation runs through a pure-Go direct BOLT/Hessian2 runtime; no Java process or sidecar is required.
+A single binary `sofarpc` does everything: human commands (`sofarpc invoke`, `sofarpc ping`, ...) and the stdio MCP server (`sofarpc mcp`, which is what hosts launch). Invocation runs through a pure-Go direct BOLT/Hessian2 runtime; no Java process or sidecar is required.
 
 ## What Gets Installed
 
@@ -10,7 +10,6 @@ The primary entrypoint is `sofarpc-mcp`, a stdio MCP server. `sofarpc` is kept f
 ~/.sofarpc/                 (override with SOFARPC_HOME)
   bin/
     sofarpc
-    sofarpc-mcp
   config.json
   cache/
     schema/
@@ -54,7 +53,7 @@ Build release archives for the full platform matrix:
 ./scripts/package.sh
 ```
 
-Each archive contains `sofarpc`, `sofarpc-mcp`, `README.md`, `install.sh`,
+Each archive contains the `sofarpc` binary, `README.md`, `install.sh`,
 `install.ps1`; a single `SHA256SUMS` covers all archives. Requirements: Go
 1.19+ when building from source.
 
@@ -67,9 +66,10 @@ sofarpc setup claude          # or: codex, or: all
 sofarpc setup all --dry-run   # preview the exact commands, mutate nothing
 ```
 
-`setup` registers the fully expanded absolute path to `sofarpc-mcp` (never
-`~`), propagates `SOFARPC_HOME` only when it is non-default, and verifies the
-binary with `sofarpc-mcp --selftest` before touching host config. Re-run
+`setup` registers `command = <root>/bin/sofarpc, args = ["mcp"]` (fully
+expanded absolute path, never `~`), propagates `SOFARPC_HOME` only when it
+is non-default, and verifies the binary with `sofarpc mcp --selftest` before
+touching host config. Re-run
 behavior is host-dependent: Codex exposes `mcp get --json` so setup is
 exactly idempotent (matching entry → no-op); Claude has no JSON read-back, so
 setup is existence-safe — it will not silently overwrite an existing entry and
@@ -204,7 +204,7 @@ Known limits:
 
 ## Security Boundaries
 
-`sofarpc-mcp` is a local developer tool. Treat stdout as the JSON-RPC protocol stream; diagnostics and future logging must go to stderr. `sofarpc_probe` can dial an explicit address for diagnostics, so prefer configured servers when running against untrusted agent input.
+`sofarpc mcp` is a local developer tool. Treat stdout as the JSON-RPC protocol stream; diagnostics and future logging must go to stderr. `sofarpc_probe` can dial an explicit address for diagnostics, so prefer configured servers when running against untrusted agent input.
 
 Each JSON-RPC stdin frame is capped at 128 MiB. Oversized frames are rejected with a parse error and the server continues reading subsequent frames.
 

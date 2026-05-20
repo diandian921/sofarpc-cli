@@ -12,7 +12,6 @@ import (
 type fakeSource struct {
 	dir     string
 	sofarpc string
-	mcp     string
 }
 
 func newFakeSource(t *testing.T) fakeSource {
@@ -21,13 +20,9 @@ func newFakeSource(t *testing.T) fakeSource {
 	s := fakeSource{
 		dir:     dir,
 		sofarpc: filepath.Join(dir, "sofarpc"),
-		mcp:     filepath.Join(dir, "sofarpc-mcp"),
 	}
 	if err := os.WriteFile(s.sofarpc, []byte("#sofarpc-binary"), 0o755); err != nil {
 		t.Fatalf("write fake sofarpc: %v", err)
-	}
-	if err := os.WriteFile(s.mcp, []byte("#sofarpc-mcp-binary"), 0o755); err != nil {
-		t.Fatalf("write fake sofarpc-mcp: %v", err)
 	}
 	return s
 }
@@ -65,7 +60,7 @@ func TestSelfInstallFreshInstall(t *testing.T) {
 	src := newFakeSource(t)
 	root := t.TempDir()
 	stubExecutable(t, src.sofarpc)
-	stubVersions(t, map[string]string{"sofarpc-mcp": "v1.0.0"})
+	stubVersions(t, nil)
 
 	code, out, errOut := runSI(t, root, "v1.0.0")
 	if code != 0 {
@@ -73,7 +68,6 @@ func TestSelfInstallFreshInstall(t *testing.T) {
 	}
 	for _, p := range []string{
 		filepath.Join(root, "bin", "sofarpc"),
-		filepath.Join(root, "bin", "sofarpc-mcp"),
 		filepath.Join(root, "config.json"),
 		filepath.Join(root, "cache", "schema"),
 	} {
@@ -84,46 +78,36 @@ func TestSelfInstallFreshInstall(t *testing.T) {
 	if !strings.Contains(out, "Installed:") {
 		t.Fatalf("missing Installed banner: %s", out)
 	}
+	// Single-binary layout: sofarpc-mcp must NOT be installed as a separate file.
+	if _, err := os.Stat(filepath.Join(root, "bin", "sofarpc-mcp")); err == nil {
+		t.Fatal("sofarpc-mcp must not be installed under the single-binary layout")
+	}
 }
 
-func TestSelfInstallRemovesLegacyCliBinary(t *testing.T) {
+func TestSelfInstallRemovesLegacyBinaries(t *testing.T) {
 	src := newFakeSource(t)
 	root := t.TempDir()
 	stubExecutable(t, src.sofarpc)
-	stubVersions(t, map[string]string{"sofarpc-mcp": "v1.0.0"})
+	stubVersions(t, nil)
 	binDir := filepath.Join(root, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	legacy := filepath.Join(binDir, "sofarpc-cli")
-	if err := os.WriteFile(legacy, []byte("legacy"), 0o755); err != nil {
-		t.Fatal(err)
+	legacy := []string{"sofarpc-cli", "sofarpc-mcp"}
+	for _, name := range legacy {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte("legacy"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	code, _, errOut := runSI(t, root, "v1.0.0")
 	if code != 0 {
 		t.Fatalf("exit=%d stderr=%s", code, errOut)
 	}
-	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
-		t.Fatalf("legacy sofarpc-cli should be removed during install, stat err=%v", err)
-	}
-}
-
-func TestSelfInstallVersionMismatchRefused(t *testing.T) {
-	src := newFakeSource(t)
-	root := t.TempDir()
-	stubExecutable(t, src.sofarpc)
-	stubVersions(t, map[string]string{"sofarpc-mcp": "v2.0.0"})
-
-	code, _, errOut := runSI(t, root, "v1.0.0")
-	if code == 0 {
-		t.Fatal("expected non-zero exit on version mismatch")
-	}
-	if !strings.Contains(errOut, "version mismatch") {
-		t.Fatalf("want version mismatch error, got: %s", errOut)
-	}
-	if _, err := os.Stat(filepath.Join(root, "bin", "sofarpc")); err == nil {
-		t.Fatal("binary should not have been installed on mismatch")
+	for _, name := range legacy {
+		if _, err := os.Stat(filepath.Join(binDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("legacy %s should be removed during install, stat err=%v", name, err)
+		}
 	}
 }
 
@@ -135,14 +119,10 @@ func TestSelfInstallIdempotentNoop(t *testing.T) {
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Both delivery-set binaries present at the same version → true no-op.
 	if err := os.WriteFile(filepath.Join(binDir, "sofarpc"), []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(binDir, "sofarpc-mcp"), []byte("old"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	stubVersions(t, map[string]string{"sofarpc-mcp": "v1.2.3", "sofarpc": "v1.2.3"})
+	stubVersions(t, map[string]string{"sofarpc": "v1.2.3"})
 
 	code, out, errOut := runSI(t, root, "v1.2.3")
 	if code != 0 {
@@ -164,10 +144,7 @@ func TestSelfInstallNoopFailsWhenScaffoldFails(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(binDir, "sofarpc"), []byte("old"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(binDir, "sofarpc-mcp"), []byte("old"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	stubVersions(t, map[string]string{"sofarpc-mcp": "v1.2.3", "sofarpc": "v1.2.3"})
+	stubVersions(t, map[string]string{"sofarpc": "v1.2.3"})
 	prevMkdirAll := mkdirAll
 	mkdirAll = func(string, os.FileMode) error {
 		return errors.New("disk full")
@@ -186,32 +163,6 @@ func TestSelfInstallNoopFailsWhenScaffoldFails(t *testing.T) {
 	}
 }
 
-func TestSelfInstallReinstallsWhenMcpMissing(t *testing.T) {
-	src := newFakeSource(t)
-	root := t.TempDir()
-	stubExecutable(t, src.sofarpc)
-	binDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	// CLI present and same version, but sofarpc-mcp absent: must NOT no-op.
-	if err := os.WriteFile(filepath.Join(binDir, "sofarpc"), []byte("old"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	stubVersions(t, map[string]string{"sofarpc-mcp": "v1.0.0", "sofarpc": "v1.0.0"})
-
-	code, out, errOut := runSI(t, root, "v1.0.0")
-	if code != 0 {
-		t.Fatalf("exit=%d stderr=%s", code, errOut)
-	}
-	if strings.Contains(out, "Already installed") {
-		t.Fatalf("must reinstall when sofarpc-mcp is missing, got no-op: %s", out)
-	}
-	if _, err := os.Stat(filepath.Join(binDir, "sofarpc-mcp")); err != nil {
-		t.Fatalf("sofarpc-mcp must be installed during repair: %v", err)
-	}
-}
-
 func TestSelfInstallDowngradeBlockedThenAllowed(t *testing.T) {
 	src := newFakeSource(t)
 	root := t.TempDir()
@@ -223,7 +174,7 @@ func TestSelfInstallDowngradeBlockedThenAllowed(t *testing.T) {
 	if err := os.WriteFile(target, []byte("newer"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	stubVersions(t, map[string]string{"sofarpc-mcp": "v1.0.0", "sofarpc": "v2.0.0"})
+	stubVersions(t, map[string]string{"sofarpc": "v2.0.0"})
 
 	code, _, errOut := runSI(t, root, "v1.0.0")
 	if code == 0 {
@@ -253,7 +204,7 @@ func TestSelfInstallPrereleaseDowngradeBlocked(t *testing.T) {
 	if err := os.WriteFile(target, []byte("newer-beta"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	stubVersions(t, map[string]string{"sofarpc-mcp": "v1.0.0-beta.1", "sofarpc": "v1.0.0-beta.2"})
+	stubVersions(t, map[string]string{"sofarpc": "v1.0.0-beta.2"})
 
 	code, _, errOut := runSI(t, root, "v1.0.0-beta.1")
 	if code == 0 {
@@ -264,29 +215,11 @@ func TestSelfInstallPrereleaseDowngradeBlocked(t *testing.T) {
 	}
 }
 
-func TestSelfInstallNoSiblingNoPathFallback(t *testing.T) {
-	dir := t.TempDir()
-	lonely := filepath.Join(dir, "sofarpc")
-	if err := os.WriteFile(lonely, []byte("x"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	stubExecutable(t, lonely)
-	root := t.TempDir()
-
-	code, _, errOut := runSI(t, root, "v1.0.0")
-	if code == 0 {
-		t.Fatal("expected failure when sofarpc-mcp sibling is absent")
-	}
-	if !strings.Contains(errOut, "no PATH fallback") {
-		t.Fatalf("want explicit no-PATH-fallback error, got: %s", errOut)
-	}
-}
-
 func TestSelfInstallUninstallKeepsConfig(t *testing.T) {
 	src := newFakeSource(t)
 	root := t.TempDir()
 	stubExecutable(t, src.sofarpc)
-	stubVersions(t, map[string]string{"sofarpc-mcp": "v1.0.0"})
+	stubVersions(t, nil)
 	if code, _, e := runSI(t, root, "v1.0.0"); code != 0 {
 		t.Fatalf("install failed: %s", e)
 	}
@@ -301,9 +234,6 @@ func TestSelfInstallUninstallKeepsConfig(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "bin", "sofarpc")); err == nil {
 		t.Fatal("binary should be removed after uninstall")
 	}
-	if _, err := os.Stat(filepath.Join(root, "bin", "sofarpc-cli")); err == nil {
-		t.Fatal("legacy binary should be removed after uninstall")
-	}
 	if _, err := os.Stat(filepath.Join(root, "config.json")); err != nil {
 		t.Fatal("config.json must be preserved after uninstall")
 	}
@@ -313,7 +243,7 @@ func TestSelfInstallDoesNotOverwriteConfig(t *testing.T) {
 	src := newFakeSource(t)
 	root := t.TempDir()
 	stubExecutable(t, src.sofarpc)
-	stubVersions(t, map[string]string{"sofarpc-mcp": "v1.0.0"})
+	stubVersions(t, nil)
 
 	configPath := filepath.Join(root, "config.json")
 	if err := os.MkdirAll(root, 0o755); err != nil {

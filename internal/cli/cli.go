@@ -38,6 +38,8 @@ func Run(args []string, env Env) int {
 		return runSelfInstall(args[1:], env)
 	case "setup":
 		return runSetup(args[1:], env)
+	case "mcp":
+		return runMCP(args[1:], env)
 	case "version", "--version", "-v":
 		fmt.Fprintln(env.Stdout, env.BuildVersion)
 		return 0
@@ -81,6 +83,7 @@ Usage:
   sofarpc server add|list|remove       Manage configured RPC servers.
   sofarpc self-install [flags]         Install binaries into the canonical ~/.sofarpc layout.
   sofarpc setup claude|codex|all       Register the MCP server with agent hosts.
+  sofarpc mcp                          Run the stdio MCP server (invoked by hosts).
   sofarpc version                      Print build version.
 `)
 }

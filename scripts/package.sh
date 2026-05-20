@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Cross-compile the release matrix and emit OS-appropriate archives plus a
 # single SHA256SUMS. tar.gz for macOS/Linux (preserves the executable bit);
-# zip for Windows (native). Each archive carries both binaries, README.md, and
-# the thin bootstrap scripts.
+# zip for Windows (native). Each archive carries the single sofarpc binary,
+# README.md, and the thin bootstrap scripts.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,8 +36,6 @@ for platform in $PLATFORMS; do
     echo "[build] $GOOS_VALUE/$GOARCH_VALUE"
     (cd "$REPO_ROOT" && GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
         go build -ldflags "-X main.BuildVersion=$VERSION" -o "$WORK_DIR/sofarpc$EXT" ./cmd/sofarpc)
-    (cd "$REPO_ROOT" && GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
-        go build -ldflags "-X main.BuildVersion=$VERSION" -o "$WORK_DIR/sofarpc-mcp$EXT" ./cmd/sofarpc-mcp)
 
     cp "$REPO_ROOT/README.md" "$WORK_DIR/README.md"
     cp "$REPO_ROOT/scripts/install.sh" "$WORK_DIR/install.sh"
