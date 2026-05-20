@@ -2,15 +2,19 @@
 
 Status:
 
-- **Step 1 — fold to a single binary** — implemented (current branch).
-  `sofarpc-mcp` no longer exists as a separate binary; `sofarpc mcp` is
-  the stdio subcommand hosts launch.
-- **Step 2 — `sofarpc install <host>` high-level verb** — pending.
-- **Step 3 — network `bootstrap.sh` (curl one-liner) + release artifacts**
-  — pending.
-
-The remainder of this document describes the full target. Sections labeled
-pending will be implemented in later commits.
+- **Step 1 — fold to a single binary** — implemented.
+  `sofarpc-mcp` no longer exists; `sofarpc mcp` is the stdio subcommand.
+- **Step 2 — `sofarpc install <host>` high-level verb** — implemented.
+  Chains `self-install` then `setup <host>`; tested.
+- **Step 3 — network `scripts/install.sh` (curl one-liner) + Windows
+  `scripts/install.ps1` + tarball cleanup** — implemented.
+  Bootstrap downloads the matching release archive, verifies SHA256,
+  extracts, and runs `./sofarpc install <host>`. The tarball no longer
+  ships an in-archive install script; users run `./sofarpc install` directly.
+- **Release prerequisite** — pending. The bootstrap resolves
+  `releases/latest` via redirect, so it only works once a plain `vX.Y.Z`
+  GitHub Release with attached archives + SHA256SUMS exists on a
+  root-module commit.
 
 ## Goal
 

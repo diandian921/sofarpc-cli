@@ -20,32 +20,53 @@ binaries at the same canonical path.
 
 ## Install
 
-From a release tarball (no Go toolchain needed):
+Recommended — one line, install and register with your host(s):
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.sh | bash -s -- codex     # or claude / all
+```
+
+```powershell
+# Windows
+& ([scriptblock]::Create((iwr -useb https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.ps1))) codex
+```
+
+Pin a release with `--version vX.Y.Z`. Without a host argument it installs
+the binary only and prints the next step. `@latest` requires a published
+plain `vX.Y.Z` tag on a root-module commit; the bootstrap resolves it via
+the GitHub redirect.
+
+<details>
+<summary>Alternative: with Go</summary>
+
+```bash
+go install github.com/diandian921/sofarpc-cli/cmd/sofarpc@vX.Y.Z
+# call the just-installed binary by absolute path (GOBIN, else GOPATH/bin):
+BIN="$(go env GOBIN)"; BIN="${BIN:-$(go env GOPATH)/bin}"
+"$BIN/sofarpc" install codex     # or claude / all
+```
+</details>
+
+<details>
+<summary>Alternative: manual release archive (offline)</summary>
 
 ```bash
 tar -xzf sofarpc-vX.Y.Z-darwin-arm64.tar.gz
 cd sofarpc-vX.Y.Z-darwin-arm64
-./install.sh
+./sofarpc install codex      # or claude / all
 ```
 
-Or with Go (requires a published plain `vX.Y.Z` tag on a root-module commit;
-the legacy `cli/v*` tags from the subdirectory-module era are not resolvable
-under the current module path):
-
-```bash
-go install github.com/diandian921/sofarpc-cli/cmd/sofarpc@vX.Y.Z
-go install github.com/diandian921/sofarpc-cli/cmd/sofarpc-mcp@vX.Y.Z
-# call the just-installed binary by absolute path (GOBIN, else GOPATH/bin):
-BIN="$(go env GOBIN)"; BIN="${BIN:-$(go env GOPATH)/bin}"
-"$BIN/sofarpc" self-install
+```powershell
+Expand-Archive sofarpc-vX.Y.Z-windows-amd64.zip
+cd sofarpc-vX.Y.Z-windows-amd64
+.\sofarpc.exe install codex
 ```
+</details>
 
-`@latest` is only correct once a plain `vX.Y.Z` tag is cut on a root-module
-commit. Until then the tarball channel above is the supported install path.
-
-`install.sh` is a thin bootstrap; all install logic is in `sofarpc
-self-install`, which creates the layout above and prints a PATH hint if
-`~/.sofarpc/bin` is not on `PATH` (it never edits shell profiles).
+`sofarpc install <host>` chains the lower-level steps (place the binary at
+`~/.sofarpc/bin/sofarpc`, run `sofarpc mcp --selftest`, then register with
+the host CLI). Running it again is safe and is the upgrade path.
 
 Build release archives for the full platform matrix:
 
@@ -53,9 +74,9 @@ Build release archives for the full platform matrix:
 ./scripts/package.sh
 ```
 
-Each archive contains the `sofarpc` binary, `README.md`, `install.sh`,
-`install.ps1`; a single `SHA256SUMS` covers all archives. Requirements: Go
-1.19+ when building from source.
+Each archive contains the `sofarpc` binary and `README.md`; a single
+`SHA256SUMS` file covers all archives. Requirements: Go 1.19+ when building
+from source.
 
 ## MCP Configuration
 

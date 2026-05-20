@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Cross-compile the release matrix and emit OS-appropriate archives plus a
 # single SHA256SUMS. tar.gz for macOS/Linux (preserves the executable bit);
-# zip for Windows (native). Each archive carries the single sofarpc binary,
-# README.md, and the thin bootstrap scripts.
+# zip for Windows (native). Each archive carries only the single sofarpc
+# binary and README.md — the tarball user just runs `./sofarpc install <host>`
+# directly. The network bootstrap (scripts/install.{sh,ps1}) is served from
+# raw.githubusercontent.com and not shipped inside archives.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,8 +40,6 @@ for platform in $PLATFORMS; do
         go build -ldflags "-X main.BuildVersion=$VERSION" -o "$WORK_DIR/sofarpc$EXT" ./cmd/sofarpc)
 
     cp "$REPO_ROOT/README.md" "$WORK_DIR/README.md"
-    cp "$REPO_ROOT/scripts/install.sh" "$WORK_DIR/install.sh"
-    cp "$REPO_ROOT/scripts/install.ps1" "$WORK_DIR/install.ps1"
 
     base="sofarpc-$VERSION-$GOOS_VALUE-$GOARCH_VALUE"
     if [ "$GOOS_VALUE" = "windows" ]; then
