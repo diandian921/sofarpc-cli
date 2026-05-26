@@ -197,6 +197,7 @@ func (l *lexer) readNumber(line, col, off int) Token {
 	start := l.pos
 	l.advance() // 首字符 0-9 已校验
 	hexMode := false
+	afterHexExponent := false
 	for l.pos < len(l.src) {
 		c := l.src[l.pos]
 		if c == '+' || c == '-' {
@@ -224,17 +225,20 @@ func (l *lexer) readNumber(line, col, off int) Token {
 			l.advance()
 			continue
 		}
-		// hex digits a-f 仅在 hex 模式接受
-		if hexMode && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		// hex digits a-f 仅在 hex 模式 + 未进入指数后接受
+		// (进入指数后,后续 [a-f] 中的 f 应当作 float suffix 给 suffix switch 处理)
+		if hexMode && !afterHexExponent && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
 			l.advance()
 			continue
 		}
-		// decimal exponent e/E 通用;hex float exponent p/P 仅 hex 模式
-		if c == 'e' || c == 'E' {
+		// decimal exponent e/E 只在非 hex 模式才作为 exponent;hex 模式下 e/E 是 digit (已在上面处理)
+		if !hexMode && (c == 'e' || c == 'E') {
 			l.advance()
 			continue
 		}
+		// hex float exponent p/P 仅 hex 模式
 		if hexMode && (c == 'p' || c == 'P') {
+			afterHexExponent = true
 			l.advance()
 			continue
 		}
@@ -255,8 +259,20 @@ func (l *lexer) readNumber(line, col, off int) Token {
 		}
 	}
 	value := string(l.src[start:l.pos])
-	if kind == TokenIntLiteral && (strings.Contains(value, ".") || strings.ContainsAny(value, "eEpP")) {
-		kind = TokenDoubleLiteral
+	// 升级 Int → Double:含小数点,或含 exponent 字母(decimal 看 e/E,hex 只看 p/P)。
+	// hex int 如 0xdeadbeef 里的 'e' 是 digit 不是 exponent,不能升级。
+	if kind == TokenIntLiteral {
+		if strings.Contains(value, ".") {
+			kind = TokenDoubleLiteral
+		} else if hexMode {
+			if strings.ContainsAny(value, "pP") {
+				kind = TokenDoubleLiteral
+			}
+		} else {
+			if strings.ContainsAny(value, "eE") {
+				kind = TokenDoubleLiteral
+			}
+		}
 	}
 	return Token{Kind: kind, Value: value, Line: line, Col: col, Off: off}
 }

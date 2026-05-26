@@ -188,6 +188,40 @@ func TestNumberDoesNotEatSubtraction(t *testing.T) {
 	}
 }
 
+// codex review (Plan C.1 实施 commit) 抓的两个 hex 边界 P2:
+// 1. 0xdeadbeef 里的 'e' 是 hex digit 不是 decimal exponent,不能升级 Double
+// 2. 0x1.0p2f 里 p 后的 f 是 float suffix 不再是 hex digit
+func TestHexLiteralEdgeCases(t *testing.T) {
+	cases := []struct {
+		src  string
+		kind TokenKind
+	}{
+		{"0xdeadbeef", TokenIntLiteral},
+		{"0xCAFE_BABE", TokenIntLiteral},
+		{"0xdeadbeefL", TokenLongLiteral},
+		{"0x1.0p2", TokenDoubleLiteral},
+		{"0x1.0p2f", TokenFloatLiteral},
+		{"0x1.0p+8", TokenDoubleLiteral},
+		{"0x1p10F", TokenFloatLiteral},
+		{"1e10", TokenDoubleLiteral},
+		{"1E5L", TokenLongLiteral}, // decimal int with no '.' and L suffix
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			tokens, err := Tokenize([]byte(tc.src))
+			if err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if len(tokens) != 2 {
+				t.Fatalf("tokens = %v", tokens)
+			}
+			if tokens[0].Kind != tc.kind || tokens[0].Value != tc.src {
+				t.Errorf("got %v want kind=%v val=%q", tokens[0], tc.kind, tc.src)
+			}
+		})
+	}
+}
+
 // codex review #13:Java 15+ text block 也可能在 annotation default 或
 // interface 常量出现,parser 跳 method body 但解析 field/annotation 时
 // 必须能识别 """ 边界。
