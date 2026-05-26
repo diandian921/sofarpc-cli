@@ -138,7 +138,7 @@ func TestResolveGenericType(t *testing.T) {
 		//  imports 表如果显式有 T -> com.x.T,会走 imports lookup,见下个单测)
 	}
 	for _, tc := range cases {
-		got := resolveGenericType(tc.in, imports, pkg)
+		got := resolveGenericType(tc.in, imports, pkg, nil)
 		if got != tc.want {
 			t.Errorf("resolveGenericType(%q) = %q, want %q", tc.in, got, tc.want)
 		}
@@ -272,9 +272,26 @@ func TestResolveTypeVariableOverriddenByExplicitImport(t *testing.T) {
 	// 边界 case:如果 user 真的 import 了一个叫 T 的 class(违反 convention 但可能),
 	// explicit import 必须优先于 type variable 启发式。
 	imports := map[string]string{"T": "com.example.weird.T"}
-	got := resolveGenericType("T", imports, "com.example.pkg")
+	got := resolveGenericType("T", imports, "com.example.pkg", nil)
 	if got != "com.example.weird.T" {
 		t.Errorf("explicit import should win over type-var heuristic, got %q", got)
+	}
+}
+
+func TestResolveAcronymDTOWithSchemaUsesPkgLookup(t *testing.T) {
+	types := map[string]schema.TypeSchema{
+		"com.example.dto.URL": {Type: "com.example.dto.URL", Kind: "class"},
+	}
+	got := resolveGenericType("URL", nil, "com.example.dto", types)
+	if got != "com.example.dto.URL" {
+		t.Errorf("same-pkg schema lookup should win over type-var heuristic, got %q", got)
+	}
+}
+
+func TestResolveAcronymDTOWithoutSchemaFallsBackUntyped(t *testing.T) {
+	got := resolveGenericType("URL", nil, "com.example.dto", nil)
+	if got != "URL" {
+		t.Errorf("no-schema acronym should hit type-var heuristic, got %q", got)
 	}
 }
 
