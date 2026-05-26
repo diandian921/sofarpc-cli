@@ -352,3 +352,40 @@ func writeTestResponse(w io.Writer, id uint32, content []byte) error {
 	_, err := w.Write(content)
 	return err
 }
+
+
+func TestWriteTypedValueErasesGenericInWireClassName(t *testing.T) {
+	value := javavalue.Object("com.x.dto.MaterialAddRequest", map[string]javavalue.TypedValue{
+		"items": javavalue.List("java.util.List<com.x.dto.MaterialItem>", []javavalue.TypedValue{
+			javavalue.Object("com.x.dto.MaterialItem", map[string]javavalue.TypedValue{
+				"name": javavalue.Scalar("java.lang.String", "alpha"),
+			}),
+		}),
+	})
+
+	w := newWriter()
+	if err := w.writeTypedValue(value); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	wire := string(w.bytes())
+
+	wantClasses := []string{
+		"com.x.dto.MaterialAddRequest",
+		"java.util.List",
+		"com.x.dto.MaterialItem",
+	}
+	for _, want := range wantClasses {
+		if !strings.Contains(wire, want) {
+			t.Errorf("wire missing erased class %q", want)
+		}
+	}
+	unwantedClasses := []string{
+		"java.util.List<",
+		"List<com.x.dto.MaterialItem>",
+	}
+	for _, bad := range unwantedClasses {
+		if strings.Contains(wire, bad) {
+			t.Errorf("wire contains unmangled generic %q", bad)
+		}
+	}
+}
