@@ -612,14 +612,17 @@ func (l *lexer) next() (Token, error) {
 // readNumber 识别 int / long / float / double 字面量。
 // 支持 decimal / hex (0x) / binary (0b) / octal (0...),后缀 L/l/F/f/D/d。
 // 接收 Java 7+ 下划线分隔(如 1_000_000)。
-// 关键:'+'/'-' 必须紧跟 exponent 标志(e/E/p/P)才属于 number 的一部分,
-// 否则会把 "1-2" 错误吃成一个 token。
+// 关键 1:'+'/'-' 必须紧跟 exponent 标志(e/E/p/P)才属于 number 的一部分,
+//   否则会把 "1-2" 错误吃成一个 token。
+// 关键 2:a-f 字符只在 hex 模式(0x / 0X 开头)接受。 否则 "3.14f" 的 'f'
+//   会被当 hex digit 吃掉,suffix switch 永远进不去 ——
+//   plan v1 漏掉这个 case,Task 4 执行时实测出来才修正。
 func (l *lexer) readNumber(line, col, off int) Token {
 	start := l.pos
 	l.advance() // 首字符 0-9 已校验
+	hexMode := false
 	for l.pos < len(l.src) {
 		c := l.src[l.pos]
-		// '+'/'-' 只在指数符号紧后合法(1e+10 / 1E-5 / 0x1.0p+8)。
 		if c == '+' || c == '-' {
 			if l.pos > 0 {
 				prev := l.src[l.pos-1]
@@ -630,10 +633,32 @@ func (l *lexer) readNumber(line, col, off int) Token {
 			}
 			break
 		}
-		if (c >= '0' && c <= '9') || c == '_' || c == '.' ||
-			(c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') ||
-			c == 'x' || c == 'X' || c == 'b' || c == 'B' ||
-			c == 'e' || c == 'E' || c == 'p' || c == 'P' {
+		// 进入 hex 前缀
+		if (c == 'x' || c == 'X') && l.pos-start == 1 && l.src[start] == '0' {
+			hexMode = true
+			l.advance()
+			continue
+		}
+		// 进入 binary 前缀
+		if (c == 'b' || c == 'B') && l.pos-start == 1 && l.src[start] == '0' {
+			l.advance()
+			continue
+		}
+		if (c >= '0' && c <= '9') || c == '_' || c == '.' {
+			l.advance()
+			continue
+		}
+		// hex digits a-f 仅在 hex 模式接受
+		if hexMode && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			l.advance()
+			continue
+		}
+		// decimal exponent e/E 通用;hex float exponent p/P 仅 hex 模式
+		if c == 'e' || c == 'E' {
+			l.advance()
+			continue
+		}
+		if hexMode && (c == 'p' || c == 'P') {
 			l.advance()
 			continue
 		}

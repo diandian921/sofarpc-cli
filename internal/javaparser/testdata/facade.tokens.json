@@ -1,0 +1,662 @@
+[
+  {
+    "col": 1,
+    "kind": "Keyword",
+    "line": 1,
+    "value": "package"
+  },
+  {
+    "col": 9,
+    "kind": "Ident",
+    "line": 1,
+    "value": "com"
+  },
+  {
+    "col": 12,
+    "kind": ".",
+    "line": 1,
+    "value": "."
+  },
+  {
+    "col": 13,
+    "kind": "Ident",
+    "line": 1,
+    "value": "acme"
+  },
+  {
+    "col": 17,
+    "kind": ".",
+    "line": 1,
+    "value": "."
+  },
+  {
+    "col": 18,
+    "kind": "Ident",
+    "line": 1,
+    "value": "facade"
+  },
+  {
+    "col": 24,
+    "kind": ";",
+    "line": 1,
+    "value": ";"
+  },
+  {
+    "col": 1,
+    "kind": "Keyword",
+    "line": 3,
+    "value": "import"
+  },
+  {
+    "col": 8,
+    "kind": "Ident",
+    "line": 3,
+    "value": "com"
+  },
+  {
+    "col": 11,
+    "kind": ".",
+    "line": 3,
+    "value": "."
+  },
+  {
+    "col": 12,
+    "kind": "Ident",
+    "line": 3,
+    "value": "acme"
+  },
+  {
+    "col": 16,
+    "kind": ".",
+    "line": 3,
+    "value": "."
+  },
+  {
+    "col": 17,
+    "kind": "Ident",
+    "line": 3,
+    "value": "dto"
+  },
+  {
+    "col": 20,
+    "kind": ".",
+    "line": 3,
+    "value": "."
+  },
+  {
+    "col": 21,
+    "kind": "Ident",
+    "line": 3,
+    "value": "QueryRequest"
+  },
+  {
+    "col": 33,
+    "kind": ";",
+    "line": 3,
+    "value": ";"
+  },
+  {
+    "col": 1,
+    "kind": "Keyword",
+    "line": 4,
+    "value": "import"
+  },
+  {
+    "col": 8,
+    "kind": "Ident",
+    "line": 4,
+    "value": "com"
+  },
+  {
+    "col": 11,
+    "kind": ".",
+    "line": 4,
+    "value": "."
+  },
+  {
+    "col": 12,
+    "kind": "Ident",
+    "line": 4,
+    "value": "acme"
+  },
+  {
+    "col": 16,
+    "kind": ".",
+    "line": 4,
+    "value": "."
+  },
+  {
+    "col": 17,
+    "kind": "Ident",
+    "line": 4,
+    "value": "dto"
+  },
+  {
+    "col": 20,
+    "kind": ".",
+    "line": 4,
+    "value": "."
+  },
+  {
+    "col": 21,
+    "kind": "Ident",
+    "line": 4,
+    "value": "QueryResponse"
+  },
+  {
+    "col": 34,
+    "kind": ";",
+    "line": 4,
+    "value": ";"
+  },
+  {
+    "col": 1,
+    "kind": "Keyword",
+    "line": 5,
+    "value": "import"
+  },
+  {
+    "col": 8,
+    "kind": "Ident",
+    "line": 5,
+    "value": "com"
+  },
+  {
+    "col": 11,
+    "kind": ".",
+    "line": 5,
+    "value": "."
+  },
+  {
+    "col": 12,
+    "kind": "Ident",
+    "line": 5,
+    "value": "acme"
+  },
+  {
+    "col": 16,
+    "kind": ".",
+    "line": 5,
+    "value": "."
+  },
+  {
+    "col": 17,
+    "kind": "Ident",
+    "line": 5,
+    "value": "dto"
+  },
+  {
+    "col": 20,
+    "kind": ".",
+    "line": 5,
+    "value": "."
+  },
+  {
+    "col": 21,
+    "kind": "Ident",
+    "line": 5,
+    "value": "wildcard"
+  },
+  {
+    "col": 29,
+    "kind": ".",
+    "line": 5,
+    "value": "."
+  },
+  {
+    "col": 30,
+    "kind": "*",
+    "line": 5,
+    "value": "*"
+  },
+  {
+    "col": 31,
+    "kind": ";",
+    "line": 5,
+    "value": ";"
+  },
+  {
+    "col": 1,
+    "kind": "Keyword",
+    "line": 6,
+    "value": "import"
+  },
+  {
+    "col": 8,
+    "kind": "Keyword",
+    "line": 6,
+    "value": "static"
+  },
+  {
+    "col": 15,
+    "kind": "Ident",
+    "line": 6,
+    "value": "com"
+  },
+  {
+    "col": 18,
+    "kind": ".",
+    "line": 6,
+    "value": "."
+  },
+  {
+    "col": 19,
+    "kind": "Ident",
+    "line": 6,
+    "value": "acme"
+  },
+  {
+    "col": 23,
+    "kind": ".",
+    "line": 6,
+    "value": "."
+  },
+  {
+    "col": 24,
+    "kind": "Ident",
+    "line": 6,
+    "value": "util"
+  },
+  {
+    "col": 28,
+    "kind": ".",
+    "line": 6,
+    "value": "."
+  },
+  {
+    "col": 29,
+    "kind": "Ident",
+    "line": 6,
+    "value": "Helpers"
+  },
+  {
+    "col": 36,
+    "kind": ".",
+    "line": 6,
+    "value": "."
+  },
+  {
+    "col": 37,
+    "kind": "Ident",
+    "line": 6,
+    "value": "format"
+  },
+  {
+    "col": 43,
+    "kind": ";",
+    "line": 6,
+    "value": ";"
+  },
+  {
+    "col": 1,
+    "kind": "Keyword",
+    "line": 7,
+    "value": "import"
+  },
+  {
+    "col": 8,
+    "kind": "Ident",
+    "line": 7,
+    "value": "java"
+  },
+  {
+    "col": 12,
+    "kind": ".",
+    "line": 7,
+    "value": "."
+  },
+  {
+    "col": 13,
+    "kind": "Ident",
+    "line": 7,
+    "value": "util"
+  },
+  {
+    "col": 17,
+    "kind": ".",
+    "line": 7,
+    "value": "."
+  },
+  {
+    "col": 18,
+    "kind": "Ident",
+    "line": 7,
+    "value": "List"
+  },
+  {
+    "col": 22,
+    "kind": ";",
+    "line": 7,
+    "value": ";"
+  },
+  {
+    "col": 1,
+    "kind": "Keyword",
+    "line": 8,
+    "value": "import"
+  },
+  {
+    "col": 8,
+    "kind": "Ident",
+    "line": 8,
+    "value": "java"
+  },
+  {
+    "col": 12,
+    "kind": ".",
+    "line": 8,
+    "value": "."
+  },
+  {
+    "col": 13,
+    "kind": "Ident",
+    "line": 8,
+    "value": "util"
+  },
+  {
+    "col": 17,
+    "kind": ".",
+    "line": 8,
+    "value": "."
+  },
+  {
+    "col": 18,
+    "kind": "Ident",
+    "line": 8,
+    "value": "Map"
+  },
+  {
+    "col": 21,
+    "kind": ";",
+    "line": 8,
+    "value": ";"
+  },
+  {
+    "col": 1,
+    "kind": "Javadoc",
+    "line": 10,
+    "value": "/**\n * 资产查询门面。\n */"
+  },
+  {
+    "col": 1,
+    "kind": "Keyword",
+    "line": 13,
+    "value": "public"
+  },
+  {
+    "col": 8,
+    "kind": "Keyword",
+    "line": 13,
+    "value": "interface"
+  },
+  {
+    "col": 18,
+    "kind": "Ident",
+    "line": 13,
+    "value": "AssetFacade"
+  },
+  {
+    "col": 30,
+    "kind": "{",
+    "line": 13,
+    "value": "{"
+  },
+  {
+    "col": 5,
+    "kind": "Javadoc",
+    "line": 14,
+    "value": "/** 查询资产 */"
+  },
+  {
+    "col": 5,
+    "kind": "Ident",
+    "line": 15,
+    "value": "QueryResponse"
+  },
+  {
+    "col": 18,
+    "kind": "\u003c",
+    "line": 15,
+    "value": "\u003c"
+  },
+  {
+    "col": 19,
+    "kind": "Ident",
+    "line": 15,
+    "value": "List"
+  },
+  {
+    "col": 23,
+    "kind": "\u003c",
+    "line": 15,
+    "value": "\u003c"
+  },
+  {
+    "col": 24,
+    "kind": "Ident",
+    "line": 15,
+    "value": "Asset"
+  },
+  {
+    "col": 29,
+    "kind": "\u003e",
+    "line": 15,
+    "value": "\u003e"
+  },
+  {
+    "col": 30,
+    "kind": "\u003e",
+    "line": 15,
+    "value": "\u003e"
+  },
+  {
+    "col": 32,
+    "kind": "Ident",
+    "line": 15,
+    "value": "queryAssets"
+  },
+  {
+    "col": 43,
+    "kind": "(",
+    "line": 15,
+    "value": "("
+  },
+  {
+    "col": 13,
+    "kind": "@",
+    "line": 16,
+    "value": "@"
+  },
+  {
+    "col": 14,
+    "kind": "Ident",
+    "line": 16,
+    "value": "NotNull"
+  },
+  {
+    "col": 22,
+    "kind": "Ident",
+    "line": 16,
+    "value": "QueryRequest"
+  },
+  {
+    "col": 35,
+    "kind": "Ident",
+    "line": 16,
+    "value": "request"
+  },
+  {
+    "col": 42,
+    "kind": ",",
+    "line": 16,
+    "value": ","
+  },
+  {
+    "col": 13,
+    "kind": "Ident",
+    "line": 17,
+    "value": "Map"
+  },
+  {
+    "col": 16,
+    "kind": "\u003c",
+    "line": 17,
+    "value": "\u003c"
+  },
+  {
+    "col": 17,
+    "kind": "Ident",
+    "line": 17,
+    "value": "String"
+  },
+  {
+    "col": 23,
+    "kind": ",",
+    "line": 17,
+    "value": ","
+  },
+  {
+    "col": 25,
+    "kind": "Ident",
+    "line": 17,
+    "value": "List"
+  },
+  {
+    "col": 29,
+    "kind": "\u003c",
+    "line": 17,
+    "value": "\u003c"
+  },
+  {
+    "col": 30,
+    "kind": "Ident",
+    "line": 17,
+    "value": "Long"
+  },
+  {
+    "col": 34,
+    "kind": "\u003e",
+    "line": 17,
+    "value": "\u003e"
+  },
+  {
+    "col": 35,
+    "kind": "\u003e",
+    "line": 17,
+    "value": "\u003e"
+  },
+  {
+    "col": 37,
+    "kind": "Ident",
+    "line": 17,
+    "value": "filters"
+  },
+  {
+    "col": 44,
+    "kind": ",",
+    "line": 17,
+    "value": ","
+  },
+  {
+    "col": 13,
+    "kind": "Keyword",
+    "line": 18,
+    "value": "int"
+  },
+  {
+    "col": 17,
+    "kind": "Ident",
+    "line": 18,
+    "value": "limit"
+  },
+  {
+    "col": 5,
+    "kind": ")",
+    "line": 19,
+    "value": ")"
+  },
+  {
+    "col": 6,
+    "kind": ";",
+    "line": 19,
+    "value": ";"
+  },
+  {
+    "col": 5,
+    "kind": "Javadoc",
+    "line": 21,
+    "value": "/** 兜底 */"
+  },
+  {
+    "col": 5,
+    "kind": "Keyword",
+    "line": 22,
+    "value": "default"
+  },
+  {
+    "col": 13,
+    "kind": "Keyword",
+    "line": 22,
+    "value": "boolean"
+  },
+  {
+    "col": 21,
+    "kind": "Ident",
+    "line": 22,
+    "value": "ping"
+  },
+  {
+    "col": 25,
+    "kind": "(",
+    "line": 22,
+    "value": "("
+  },
+  {
+    "col": 26,
+    "kind": ")",
+    "line": 22,
+    "value": ")"
+  },
+  {
+    "col": 28,
+    "kind": "{",
+    "line": 22,
+    "value": "{"
+  },
+  {
+    "col": 9,
+    "kind": "Keyword",
+    "line": 23,
+    "value": "return"
+  },
+  {
+    "col": 16,
+    "kind": "Bool",
+    "line": 23,
+    "value": "true"
+  },
+  {
+    "col": 20,
+    "kind": ";",
+    "line": 23,
+    "value": ";"
+  },
+  {
+    "col": 5,
+    "kind": "}",
+    "line": 24,
+    "value": "}"
+  },
+  {
+    "col": 1,
+    "kind": "}",
+    "line": 25,
+    "value": "}"
+  },
+  {
+    "col": 1,
+    "kind": "EOF",
+    "line": 26,
+    "value": ""
+  }
+]
