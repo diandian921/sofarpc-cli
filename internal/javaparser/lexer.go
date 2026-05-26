@@ -198,15 +198,17 @@ func (l *lexer) readNumber(line, col, off int) Token {
 	l.advance() // 首字符 0-9 已校验
 	hexMode := false
 	afterHexExponent := false
+	// lastWasExponent 标记前一字符是否真是 exponent 标志(decimal e/E 或 hex p/P)。
+	// '+'/'-' 只在 lastWasExponent==true 时被吞进 number。
+	// hex digit 含 e/E 时不能算 exponent,否则 "0x1e+1" 会被错误吃成单 token。
+	lastWasExponent := false
 	for l.pos < len(l.src) {
 		c := l.src[l.pos]
 		if c == '+' || c == '-' {
-			if l.pos > 0 {
-				prev := l.src[l.pos-1]
-				if prev == 'e' || prev == 'E' || prev == 'p' || prev == 'P' {
-					l.advance()
-					continue
-				}
+			if lastWasExponent {
+				l.advance()
+				lastWasExponent = false
+				continue
 			}
 			break
 		}
@@ -214,32 +216,38 @@ func (l *lexer) readNumber(line, col, off int) Token {
 		if (c == 'x' || c == 'X') && l.pos-start == 1 && l.src[start] == '0' {
 			hexMode = true
 			l.advance()
+			lastWasExponent = false
 			continue
 		}
 		// 进入 binary 前缀
 		if (c == 'b' || c == 'B') && l.pos-start == 1 && l.src[start] == '0' {
 			l.advance()
+			lastWasExponent = false
 			continue
 		}
 		if (c >= '0' && c <= '9') || c == '_' || c == '.' {
 			l.advance()
+			lastWasExponent = false
 			continue
 		}
-		// hex digits a-f 仅在 hex 模式 + 未进入指数后接受
-		// (进入指数后,后续 [a-f] 中的 f 应当作 float suffix 给 suffix switch 处理)
+		// hex digits a-f 仅在 hex 模式 + 未进入指数后接受。
+		// 注意:hex digit (含 e/E) 不是 exponent,不影响 lastWasExponent。
 		if hexMode && !afterHexExponent && ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
 			l.advance()
+			lastWasExponent = false
 			continue
 		}
-		// decimal exponent e/E 只在非 hex 模式才作为 exponent;hex 模式下 e/E 是 digit (已在上面处理)
+		// decimal exponent e/E 只在非 hex 模式才作为 exponent
 		if !hexMode && (c == 'e' || c == 'E') {
 			l.advance()
+			lastWasExponent = true
 			continue
 		}
 		// hex float exponent p/P 仅 hex 模式
 		if hexMode && (c == 'p' || c == 'P') {
 			afterHexExponent = true
 			l.advance()
+			lastWasExponent = true
 			continue
 		}
 		break

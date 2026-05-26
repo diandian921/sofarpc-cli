@@ -222,6 +222,39 @@ func TestHexLiteralEdgeCases(t *testing.T) {
 	}
 }
 
+// codex review 3 抓的 P2:hex digit e/E 紧接 +/- 时,+/- 不应被吞。
+// 之前的判断只看"前一字符正好是 e/E/p/P",没区分这个 e 是 hex digit 还是
+// decimal exponent。 "0x1e+1" 应该是 3 token (IntLiteral + Other + IntLiteral)。
+func TestHexDigitEFollowedBySignBoundary(t *testing.T) {
+	cases := []struct {
+		src      string
+		wantVals []string
+		wantKind []TokenKind
+	}{
+		{"0x1e+1", []string{"0x1e", "+", "1"}, []TokenKind{TokenIntLiteral, TokenOther, TokenIntLiteral}},
+		{"0x1E-2", []string{"0x1E", "-", "2"}, []TokenKind{TokenIntLiteral, TokenOther, TokenIntLiteral}},
+		// 对照:真 decimal exponent 仍然要把 sign 吞进 number
+		{"1e+10", []string{"1e+10"}, []TokenKind{TokenDoubleLiteral}},
+		{"1E-5", []string{"1E-5"}, []TokenKind{TokenDoubleLiteral}},
+		// 对照:hex float exponent p 之后的 sign 也要吞
+		{"0x1.0p+8", []string{"0x1.0p+8"}, []TokenKind{TokenDoubleLiteral}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			tokens, _ := Tokenize([]byte(tc.src))
+			// 末尾必有 EOF
+			if len(tokens) != len(tc.wantVals)+1 {
+				t.Fatalf("tokens = %v", tokens)
+			}
+			for i, want := range tc.wantVals {
+				if tokens[i].Value != want || tokens[i].Kind != tc.wantKind[i] {
+					t.Errorf("tokens[%d] = %v, want val=%q kind=%v", i, tokens[i], want, tc.wantKind[i])
+				}
+			}
+		})
+	}
+}
+
 // codex review #13:Java 15+ text block 也可能在 annotation default 或
 // interface 常量出现,parser 跳 method body 但解析 field/annotation 时
 // 必须能识别 """ 边界。
