@@ -235,8 +235,13 @@ func resolveGenericType(typ string, imports map[string]string, pkg string, types
 //   - 真有 schema 的 acronym DTO(`URL` / `ID` / `XML`)走 schema FQN
 //   - 没 schema 又长得像 type var 才走启发式 return as-is
 //   - 没 schema 也不像 type var 才 pkg fallback(legacy)
-// 这样 codex review 2 提的 acronym DTO regression 和 type variable
-// 污染 wire 的问题都被覆盖。
+//
+// Known limitation (codex review 3, P3): 当 class declared type parameter
+// 跟 same-pkg class 同名(e.g. `class Page<T>` 同 package 真有 `com.x.dto.T`),
+// Java 语义 T 应绑 type-param,但本 resolver 会优先 same-pkg lookup 解为
+// `com.x.dto.T`。 真实业务几乎不出现(全大写 single-char class 反 convention),
+// 要修需要扩 schema parser 记录 declared type parameters 列表,scope 蔓延,
+// 接受作为 trade-off。 真撞到再做。
 func resolveBaseType(base string, imports map[string]string, pkg string, types map[string]schema.TypeSchema) string {
 	if base == "" {
 		return base
