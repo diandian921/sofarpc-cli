@@ -223,7 +223,10 @@ func resolveGenericType(typ string, imports map[string]string, pkg string) strin
 }
 
 // resolveBaseType 把无泛型的短名解析成 FQN。
-// 顺序:Java built-in 映射 → 已带 "." → 显式 import → 同 package fallback。
+// 顺序:Java built-in 映射 → 已带 "." → 显式 import → type variable 启发式 → 同 package fallback。
+// type variable(T / K / V / E / R / T1 等)用启发式拦截,return as-is,
+// 否则会被 pkg fallback 拼成 "com.x.T" 这种不存在的 class,后续 wrap
+// 成 bogus object 污染 wire payload(codex review 2026-05-26 抓到)。
 func resolveBaseType(base string, imports map[string]string, pkg string) string {
 	if base == "" {
 		return base
@@ -235,10 +238,37 @@ func resolveBaseType(base string, imports map[string]string, pkg string) string 
 	if imported, ok := imports[base]; ok {
 		return imported
 	}
+	if isLikelyTypeVariable(base) {
+		return base
+	}
 	if pkg != "" {
 		return pkg + "." + base
 	}
 	return base
+}
+
+// isLikelyTypeVariable 用 Java 命名 convention 启发式识别 type variable。
+// Java 强约定 type variable 全大写字母 + 数字,长度 1-3(T / K / V / E / R / T1 / T2)。
+// 真实 DTO class 极少这样命名 ——即便像 URL/XML/ID 这种 acronym 被误判,
+// 退化效果只是 element fall back 到 untyped Map(不 corrupt wire),
+// 不会比"错误 wrap 成 bogus class"更糟。
+func isLikelyTypeVariable(s string) bool {
+	if len(s) == 0 || len(s) > 3 {
+		return false
+	}
+	hasLetter := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			hasLetter = true
+			continue
+		}
+		if c >= '0' && c <= '9' {
+			continue
+		}
+		return false
+	}
+	return hasLetter
 }
 
 // rpcParamTypeForMethod returns the *identity* form of a parameter type:

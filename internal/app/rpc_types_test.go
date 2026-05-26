@@ -122,6 +122,20 @@ func TestResolveGenericType(t *testing.T) {
 		{"? super MaterialItem", "? super MaterialItem"},
 		{"List<?>", "java.util.List<?>"},
 		{"List<? extends MaterialItem>", "java.util.List<? extends MaterialItem>"},
+		// type variable 启发式 (codex review 抓的 regression)
+		{"T", "T"},
+		{"K", "K"},
+		{"V", "V"},
+		{"E", "E"},
+		{"R", "R"},
+		{"T1", "T1"},
+		{"T2", "T2"},
+		{"List<T>", "java.util.List<T>"},
+		{"Map<K, V>", "java.util.Map<K, V>"},
+		{"List<List<T>>", "java.util.List<java.util.List<T>>"},
+		// explicit import 优先于 type variable 启发式
+		// (没在 imports 表里加 T,所以这里测的是 "没 import 时" 走 type var 分支;
+		//  imports 表如果显式有 T -> com.x.T,会走 imports lookup,见下个单测)
 	}
 	for _, tc := range cases {
 		got := resolveGenericType(tc.in, imports, pkg)
@@ -251,5 +265,86 @@ func TestTypedArgumentsWildcardGenericDoesNotCorruptType(t *testing.T) {
 	}
 	if strings.Contains(got[0].Items[0].JavaType, "com.x.facade.?") {
 		t.Errorf("wildcard leaked into FQN: %q", got[0].Items[0].JavaType)
+	}
+}
+
+func TestResolveTypeVariableOverriddenByExplicitImport(t *testing.T) {
+	// 边界 case:如果 user 真的 import 了一个叫 T 的 class(违反 convention 但可能),
+	// explicit import 必须优先于 type variable 启发式。
+	imports := map[string]string{"T": "com.example.weird.T"}
+	got := resolveGenericType("T", imports, "com.example.pkg")
+	if got != "com.example.weird.T" {
+		t.Errorf("explicit import should win over type-var heuristic, got %q", got)
+	}
+}
+
+func TestIsLikelyTypeVariable(t *testing.T) {
+	yes := []string{"T", "K", "V", "E", "R", "T1", "T2", "K2", "ID", "URL"}
+	no := []string{"", "Foo", "Bar", "Id", "Url", "MaterialItem", "ABCD", "list", "t"}
+	for _, s := range yes {
+		if !isLikelyTypeVariable(s) {
+			t.Errorf("isLikelyTypeVariable(%q) = false, want true", s)
+		}
+	}
+	for _, s := range no {
+		if isLikelyTypeVariable(s) {
+			t.Errorf("isLikelyTypeVariable(%q) = true, want false", s)
+		}
+	}
+}
+
+// codex review (Plan B 实施 commit) 抓的 P2 regression:
+// 之前的实现把 type variable T 走 pkg fallback 拼成 "com.x.dto.T",
+// 后续 shouldWrapJavaObject 把 element wrap 成不存在的 class。
+// e.g. Page<T> 里的 records: List<T> 会让 element 序列化成 com.x.dto.T。
+func TestTypedArgumentsListOfTypeVariableFallsBackUntyped(t *testing.T) {
+	// 模拟 Page<T> 这种泛型容器 DTO,records 字段类型 List<T>
+	method := schema.Method{
+		Service: "com.x.facade.QueryFacade",
+		Method:  "queryPage",
+		Package: "com.x.facade",
+		Parameters: []schema.Parameter{
+			{Name: "page", Type: "Page"},
+		},
+		Imports: map[string]string{
+			"Page": "com.x.dto.Page",
+		},
+	}
+	desc := schema.Description{
+		Methods: []schema.Method{method},
+		Types: map[string]schema.TypeSchema{
+			"com.x.dto.Page": {
+				Type: "com.x.dto.Page",
+				Kind: "class",
+				Fields: []schema.Field{
+					{Name: "records", Type: "List<T>"},
+					{Name: "total", Type: "int"},
+				},
+			},
+		},
+	}
+	args := []interface{}{
+		map[string]interface{}{
+			"records": []interface{}{
+				map[string]interface{}{"name": "row1"},
+			},
+			"total": 1,
+		},
+	}
+	got := typedArgumentsForMethod(args, method, desc)
+	records := got[0].Fields["records"]
+	if records.Kind != javavalue.KindList {
+		t.Fatalf("records not list: %#v", records)
+	}
+	if len(records.Items) != 1 {
+		t.Fatalf("records items: %#v", records.Items)
+	}
+	element := records.Items[0]
+	// element 应该 fall back 到 untyped Map,而不是被 wrap 成 bogus class
+	if element.Kind != javavalue.KindMap {
+		t.Errorf("type-var element kind = %q, want map (untyped fallback)", element.Kind)
+	}
+	if strings.Contains(element.JavaType, "com.x.dto.T") {
+		t.Errorf("type variable T leaked into FQN: %q", element.JavaType)
 	}
 }
