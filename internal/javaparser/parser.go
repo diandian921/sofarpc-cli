@@ -55,10 +55,12 @@ func parseCompilationUnit(c *cursor, sourceFile string) (*CompilationUnit, error
 			cu.Imports = append(cu.Imports, imp)
 			continue
 		}
-		// Task 5+ 在这里接入 parseTypeDecl;Task 3 阶段把剩余内容 skip 一格,
-		// 避免无限循环。 type decl annotation(@Foo public class X)会落到这条路径,
-		// Task 3 测试不会走到那(用例只有 package + imports)。
-		c.consume()
+		// 任何剩余 token(含 type-decl annotation `@Foo public class X`)→ parseTypeDecl
+		decl, err := parseTypeDecl(c)
+		if err != nil {
+			return nil, err
+		}
+		cu.Types = append(cu.Types, decl)
 	}
 	return cu, nil
 }

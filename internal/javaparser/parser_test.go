@@ -464,3 +464,141 @@ func TestParseTypeParamsAnnotated(t *testing.T) {
 		t.Errorf("K bound = %+v", params[1].Bounds)
 	}
 }
+
+func TestParseTypeDeclTopLevelClassInterfaceEnumRecord(t *testing.T) {
+	src := `package p;
+public abstract class Foo<T extends Number, K> extends BaseX implements I1, I2<String> {}
+public interface Bar<T> extends Comparable<T> {}
+public enum Color {}
+public record Point(int x, int y) {}
+public @interface Marker {}
+`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(cu.Types) != 5 {
+		t.Fatalf("types len = %d, want 5: %+v", len(cu.Types), cu.Types)
+	}
+	cases := []struct {
+		idx       int
+		kind      TypeKind
+		name      string
+		modifiers []string
+		nParams   int
+	}{
+		{0, TypeKindClass, "Foo", []string{"public", "abstract"}, 2},
+		{1, TypeKindInterface, "Bar", []string{"public"}, 1},
+		{2, TypeKindEnum, "Color", []string{"public"}, 0},
+		{3, TypeKindRecord, "Point", []string{"public"}, 0},
+		{4, TypeKindAnnotation, "Marker", []string{"public"}, 0},
+	}
+	for _, tc := range cases {
+		got := cu.Types[tc.idx]
+		if got.Kind != tc.kind || got.Name != tc.name {
+			t.Errorf("types[%d] = {%s, %s}, want {%s, %s}", tc.idx, got.Kind, got.Name, tc.kind, tc.name)
+		}
+		if !sliceEq(got.Modifiers, tc.modifiers) {
+			t.Errorf("types[%d].Modifiers = %v, want %v", tc.idx, got.Modifiers, tc.modifiers)
+		}
+		if len(got.TypeParams) != tc.nParams {
+			t.Errorf("types[%d].TypeParams = %+v, want len %d", tc.idx, got.TypeParams, tc.nParams)
+		}
+	}
+
+	// Foo: extends + implements
+	foo := cu.Types[0]
+	if len(foo.Extends) != 1 || foo.Extends[0].String() != "BaseX" {
+		t.Errorf("Foo.Extends = %+v", foo.Extends)
+	}
+	if len(foo.Implements) != 2 || foo.Implements[0].String() != "I1" || foo.Implements[1].String() != "I2<String>" {
+		t.Errorf("Foo.Implements = %+v", foo.Implements)
+	}
+	if foo.TypeParams[0].Name != "T" || len(foo.TypeParams[0].Bounds) != 1 || foo.TypeParams[0].Bounds[0].String() != "Number" {
+		t.Errorf("Foo.TypeParams[0] = %+v", foo.TypeParams[0])
+	}
+}
+
+func TestParseTypeDeclSealedAndNonSealed(t *testing.T) {
+	src := `sealed class Shape permits Circle, Square {}
+non-sealed class Circle extends Shape {}
+final class Square extends Shape {}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(cu.Types) != 3 {
+		t.Fatalf("types = %d", len(cu.Types))
+	}
+	if !sliceEq(cu.Types[0].Modifiers, []string{"sealed"}) {
+		t.Errorf("Shape.Modifiers = %v", cu.Types[0].Modifiers)
+	}
+	if len(cu.Types[0].Permits) != 2 {
+		t.Errorf("Shape.Permits = %+v", cu.Types[0].Permits)
+	}
+	if !sliceEq(cu.Types[1].Modifiers, []string{"non-sealed"}) {
+		t.Errorf("Circle.Modifiers = %v, want [non-sealed]", cu.Types[1].Modifiers)
+	}
+}
+
+func TestParseTypeDeclNonSealedRequiresAdjacency(t *testing.T) {
+	// codex review #6:`non - sealed`(带空格)不是合法 Java,parser 不应合成。
+	// parsePreamble 在三 token 之间用 Token.Off 校验相邻;有空格时不合并。
+	src := `non - sealed class Bad {}`
+	cu, err := Parse([]byte(src), "T.java")
+	// 不合并意味着 `non` 不是 modifier,会进 parseTypeDecl 期望 type keyword 然后失败。
+	// 我们 expect error,而不是 silently 当成 non-sealed class Bad。
+	if err == nil {
+		t.Fatalf("expected error for non-adjacent 'non - sealed', got types=%+v", cu.Types)
+	}
+}
+
+func TestParseTypeDeclIdentifierNamedNon(t *testing.T) {
+	// 另一面:类型本身叫 `non` 不影响别的(虽然不推荐,但合法)
+	src := `package p; class Foo { private int x; }`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(cu.Types) != 1 || cu.Types[0].Name != "Foo" {
+		t.Errorf("types = %+v", cu.Types)
+	}
+}
+
+func TestParseTypeDeclWithAnnotationsAndJavadoc(t *testing.T) {
+	src := `package p;
+
+/** 资产查询门面。 */
+@Deprecated
+@SuppressWarnings("all")
+public interface AssetFacade {}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(cu.Types) != 1 {
+		t.Fatalf("types = %d", len(cu.Types))
+	}
+	td := cu.Types[0]
+	if !contains(td.Javadoc, "资产查询门面") {
+		t.Errorf("Javadoc = %q", td.Javadoc)
+	}
+	if len(td.Annotations) != 2 {
+		t.Errorf("Annotations = %+v", td.Annotations)
+	}
+	if td.Annotations[0].Name != "Deprecated" || td.Annotations[1].Name != "SuppressWarnings" {
+		t.Errorf("Annotations names = %+v", td.Annotations)
+	}
+}
+
+func sliceEq(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
