@@ -1,0 +1,696 @@
+{
+  "SourceFile": "facade_v2.java",
+  "Package": {
+    "Name": "com.acme.facade",
+    "Pos": {
+      "Line": 1,
+      "Col": 1,
+      "Off": 0
+    }
+  },
+  "Imports": [
+    {
+      "Path": "com.acme.dto.QueryRequest",
+      "Static": false,
+      "Wildcard": false,
+      "Pos": {
+        "Line": 3,
+        "Col": 1,
+        "Off": 26
+      }
+    },
+    {
+      "Path": "com.acme.dto.QueryResponse",
+      "Static": false,
+      "Wildcard": false,
+      "Pos": {
+        "Line": 4,
+        "Col": 1,
+        "Off": 60
+      }
+    },
+    {
+      "Path": "com.acme.dto.wildcard",
+      "Static": false,
+      "Wildcard": true,
+      "Pos": {
+        "Line": 5,
+        "Col": 1,
+        "Off": 95
+      }
+    },
+    {
+      "Path": "com.acme.util.Helpers.format",
+      "Static": true,
+      "Wildcard": false,
+      "Pos": {
+        "Line": 6,
+        "Col": 1,
+        "Off": 127
+      }
+    },
+    {
+      "Path": "java.util.List",
+      "Static": false,
+      "Wildcard": false,
+      "Pos": {
+        "Line": 7,
+        "Col": 1,
+        "Off": 171
+      }
+    },
+    {
+      "Path": "java.util.Map",
+      "Static": false,
+      "Wildcard": false,
+      "Pos": {
+        "Line": 8,
+        "Col": 1,
+        "Off": 194
+      }
+    }
+  ],
+  "Types": [
+    {
+      "Kind": 1,
+      "Modifiers": [
+        "public"
+      ],
+      "Annotations": [
+        {
+          "Name": "Deprecated",
+          "Pos": {
+            "Line": 13,
+            "Col": 1,
+            "Off": 250
+          }
+        }
+      ],
+      "Javadoc": "资产查询门面。",
+      "Name": "AssetFacade",
+      "TypeParams": [
+        {
+          "Name": "T",
+          "Bounds": [
+            {
+              "Name": "Number",
+              "Args": null,
+              "ArrayDims": 0,
+              "IsWildcard": false,
+              "WildcardKind": 0,
+              "WildcardBound": null,
+              "Pos": {
+                "Line": 14,
+                "Col": 40,
+                "Off": 301
+              }
+            }
+          ]
+        }
+      ],
+      "Extends": null,
+      "Implements": null,
+      "Permits": null,
+      "Methods": [
+        {
+          "Modifiers": null,
+          "Annotations": null,
+          "Javadoc": "查询资产",
+          "TypeParams": null,
+          "ReturnType": {
+            "Name": "QueryResponse",
+            "Args": [
+              {
+                "Name": "List",
+                "Args": [
+                  {
+                    "Name": "Asset",
+                    "Args": null,
+                    "ArrayDims": 0,
+                    "IsWildcard": false,
+                    "WildcardKind": 0,
+                    "WildcardBound": null,
+                    "Pos": {
+                      "Line": 16,
+                      "Col": 24,
+                      "Off": 358
+                    }
+                  }
+                ],
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 16,
+                  "Col": 19,
+                  "Off": 353
+                }
+              }
+            ],
+            "ArrayDims": 0,
+            "IsWildcard": false,
+            "WildcardKind": 0,
+            "WildcardBound": null,
+            "Pos": {
+              "Line": 16,
+              "Col": 5,
+              "Off": 339
+            }
+          },
+          "Name": "queryAssets",
+          "Params": [
+            {
+              "Annotations": [
+                {
+                  "Name": "NotNull",
+                  "Pos": {
+                    "Line": 17,
+                    "Col": 13,
+                    "Off": 391
+                  }
+                }
+              ],
+              "Final": false,
+              "Type": {
+                "Name": "QueryRequest",
+                "Args": null,
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 17,
+                  "Col": 22,
+                  "Off": 400
+                }
+              },
+              "Name": "request",
+              "IsVarargs": false
+            },
+            {
+              "Annotations": null,
+              "Final": false,
+              "Type": {
+                "Name": "Map",
+                "Args": [
+                  {
+                    "Name": "String",
+                    "Args": null,
+                    "ArrayDims": 0,
+                    "IsWildcard": false,
+                    "WildcardKind": 0,
+                    "WildcardBound": null,
+                    "Pos": {
+                      "Line": 18,
+                      "Col": 17,
+                      "Off": 438
+                    }
+                  },
+                  {
+                    "Name": "List",
+                    "Args": [
+                      {
+                        "Name": "Long",
+                        "Args": null,
+                        "ArrayDims": 0,
+                        "IsWildcard": false,
+                        "WildcardKind": 0,
+                        "WildcardBound": null,
+                        "Pos": {
+                          "Line": 18,
+                          "Col": 30,
+                          "Off": 451
+                        }
+                      }
+                    ],
+                    "ArrayDims": 0,
+                    "IsWildcard": false,
+                    "WildcardKind": 0,
+                    "WildcardBound": null,
+                    "Pos": {
+                      "Line": 18,
+                      "Col": 25,
+                      "Off": 446
+                    }
+                  }
+                ],
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 18,
+                  "Col": 13,
+                  "Off": 434
+                }
+              },
+              "Name": "filters",
+              "IsVarargs": false
+            },
+            {
+              "Annotations": null,
+              "Final": false,
+              "Type": {
+                "Name": "int",
+                "Args": null,
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 19,
+                  "Col": 13,
+                  "Off": 479
+                }
+              },
+              "Name": "limit",
+              "IsVarargs": false
+            }
+          ],
+          "Throws": null,
+          "IsConstructor": false,
+          "Pos": {
+            "Line": 16,
+            "Col": 5,
+            "Off": 339
+          }
+        },
+        {
+          "Modifiers": [
+            "default"
+          ],
+          "Annotations": null,
+          "Javadoc": "兜底",
+          "TypeParams": null,
+          "ReturnType": {
+            "Name": "boolean",
+            "Args": null,
+            "ArrayDims": 0,
+            "IsWildcard": false,
+            "WildcardKind": 0,
+            "WildcardBound": null,
+            "Pos": {
+              "Line": 23,
+              "Col": 13,
+              "Off": 527
+            }
+          },
+          "Name": "ping",
+          "Params": null,
+          "Throws": null,
+          "IsConstructor": false,
+          "Pos": {
+            "Line": 23,
+            "Col": 13,
+            "Off": 527
+          }
+        },
+        {
+          "Modifiers": null,
+          "Annotations": null,
+          "Javadoc": "",
+          "TypeParams": [
+            {
+              "Name": "K",
+              "Bounds": null
+            }
+          ],
+          "ReturnType": {
+            "Name": "Map",
+            "Args": [
+              {
+                "Name": "K",
+                "Args": null,
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 27,
+                  "Col": 13,
+                  "Off": 584
+                }
+              },
+              {
+                "Name": "List",
+                "Args": [
+                  {
+                    "Name": "T",
+                    "Args": null,
+                    "ArrayDims": 0,
+                    "IsWildcard": false,
+                    "WildcardKind": 0,
+                    "WildcardBound": null,
+                    "Pos": {
+                      "Line": 27,
+                      "Col": 21,
+                      "Off": 592
+                    }
+                  }
+                ],
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 27,
+                  "Col": 16,
+                  "Off": 587
+                }
+              }
+            ],
+            "ArrayDims": 0,
+            "IsWildcard": false,
+            "WildcardKind": 0,
+            "WildcardBound": null,
+            "Pos": {
+              "Line": 27,
+              "Col": 9,
+              "Off": 580
+            }
+          },
+          "Name": "wrap",
+          "Params": [
+            {
+              "Annotations": null,
+              "Final": false,
+              "Type": {
+                "Name": "K",
+                "Args": null,
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 27,
+                  "Col": 30,
+                  "Off": 601
+                }
+              },
+              "Name": "key",
+              "IsVarargs": false
+            }
+          ],
+          "Throws": null,
+          "IsConstructor": false,
+          "Pos": {
+            "Line": 27,
+            "Col": 9,
+            "Off": 580
+          }
+        }
+      ],
+      "Fields": null,
+      "EnumValues": null,
+      "RecordComponents": null,
+      "NestedTypes": [
+        {
+          "Kind": 2,
+          "Modifiers": null,
+          "Annotations": null,
+          "Javadoc": "",
+          "Name": "Tier",
+          "TypeParams": null,
+          "Extends": null,
+          "Implements": null,
+          "Permits": null,
+          "Methods": null,
+          "Fields": null,
+          "EnumValues": [
+            {
+              "Annotations": null,
+              "Javadoc": "",
+              "Name": "BRONZE",
+              "Pos": {
+                "Line": 30,
+                "Col": 9,
+                "Off": 634
+              }
+            },
+            {
+              "Annotations": null,
+              "Javadoc": "",
+              "Name": "SILVER",
+              "Pos": {
+                "Line": 30,
+                "Col": 17,
+                "Off": 642
+              }
+            },
+            {
+              "Annotations": null,
+              "Javadoc": "",
+              "Name": "GOLD",
+              "Pos": {
+                "Line": 30,
+                "Col": 25,
+                "Off": 650
+              }
+            }
+          ],
+          "RecordComponents": null,
+          "NestedTypes": null,
+          "Pos": {
+            "Line": 29,
+            "Col": 5,
+            "Off": 614
+          }
+        },
+        {
+          "Kind": 3,
+          "Modifiers": null,
+          "Annotations": null,
+          "Javadoc": "",
+          "Name": "Page",
+          "TypeParams": [
+            {
+              "Name": "U",
+              "Bounds": null
+            }
+          ],
+          "Extends": null,
+          "Implements": null,
+          "Permits": null,
+          "Methods": null,
+          "Fields": null,
+          "EnumValues": null,
+          "RecordComponents": [
+            {
+              "Annotations": null,
+              "Final": false,
+              "Type": {
+                "Name": "int",
+                "Args": null,
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 33,
+                  "Col": 20,
+                  "Off": 682
+                }
+              },
+              "Name": "offset",
+              "IsVarargs": false
+            },
+            {
+              "Annotations": null,
+              "Final": false,
+              "Type": {
+                "Name": "int",
+                "Args": null,
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 33,
+                  "Col": 32,
+                  "Off": 694
+                }
+              },
+              "Name": "limit",
+              "IsVarargs": false
+            },
+            {
+              "Annotations": null,
+              "Final": false,
+              "Type": {
+                "Name": "List",
+                "Args": [
+                  {
+                    "Name": "U",
+                    "Args": null,
+                    "ArrayDims": 0,
+                    "IsWildcard": false,
+                    "WildcardKind": 0,
+                    "WildcardBound": null,
+                    "Pos": {
+                      "Line": 33,
+                      "Col": 48,
+                      "Off": 710
+                    }
+                  }
+                ],
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 33,
+                  "Col": 43,
+                  "Off": 705
+                }
+              },
+              "Name": "items",
+              "IsVarargs": false
+            }
+          ],
+          "NestedTypes": null,
+          "Pos": {
+            "Line": 33,
+            "Col": 5,
+            "Off": 667
+          }
+        },
+        {
+          "Kind": 4,
+          "Modifiers": null,
+          "Annotations": null,
+          "Javadoc": "",
+          "Name": "Cached",
+          "TypeParams": null,
+          "Extends": null,
+          "Implements": null,
+          "Permits": null,
+          "Methods": [
+            {
+              "Modifiers": null,
+              "Annotations": null,
+              "Javadoc": "",
+              "TypeParams": null,
+              "ReturnType": {
+                "Name": "int",
+                "Args": null,
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 36,
+                  "Col": 9,
+                  "Off": 756
+                }
+              },
+              "Name": "ttl",
+              "Params": null,
+              "Throws": null,
+              "IsConstructor": false,
+              "Pos": {
+                "Line": 36,
+                "Col": 9,
+                "Off": 756
+              }
+            }
+          ],
+          "Fields": null,
+          "EnumValues": null,
+          "RecordComponents": null,
+          "NestedTypes": null,
+          "Pos": {
+            "Line": 35,
+            "Col": 5,
+            "Off": 728
+          }
+        },
+        {
+          "Kind": 0,
+          "Modifiers": null,
+          "Annotations": null,
+          "Javadoc": "",
+          "Name": "Default",
+          "TypeParams": null,
+          "Extends": null,
+          "Implements": null,
+          "Permits": null,
+          "Methods": [
+            {
+              "Modifiers": [
+                "public"
+              ],
+              "Annotations": null,
+              "Javadoc": "",
+              "TypeParams": null,
+              "ReturnType": {
+                "Name": "String",
+                "Args": null,
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 41,
+                  "Col": 16,
+                  "Off": 861
+                }
+              },
+              "Name": "name",
+              "Params": null,
+              "Throws": null,
+              "IsConstructor": false,
+              "Pos": {
+                "Line": 41,
+                "Col": 16,
+                "Off": 861
+              }
+            }
+          ],
+          "Fields": [
+            {
+              "Modifiers": [
+                "private",
+                "final"
+              ],
+              "Annotations": null,
+              "Javadoc": "",
+              "Type": {
+                "Name": "String",
+                "Args": null,
+                "ArrayDims": 0,
+                "IsWildcard": false,
+                "WildcardKind": 0,
+                "WildcardBound": null,
+                "Pos": {
+                  "Line": 40,
+                  "Col": 23,
+                  "Off": 827
+                }
+              },
+              "Name": "name",
+              "Pos": {
+                "Line": 40,
+                "Col": 23,
+                "Off": 827
+              }
+            }
+          ],
+          "EnumValues": null,
+          "RecordComponents": null,
+          "NestedTypes": null,
+          "Pos": {
+            "Line": 39,
+            "Col": 5,
+            "Off": 789
+          }
+        }
+      ],
+      "Pos": {
+        "Line": 14,
+        "Col": 8,
+        "Off": 269
+      }
+    }
+  ]
+}

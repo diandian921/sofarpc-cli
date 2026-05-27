@@ -1,6 +1,11 @@
 package javaparser
 
-import "testing"
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"testing"
+)
 
 func TestParseEmptyReturnsEmptyCompilationUnit(t *testing.T) {
 	cu, err := Parse([]byte(""), "Empty.java")
@@ -1039,5 +1044,42 @@ func TestParseAnnotationDeclarationBody(t *testing.T) {
 	}
 	if ann.Methods[2].ReturnType.String() != "String[]" {
 		t.Errorf("tags ReturnType = %q", ann.Methods[2].ReturnType.String())
+	}
+}
+
+func TestGenerateParserFacadeGolden(t *testing.T) {
+	if os.Getenv("GO_GENERATE") != "1" {
+		t.Skip("set GO_GENERATE=1 to (re)generate testdata/parser/facade_v2.ast.json")
+	}
+	src, err := os.ReadFile("testdata/parser/facade_v2.java")
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	cu, err := Parse(src, "facade_v2.java")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	body, _ := json.MarshalIndent(cu, "", "  ")
+	if err := os.WriteFile("testdata/parser/facade_v2.ast.json", body, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
+func TestParseFacadeMatchesGolden(t *testing.T) {
+	src, err := os.ReadFile("testdata/parser/facade_v2.java")
+	if err != nil {
+		t.Fatalf("read src: %v", err)
+	}
+	want, err := os.ReadFile("testdata/parser/facade_v2.ast.json")
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	cu, err := Parse(src, "facade_v2.java")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got, _ := json.MarshalIndent(cu, "", "  ")
+	if !bytes.Equal(bytes.TrimSpace(got), bytes.TrimSpace(want)) {
+		t.Fatalf("golden mismatch.\nGOT:\n%s\n\nWANT:\n%s\n", got, want)
 	}
 }
