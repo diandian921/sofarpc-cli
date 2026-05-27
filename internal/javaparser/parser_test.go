@@ -658,3 +658,122 @@ func sliceEq(a, b []string) bool {
 	}
 	return true
 }
+
+func TestParseMethodSignatures(t *testing.T) {
+	src := `package p;
+public interface Foo {
+    /** 第一个方法 */
+    String hello();
+    int add(int x, int y);
+    <T> List<T> wrap(T item);
+    void greet(String... names);
+    void fail() throws java.io.IOException, RuntimeException;
+    Map<String, List<Long>> findAll(@NotNull String key, final int limit);
+}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(cu.Types) != 1 {
+		t.Fatalf("types = %d", len(cu.Types))
+	}
+	methods := cu.Types[0].Methods
+	if len(methods) != 6 {
+		t.Fatalf("methods = %d, want 6: %+v", len(methods), methods)
+	}
+
+	m0 := methods[0]
+	if m0.Name != "hello" || m0.ReturnType.String() != "String" || !contains(m0.Javadoc, "第一个方法") {
+		t.Errorf("hello = %+v", m0)
+	}
+
+	m1 := methods[1]
+	if m1.Name != "add" || len(m1.Params) != 2 ||
+		m1.Params[0].Type.String() != "int" || m1.Params[0].Name != "x" ||
+		m1.Params[1].Type.String() != "int" || m1.Params[1].Name != "y" {
+		t.Errorf("add = %+v", m1)
+	}
+
+	m2 := methods[2]
+	if m2.Name != "wrap" || len(m2.TypeParams) != 1 || m2.TypeParams[0].Name != "T" {
+		t.Errorf("wrap.TypeParams = %+v", m2.TypeParams)
+	}
+	if m2.ReturnType.String() != "List<T>" {
+		t.Errorf("wrap.ReturnType = %q", m2.ReturnType.String())
+	}
+
+	m3 := methods[3]
+	if m3.Name != "greet" || len(m3.Params) != 1 || !m3.Params[0].IsVarargs ||
+		m3.Params[0].Type.String() != "String[]" {
+		t.Errorf("greet = %+v", m3)
+	}
+
+	m4 := methods[4]
+	if m4.Name != "fail" || len(m4.Throws) != 2 ||
+		m4.Throws[0].String() != "java.io.IOException" || m4.Throws[1].String() != "RuntimeException" {
+		t.Errorf("fail.Throws = %+v", m4.Throws)
+	}
+
+	m5 := methods[5]
+	if m5.Name != "findAll" {
+		t.Errorf("findAll name = %q", m5.Name)
+	}
+	if m5.ReturnType.String() != "Map<String, List<Long>>" {
+		t.Errorf("findAll.ReturnType = %q", m5.ReturnType.String())
+	}
+	if len(m5.Params) != 2 ||
+		m5.Params[0].Type.String() != "String" || m5.Params[0].Name != "key" ||
+		len(m5.Params[0].Annotations) != 1 || m5.Params[0].Annotations[0].Name != "NotNull" ||
+		m5.Params[1].Type.String() != "int" || m5.Params[1].Name != "limit" ||
+		!m5.Params[1].Final {
+		t.Errorf("findAll.Params = %+v", m5.Params)
+	}
+}
+
+func TestParseConstructor(t *testing.T) {
+	src := `class Foo {
+		public Foo() {}
+		public Foo(int x) { this.x = x; }
+		Foo(String s) throws RuntimeException { /* body */ }
+	}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	methods := cu.Types[0].Methods
+	if len(methods) != 3 {
+		t.Fatalf("methods = %d", len(methods))
+	}
+	for i, m := range methods {
+		if !m.IsConstructor {
+			t.Errorf("methods[%d].IsConstructor = false, want true", i)
+		}
+		if m.Name != "Foo" {
+			t.Errorf("methods[%d].Name = %q, want Foo", i, m.Name)
+		}
+	}
+	if len(methods[2].Throws) != 1 || methods[2].Throws[0].String() != "RuntimeException" {
+		t.Errorf("ctor[2].Throws = %+v", methods[2].Throws)
+	}
+}
+
+func TestParseMethodAbstractAndDefaultModifiers(t *testing.T) {
+	src := `interface Foo {
+		void abstractMethod();
+		default String greet() { return "hi"; }
+	}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	methods := cu.Types[0].Methods
+	if len(methods) != 2 {
+		t.Fatalf("methods = %d", len(methods))
+	}
+	if methods[0].Name != "abstractMethod" {
+		t.Errorf("methods[0] = %+v", methods[0])
+	}
+	if methods[1].Name != "greet" || !sliceEq(methods[1].Modifiers, []string{"default"}) {
+		t.Errorf("methods[1] = %+v", methods[1])
+	}
+}

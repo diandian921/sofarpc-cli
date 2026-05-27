@@ -434,31 +434,278 @@ bodyStart2:
 	return decl, nil
 }
 
-// parseMethodOrField stub for Task 6:Task 7/8 才解析真正 method/field 结构。
-// Task 6 阶段先用 balance skip 占位,确保 member dispatch 走得通,member 计数为 0。
+// parseMethodOrField 解析 type body 中的一个 method / field / ctor。
+//
+// 流程:
+//
+//	1. optional declared type params(generic method `<T> T foo(...)`)
+//	2. 看是否 ctor:next token 是 Ident 且 value == owner.Name 且 peekN(1) == `(`
+//	   → 直接走 method path,ReturnType 为空,IsConstructor = true
+//	3. 否则:parseTypeRef → ReturnType
+//	4. 接 Ident(member 名)
+//	5. 若 peek 是 `(` → method;否则 → field(可能 multi-decl)
+//
+// 返回 (method, fields, err):method 与 fields 互斥,但有可能两者都是 nil
+// (例如 `;` 单独占位但已被 parseTypeBody 提前剥掉)。
 func parseMethodOrField(c *cursor, pre preamble, owner *TypeDecl) (*MethodDecl, []FieldDecl, error) {
+	tparams, err := parseTypeParams(c)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// ctor 快路径:Ident(owner.Name) + `(`
+	if tok := c.peek(); tok.Kind == TokenIdent && tok.Value == owner.Name && c.peekN(1).Kind == TokenLParen {
+		ctor, err := parseConstructorDecl(c, pre, tparams)
+		if err != nil {
+			return nil, nil, err
+		}
+		return ctor, nil, nil
+	}
+
+	startPos := c.pos()
+	retType, err := parseTypeRef(c)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	nameTok, err := expectIdentLike(c, "method or field name")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if c.peek().Kind == TokenLParen {
+		method, err := finishMethodDecl(c, pre, tparams, retType, nameTok.Value, startPos)
+		if err != nil {
+			return nil, nil, err
+		}
+		return &method, nil, nil
+	}
+
+	// field — Task 8 接入完整 multi-decl 逻辑;Task 7 先返回单字段(无 multi-decl 时正常 work)
+	fields, err := finishFieldDecl(c, pre, retType, nameTok.Value, startPos)
+	if err != nil {
+		return nil, nil, err
+	}
+	return nil, fields, nil
+}
+
+func parseConstructorDecl(c *cursor, pre preamble, tparams []TypeParam) (*MethodDecl, error) {
+	startPos := c.pos()
+	nameTok, err := expectIdentLike(c, "ctor name")
+	if err != nil {
+		return nil, err
+	}
+	method := MethodDecl{
+		Modifiers:     pre.Modifiers,
+		Annotations:   pre.Annotations,
+		Javadoc:       pre.Javadoc,
+		TypeParams:    tparams,
+		Name:          nameTok.Value,
+		IsConstructor: true,
+		Pos:           startPos,
+	}
+	params, err := parseParamList(c)
+	if err != nil {
+		return nil, err
+	}
+	method.Params = params
+	if c.matchKeyword("throws") {
+		refs, err := parseTypeRefList(c)
+		if err != nil {
+			return nil, err
+		}
+		method.Throws = refs
+	}
+	// ctor body 必有 `{ ... }`,skip
+	if c.peek().Kind == TokenLBrace {
+		if err := c.skipBalanced(TokenLBrace, TokenRBrace); err != nil {
+			return nil, err
+		}
+	} else if c.peek().Kind == TokenSemicolon {
+		c.consume()
+	} else {
+		return nil, parseError(c.pos(), "ctor missing body or `;`")
+	}
+	return &method, nil
+}
+
+func finishMethodDecl(c *cursor, pre preamble, tparams []TypeParam, retType TypeRef, name string, startPos Position) (MethodDecl, error) {
+	method := MethodDecl{
+		Modifiers:   pre.Modifiers,
+		Annotations: pre.Annotations,
+		Javadoc:     pre.Javadoc,
+		TypeParams:  tparams,
+		ReturnType:  retType,
+		Name:        name,
+		Pos:         startPos,
+	}
+	params, err := parseParamList(c)
+	if err != nil {
+		return method, err
+	}
+	method.Params = params
+
+	// C-style return-type array suffix:`int foo()[]` 形态。 JLS 允许,parser 容错。
+	// 把它累加到 ReturnType.ArrayDims。
+	if c.peek().Kind == TokenLBracket {
+		extra := readArrayDims(c)
+		method.ReturnType.ArrayDims += extra
+	}
+
+	if c.matchKeyword("throws") {
+		refs, err := parseTypeRefList(c)
+		if err != nil {
+			return method, err
+		}
+		method.Throws = refs
+	}
+
+	// annotation type `default <expr>` 在 Task 9 完整处理。 这里只识别 method body 或 `;`。
+	switch c.peek().Kind {
+	case TokenLBrace:
+		if err := c.skipBalanced(TokenLBrace, TokenRBrace); err != nil {
+			return method, err
+		}
+	case TokenSemicolon:
+		c.consume()
+	default:
+		// 容错:可能是 annotation `default literal;`,Task 9 替换
+		if c.peek().Kind == TokenKeyword && c.peek().Value == "default" {
+			if !c.skipUntil(TokenSemicolon) {
+				return method, parseError(c.pos(), "annotation method `default` missing trailing `;`")
+			}
+			c.consume()
+			return method, nil
+		}
+		return method, parseError(c.pos(), "method %s missing body or `;`, got %s %q", name, c.peek().Kind, c.peek().Value)
+	}
+	return method, nil
+}
+
+// parseParamList 解析 `( param, param, ... )`。 必须以 `(` 开头,以 `)` 结尾。
+// 允许空 list。 支持 varargs(`T... name`)。
+func parseParamList(c *cursor) ([]ParamDecl, error) {
+	if _, err := c.expect(TokenLParen, "("); err != nil {
+		return nil, err
+	}
+	var params []ParamDecl
+	if c.peek().Kind == TokenRParen {
+		c.consume()
+		return params, nil
+	}
+	for {
+		p, err := parseSingleParam(c)
+		if err != nil {
+			return nil, err
+		}
+		params = append(params, p)
+		if c.match(TokenComma) {
+			continue
+		}
+		break
+	}
+	if _, err := c.expect(TokenRParen, ")"); err != nil {
+		return nil, err
+	}
+	return params, nil
+}
+
+func parseSingleParam(c *cursor) (ParamDecl, error) {
+	p := ParamDecl{}
+	// annotations + final
+	for {
+		tok := c.peek()
+		if tok.Kind == TokenAt {
+			ann, err := parseAnnotation(c)
+			if err != nil {
+				return p, err
+			}
+			p.Annotations = append(p.Annotations, ann)
+			continue
+		}
+		if tok.Kind == TokenKeyword && tok.Value == "final" {
+			c.consume()
+			p.Final = true
+			continue
+		}
+		break
+	}
+	// type
+	t, err := parseTypeRef(c)
+	if err != nil {
+		return p, err
+	}
+	// varargs:`T... name`(C.1 lexer 已经把 `...` 合成 TokenEllipsis)
+	if c.match(TokenEllipsis) {
+		p.IsVarargs = true
+		t.ArrayDims++
+	}
+	p.Type = t
+	// name
+	nameTok, err := expectIdentLike(c, "parameter name")
+	if err != nil {
+		return p, err
+	}
+	p.Name = nameTok.Value
+	// C-style array dim 在 name 之后:`int a[]` → 把 dim 加回 Type
+	if c.peek().Kind == TokenLBracket {
+		extra := readArrayDims(c)
+		p.Type.ArrayDims += extra
+	}
+	return p, nil
+}
+
+// finishFieldDecl Task 7 占位:只处理单字段 + skip initializer + 吃 `;`。
+// Task 8 替换为完整 multi-decl 处理。
+func finishFieldDecl(c *cursor, pre preamble, typ TypeRef, name string, startPos Position) ([]FieldDecl, error) {
+	field := FieldDecl{
+		Modifiers:   pre.Modifiers,
+		Annotations: pre.Annotations,
+		Javadoc:     pre.Javadoc,
+		Type:        typ,
+		Name:        name,
+		Pos:         startPos,
+	}
+	// C-style array dim on name
+	if c.peek().Kind == TokenLBracket {
+		field.Type.ArrayDims += readArrayDims(c)
+	}
+	if c.match(TokenAssign) {
+		if err := skipFieldInitializer(c); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := c.expect(TokenSemicolon, ";"); err != nil {
+		return nil, err
+	}
+	return []FieldDecl{field}, nil
+}
+
+// skipFieldInitializer 从 `=` 之后(已消费)跳到下一个顶层 `;` 或 `,`(留给 caller 看)。
+// 内部正确平衡 () [] {}。 不消费目标分隔符。
+func skipFieldInitializer(c *cursor) error {
 	for !c.eof() {
 		tok := c.peek()
 		switch tok.Kind {
+		case TokenSemicolon, TokenComma:
+			return nil
 		case TokenLParen:
 			if err := c.skipBalanced(TokenLParen, TokenRParen); err != nil {
-				return nil, nil, err
+				return err
+			}
+		case TokenLBracket:
+			if err := c.skipBalanced(TokenLBracket, TokenRBracket); err != nil {
+				return err
 			}
 		case TokenLBrace:
 			if err := c.skipBalanced(TokenLBrace, TokenRBrace); err != nil {
-				return nil, nil, err
+				return err
 			}
-			return nil, nil, nil
-		case TokenSemicolon:
-			c.consume()
-			return nil, nil, nil
-		case TokenRBrace:
-			return nil, nil, nil
 		default:
 			c.consume()
 		}
 	}
-	return nil, nil, nil
+	return parseError(c.pos(), "field initializer hit EOF without `;`")
 }
 
 // parseRecordHeader Task 9 才实现,Task 5 阶段只 brace-skip 占位以让 record decl 整体可解析。
