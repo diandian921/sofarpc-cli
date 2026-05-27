@@ -1,13 +1,10 @@
 package schema
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -77,15 +74,6 @@ type Index struct {
 	Methods []Method
 	Types   map[string]TypeSchema
 }
-
-var (
-	packageRE   = regexp.MustCompile(`(?m)^\s*package\s+([A-Za-z_][\w.]*)\s*;`)
-	importRE    = regexp.MustCompile(`(?m)^\s*import\s+([A-Za-z_][\w.]*\.[A-Za-z_]\w*)\s*;`)
-	typeKindRE  = regexp.MustCompile(`(?m)^\s*(?:public\s+)?(?:abstract\s+)?(?:final\s+)?(interface|class|enum|record)\s+([A-Za-z_]\w*)\b`)
-	methodRE    = regexp.MustCompile(`(?s)(/\*\*.*?\*/)?\s*(?:@[A-Za-z_][\w.]*\s*(?:\([^;{}]*?\))?\s*)*(?:public\s+)?(?:default\s+)?(?:static\s+)?(?:<[^;{}()]+>\s*)?([A-Za-z_][\w.<>\[\]?,\s]*?)\s+([A-Za-z_]\w*)\s*\(([^{};]*)\)\s*(?:;|\{)`)
-	fieldRE     = regexp.MustCompile(`(?m)^\s*(?:@[A-Za-z_][\w.]*\s*(?:\([^;{}]*?\))?\s*)*(?:private|protected|public)\s+(?:static\s+)?(?:final\s+)?([A-Za-z_][\w.<>\[\]?,\s]*)\s+([A-Za-z_]\w*)\s*(?:=|;)`)
-	enumValueRE = regexp.MustCompile(`(?s)\benum\s+[A-Za-z_]\w*\s*\{(.*?)\}`)
-)
 
 // BuildIndex 走 2 pass:
 //   Pass 1: walk + parse 所有 .java 文件,收集全工程 type FQN 集合
@@ -342,156 +330,6 @@ func Tokenize(s string) []string {
 	return out
 }
 
-func parseJavaFile(path string, prefixes []string) ([]Method, map[string]TypeSchema) {
-	bodyBytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, nil
-	}
-	body := string(bodyBytes)
-	pkg := firstSubmatch(packageRE, body)
-	imports := parseImports(body)
-	kind, typeName := serviceTypeKind(body)
-	if pkg == "" || typeName == "" {
-		return nil, nil
-	}
-	fqn := pkg + "." + typeName
-	hash := sha256.Sum256(bodyBytes)
-	sourceHash := hex.EncodeToString(hash[:])[:16]
-	var methods []Method
-	if kind == "interface" {
-		methods = parseMethods(body, pkg, fqn, typeName, path, sourceHash, prefixes, imports)
-	}
-	types := parseTypes(body, pkg, typeName, path, imports)
-	return methods, types
-}
-
-func parseMethods(body, pkg, service, iface, path, sourceHash string, prefixes []string, imports map[string]string) []Method {
-	matches := methodRE.FindAllStringSubmatch(body, -1)
-	var methods []Method
-	for _, m := range matches {
-		if len(m) != 5 {
-			continue
-		}
-		name := strings.TrimSpace(m[3])
-		if isControlKeyword(name) {
-			continue
-		}
-		method := Method{
-			Service:     service,
-			Interface:   iface,
-			Package:     pkg,
-			Method:      name,
-			ReturnType:  cleanType(m[2]),
-			Parameters:  parseParameters(m[4]),
-			Summary:     cleanJavadoc(m[1]),
-			SourceFile:  path,
-			SourceHash:  sourceHash,
-			OutOfPrefix: !matchesAnyPrefix(service, prefixes),
-			Imports:     imports,
-		}
-		methods = append(methods, method)
-	}
-	return methods
-}
-
-func parseTypes(body, pkg, typeName, path string, imports map[string]string) map[string]TypeSchema {
-	out := map[string]TypeSchema{}
-	kindMatches := typeKindRE.FindAllStringSubmatch(body, -1)
-	for _, m := range kindMatches {
-		if len(m) != 3 {
-			continue
-		}
-		fqn := pkg + "." + m[2]
-		schema := TypeSchema{Type: fqn, Kind: m[1], SourceFile: path, Imports: imports}
-		switch m[1] {
-		case "enum":
-			schema.EnumValues = parseEnumValues(body)
-		case "record":
-			schema.Fields = parseRecordFields(body, m[2])
-		default:
-			schema.Fields = parseFields(body)
-		}
-		out[fqn] = schema
-	}
-	if _, ok := out[pkg+"."+typeName]; !ok {
-		out[pkg+"."+typeName] = TypeSchema{Type: pkg + "." + typeName, Kind: "class", Fields: parseFields(body), SourceFile: path, Imports: imports}
-	}
-	return out
-}
-
-func parseParameters(raw string) []Parameter {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	parts := splitCommaAware(raw)
-	params := make([]Parameter, 0, len(parts))
-	for i, part := range parts {
-		part = strings.TrimSpace(stripAnnotations(part))
-		fields := strings.Fields(part)
-		if len(fields) == 0 {
-			continue
-		}
-		name := fmt.Sprintf("arg%d", i)
-		typ := strings.Join(fields, " ")
-		if len(fields) >= 2 {
-			name = strings.TrimPrefix(fields[len(fields)-1], "...")
-			typ = strings.Join(fields[:len(fields)-1], " ")
-		}
-		params = append(params, Parameter{Name: name, Type: cleanType(typ)})
-	}
-	return params
-}
-
-func parseFields(body string) []Field {
-	matches := fieldRE.FindAllStringSubmatch(body, -1)
-	var fields []Field
-	for _, m := range matches {
-		if len(m) != 3 || isControlKeyword(m[2]) {
-			continue
-		}
-		fields = append(fields, Field{Name: m[2], Type: cleanType(m[1])})
-	}
-	return fields
-}
-
-func parseRecordFields(body string, typeName string) []Field {
-	re := regexp.MustCompile(`(?s)\brecord\s+` + regexp.QuoteMeta(typeName) + `\s*\((.*?)\)`)
-	m := re.FindStringSubmatch(body)
-	if len(m) != 2 {
-		return nil
-	}
-	params := parseParameters(m[1])
-	fields := make([]Field, 0, len(params))
-	for _, p := range params {
-		fields = append(fields, Field{Name: p.Name, Type: p.Type})
-	}
-	return fields
-}
-
-func parseEnumValues(body string) []string {
-	m := enumValueRE.FindStringSubmatch(body)
-	if len(m) != 2 {
-		return nil
-	}
-	beforeSemicolon := strings.Split(m[1], ";")[0]
-	parts := splitCommaAware(beforeSemicolon)
-	values := make([]string, 0, len(parts))
-	for _, part := range parts {
-		p := strings.TrimSpace(part)
-		if p == "" {
-			continue
-		}
-		if idx := strings.Index(p, "("); idx >= 0 {
-			p = p[:idx]
-		}
-		if p != "" {
-			values = append(values, p)
-		}
-	}
-	return values
-}
-
 func resolveType(idx *Index, typ string, pkg string, imports map[string]string) (TypeSchema, bool) {
 	base := eraseGeneric(cleanType(typ))
 	if isBuiltin(base) {
@@ -514,21 +352,6 @@ func resolveType(idx *Index, typ string, pkg string, imports map[string]string) 
 		return TypeSchema{Type: base, Kind: "external", Unresolved: true}, true
 	}
 	return TypeSchema{Type: base, Kind: "external", Unresolved: true}, true
-}
-
-func parseImports(body string) map[string]string {
-	out := map[string]string{}
-	matches := importRE.FindAllStringSubmatch(body, -1)
-	for _, m := range matches {
-		if len(m) != 2 {
-			continue
-		}
-		fqn := m[1]
-		if lastDot := strings.LastIndex(fqn, "."); lastDot >= 0 {
-			out[fqn[lastDot+1:]] = fqn
-		}
-	}
-	return out
 }
 
 func referencedTypes(typ string) []string {
@@ -603,6 +426,9 @@ func splitIdentifier(s string) []string {
 	return out
 }
 
+// cleanType / eraseGeneric / splitCommaAware 三个 helper 还被 resolveType /
+// referencedTypes 用着(它们处理 schema 内部已经组装好的 TypeRef.String() 字符串,
+// 不再用于解析源码)。 等 C.3 后续 refactor 把 resolveType 完全迁到 javaparser 时再删。
 func splitCommaAware(raw string) []string {
 	var parts []string
 	depth := 0
@@ -639,93 +465,6 @@ func eraseGeneric(s string) string {
 		return strings.TrimSpace(s[:idx])
 	}
 	return strings.TrimSuffix(s, "[]")
-}
-
-func cleanJavadoc(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if idx := strings.LastIndex(raw, "/**"); idx > 0 {
-		raw = raw[idx:]
-	}
-	raw = strings.TrimPrefix(raw, "/**")
-	raw = strings.TrimSuffix(raw, "*/")
-	lines := strings.Split(raw, "\n")
-	var parts []string
-	for _, line := range lines {
-		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "*"))
-		if line != "" && !strings.HasPrefix(line, "@") {
-			parts = append(parts, line)
-		}
-	}
-	return strings.Join(parts, " ")
-}
-
-func stripAnnotations(s string) string {
-	var out strings.Builder
-	for i := 0; i < len(s); {
-		if s[i] != '@' {
-			out.WriteByte(s[i])
-			i++
-			continue
-		}
-		i++
-		for i < len(s) && isJavaIdentByte(s[i]) {
-			i++
-		}
-		for i < len(s) && unicode.IsSpace(rune(s[i])) {
-			i++
-		}
-		if i < len(s) && s[i] == '(' {
-			depth := 0
-			for i < len(s) {
-				switch s[i] {
-				case '(':
-					depth++
-				case ')':
-					depth--
-				}
-				i++
-				if depth == 0 {
-					break
-				}
-			}
-		}
-		for i < len(s) && unicode.IsSpace(rune(s[i])) {
-			i++
-		}
-	}
-	return strings.Join(strings.Fields(out.String()), " ")
-}
-
-func isJavaIdentByte(b byte) bool {
-	return b == '_' || b == '$' || b == '.' ||
-		(b >= 'A' && b <= 'Z') ||
-		(b >= 'a' && b <= 'z') ||
-		(b >= '0' && b <= '9')
-}
-
-func firstSubmatch(re *regexp.Regexp, s string) string {
-	m := re.FindStringSubmatch(s)
-	if len(m) < 2 {
-		return ""
-	}
-	return m[1]
-}
-
-func serviceTypeKind(s string) (string, string) {
-	matches := typeKindRE.FindAllStringSubmatch(s, -1)
-	if len(matches) == 0 {
-		return "", ""
-	}
-	for _, m := range matches {
-		if len(m) >= 3 && m[1] == "interface" {
-			return m[1], m[2]
-		}
-	}
-	m := matches[0]
-	if len(m) < 3 {
-		return "", ""
-	}
-	return m[1], m[2]
 }
 
 func matchesAnyPrefix(service string, prefixes []string) bool {

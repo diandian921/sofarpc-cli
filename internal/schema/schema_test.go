@@ -292,20 +292,6 @@ func TestShouldIgnoreDirOnlyChecksSinglePathSegment(t *testing.T) {
 	}
 }
 
-func TestParseFieldsIgnoresReturnStatements(t *testing.T) {
-	fields := parseFields(`
-public class OperationResult<T> {
-    private T data;
-    public T getData() {
-        return data;
-    }
-}
-`)
-	if len(fields) != 1 || fields[0].Name != "data" {
-		t.Fatalf("fields = %#v", fields)
-	}
-}
-
 func mkdir(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(path, 0o755); err != nil {
