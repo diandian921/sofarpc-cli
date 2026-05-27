@@ -399,7 +399,7 @@ func (w *writer) writeJavaScalar(javaType string, v interface{}) (bool, error) {
 		return true, w.writeTypedObject(typedObject{name: base, fields: map[string]interface{}{"value": s}})
 	case "java.math.BigInteger":
 		return true, fmt.Errorf("java.math.BigInteger encoding is not supported")
-	case "java.util.Date", "java.sql.Date", "java.sql.Time", "java.sql.Timestamp":
+	case "java.util.Date":
 		n, ok := int64Value(v)
 		if !ok {
 			return true, fmt.Errorf("cannot encode %T as %s (expected epoch millis as number)", v, base)
@@ -413,7 +413,12 @@ func (w *writer) writeJavaScalar(javaType string, v interface{}) (bool, error) {
 
 // writeDate 写 Hessian Date(tag 'd' + 8 bytes big-endian int64 epoch millis)。
 // 对齐 hessian_reader.go:129 (case tag == 'L' || tag == 'd' → int64)。
-// 用于 java.util.Date / java.sql.Date / Time / Timestamp。
+//
+// **只用于 java.util.Date**。 codex review (Date fix round):`java.sql.Date` /
+// `java.sql.Time` / `java.sql.Timestamp` 虽然继承自 java.util.Date,但 Java Hessian
+// 的 SqlDateDeserializer 反序列化 `d` tag 得到的 java.util.Date 实例时会 type-reject。
+// SQL 子类型需要 wrapper-class 编码(类似 BigDecimal:typedObject{name: FQN, fields: {value}}),
+// 留作 follow-up,等真有业务用到时再支持。
 func (w *writer) writeDate(epochMillis int64) {
 	w.buf = append(w.buf, 'd')
 	w.writeUint64(uint64(epochMillis))

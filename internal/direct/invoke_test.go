@@ -369,8 +369,6 @@ func TestWriteJavaDateRoundTrip(t *testing.T) {
 		{"util.Date_int", "java.util.Date", 1700000000000, 1700000000000},
 		{"util.Date_zero", "java.util.Date", int64(0), 0},
 		{"util.Date_jsonnumber", "java.util.Date", json.Number("1700000000000"), 1700000000000},
-		{"sql.Date", "java.sql.Date", int64(123456789), 123456789},
-		{"sql.Timestamp", "java.sql.Timestamp", int64(987654321), 987654321},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
