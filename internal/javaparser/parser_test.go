@@ -777,3 +777,67 @@ func TestParseMethodAbstractAndDefaultModifiers(t *testing.T) {
 		t.Errorf("methods[1] = %+v", methods[1])
 	}
 }
+
+func TestParseFieldSingleAndMulti(t *testing.T) {
+	src := `class Foo {
+		private int x;
+		public String name = "default";
+		protected final long a = 1L, b, c = 3L;
+		String[] xs;
+		int matrix[][];
+		private static final java.util.List<String> NAMES = java.util.Arrays.asList("a", "b");
+		@JsonProperty("display") private String display;
+	}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	fields := cu.Types[0].Fields
+	if len(fields) != 9 {
+		t.Fatalf("fields len = %d, want 9: %+v", len(fields), fields)
+	}
+
+	for i := 2; i <= 4; i++ {
+		if !sliceEq(fields[i].Modifiers, []string{"protected", "final"}) {
+			t.Errorf("fields[%d].Modifiers = %v", i, fields[i].Modifiers)
+		}
+		if fields[i].Type.String() != "long" {
+			t.Errorf("fields[%d].Type = %q", i, fields[i].Type.String())
+		}
+	}
+	if fields[2].Name != "a" || fields[3].Name != "b" || fields[4].Name != "c" {
+		t.Errorf("multi-decl names = %s/%s/%s", fields[2].Name, fields[3].Name, fields[4].Name)
+	}
+
+	if fields[5].Type.String() != "String[]" {
+		t.Errorf("xs.Type = %q", fields[5].Type.String())
+	}
+	if fields[6].Type.String() != "int[][]" {
+		t.Errorf("matrix.Type = %q (C-style dims)", fields[6].Type.String())
+	}
+
+	if fields[7].Name != "NAMES" || fields[7].Type.String() != "java.util.List<String>" {
+		t.Errorf("NAMES = %+v", fields[7])
+	}
+
+	if len(fields[8].Annotations) != 1 || fields[8].Annotations[0].Name != "JsonProperty" {
+		t.Errorf("display.Annotations = %+v", fields[8].Annotations)
+	}
+}
+
+func TestParseFieldInitializerComplexSkip(t *testing.T) {
+	src := `class Foo {
+		private Runnable r = () -> { System.out.println("hi"); };
+		private int[] xs = new int[]{1, 2, 3};
+		private String s = "with semicolon ; inside";
+		private int x = 1;
+	}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	fields := cu.Types[0].Fields
+	if len(fields) != 4 {
+		t.Fatalf("fields = %d, want 4 (initializer skip 不应误吃 ;)", len(fields))
+	}
+}

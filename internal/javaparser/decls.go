@@ -655,30 +655,57 @@ func parseSingleParam(c *cursor) (ParamDecl, error) {
 	return p, nil
 }
 
-// finishFieldDecl Task 7 占位:只处理单字段 + skip initializer + 吃 `;`。
-// Task 8 替换为完整 multi-decl 处理。
-func finishFieldDecl(c *cursor, pre preamble, typ TypeRef, name string, startPos Position) ([]FieldDecl, error) {
-	field := FieldDecl{
-		Modifiers:   pre.Modifiers,
-		Annotations: pre.Annotations,
-		Javadoc:     pre.Javadoc,
-		Type:        typ,
-		Name:        name,
-		Pos:         startPos,
-	}
-	// C-style array dim on name
+// finishFieldDecl 处理一个 field declaration,允许 multi-decl(`int a, b = 1, c[];`)。
+// 输入:已经消费完 type 和 第一个 name,startPos 是 type 位置。
+// 输出:展开成多个 FieldDecl,每个 share modifiers/annotations/javadoc/type(type 可能因 per-name `[]` 调整 ArrayDims)。
+func finishFieldDecl(c *cursor, pre preamble, typ TypeRef, firstName string, startPos Position) ([]FieldDecl, error) {
+	var fields []FieldDecl
+	curName := firstName
+	curType := typ
 	if c.peek().Kind == TokenLBracket {
-		field.Type.ArrayDims += readArrayDims(c)
+		curType.ArrayDims += readArrayDims(c)
 	}
 	if c.match(TokenAssign) {
 		if err := skipFieldInitializer(c); err != nil {
 			return nil, err
 		}
 	}
+	fields = append(fields, FieldDecl{
+		Modifiers:   pre.Modifiers,
+		Annotations: pre.Annotations,
+		Javadoc:     pre.Javadoc,
+		Type:        curType,
+		Name:        curName,
+		Pos:         startPos,
+	})
+	for c.match(TokenComma) {
+		curType = typ
+		nameTok, err := expectIdentLike(c, "field name in multi-declaration")
+		if err != nil {
+			return nil, err
+		}
+		curName = nameTok.Value
+		if c.peek().Kind == TokenLBracket {
+			curType.ArrayDims += readArrayDims(c)
+		}
+		if c.match(TokenAssign) {
+			if err := skipFieldInitializer(c); err != nil {
+				return nil, err
+			}
+		}
+		fields = append(fields, FieldDecl{
+			Modifiers:   pre.Modifiers,
+			Annotations: pre.Annotations,
+			Javadoc:     pre.Javadoc,
+			Type:        curType,
+			Name:        curName,
+			Pos:         startPos,
+		})
+	}
 	if _, err := c.expect(TokenSemicolon, ";"); err != nil {
 		return nil, err
 	}
-	return []FieldDecl{field}, nil
+	return fields, nil
 }
 
 // skipFieldInitializer 从 `=` 之后(已消费)跳到下一个顶层 `;` 或 `,`(留给 caller 看)。
