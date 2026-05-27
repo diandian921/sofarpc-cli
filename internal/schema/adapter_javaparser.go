@@ -58,11 +58,129 @@ func adaptCompilationUnit(cu *javaparser.CompilationUnit, sourcePath string, bod
 		out[fqn] = TypeSchema{Type: fqn, Kind: "class", SourceFile: sourcePath, Imports: imports}
 	}
 
-	// methods 只在 service 是 interface 时生成 —— Task 4 接入,Task 3 阶段先空
+	// methods 只在 service 是 interface 时生成(对齐既有 parseJavaFile 行为)
 	var methods []Method
-	_ = sourceHash
-	_ = prefixes
+	if service.Kind == javaparser.TypeKindInterface {
+		methods = emitMethods(service, pkg, fqn, sourcePath, sourceHash, imports, prefixes)
+	}
 	return methods, out
+}
+
+// emitMethods 把 interface 的 MethodDecl 转成 schema.Method 切片。
+// 与老 parseMethods 行为对齐:
+//   - 跳过 ctor(IsConstructor == true)
+//   - Summary 取 MethodDecl.Javadoc(C.2 parsePreamble 已经 cleanJavadocText,直接用)
+//   - Service = fqn(interface 全限定名);Interface = service.Name(短名)
+//   - OutOfPrefix 用 prefixes 判断
+//   - Imports 在文件级 share(每个 method 都引用同一份)
+//   - TypeParams = service.TypeParams + MethodDecl.TypeParams 拼接(codex review #7):
+//     `interface Facade<T> { T get(); }` 里 method 没有自己的 type params,但 T 是 service
+//     级 type variable,rpc_types.go 必须能精确识别 → method.TypeParams 要把 service 的也带上
+//   - ReturnType / Parameters[i].Type 走 typeRefToString(等同 TypeRef.String() 但留扩展点)
+func emitMethods(service *javaparser.TypeDecl, pkg, fqn, sourcePath, sourceHash string, imports map[string]string, prefixes []string) []Method {
+	if len(service.Methods) == 0 {
+		return nil
+	}
+	serviceTypeParams := typeParamNames(service.TypeParams)
+	out := make([]Method, 0, len(service.Methods))
+	for _, m := range service.Methods {
+		if m.IsConstructor {
+			continue
+		}
+		methodTypeParams := mergeTypeParams(serviceTypeParams, typeParamNames(m.TypeParams))
+		method := Method{
+			Service:     fqn,
+			Interface:   service.Name,
+			Package:     pkg,
+			Method:      m.Name,
+			ReturnType:  typeRefToString(m.ReturnType),
+			Parameters:  buildParameters(m.Params),
+			Summary:     m.Javadoc,
+			SourceFile:  sourcePath,
+			SourceHash:  sourceHash,
+			OutOfPrefix: !matchesAnyPrefix(fqn, prefixes),
+			Imports:     imports,
+			TypeParams:  methodTypeParams,
+		}
+		out = append(out, method)
+	}
+	return out
+}
+
+// mergeTypeParams 把 service-level + method-level type param 名拼成去重 slice。
+// 顺序:service 在前,method 在后(method 可能 shadow,但都视为 type variable,顺序只影响展示)。
+// 都为 nil / 空时 return nil(JSON omitempty)。
+func mergeTypeParams(serviceParams, methodParams []string) []string {
+	if len(serviceParams) == 0 && len(methodParams) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(serviceParams)+len(methodParams))
+	out := make([]string, 0, len(serviceParams)+len(methodParams))
+	for _, p := range serviceParams {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	for _, p := range methodParams {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// buildParameters 把 javaparser.ParamDecl 转成 schema.Parameter 切片。
+// 类型用 typeRefToString;名字 fallback `arg0` / `arg1`(对齐老 parseParameters 在缺名时的 fallback)。
+func buildParameters(params []javaparser.ParamDecl) []Parameter {
+	if len(params) == 0 {
+		return nil
+	}
+	out := make([]Parameter, 0, len(params))
+	for i, p := range params {
+		name := p.Name
+		if name == "" {
+			name = fallbackParamName(i)
+		}
+		out = append(out, Parameter{Name: name, Type: typeRefToString(p.Type)})
+	}
+	return out
+}
+
+func fallbackParamName(i int) string {
+	return "arg" + itoa(i)
+}
+
+// itoa 是 strconv.Itoa 的简化别名 —— 避免 adapter 文件再 import strconv,只此一处。
+// 极少出现 i > 9 的 facade method,简单实现即可。
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	neg := false
+	if i < 0 {
+		neg = true
+		i = -i
+	}
+	var buf [20]byte
+	pos := len(buf)
+	for i > 0 {
+		pos--
+		buf[pos] = byte('0' + i%10)
+		i /= 10
+	}
+	if neg {
+		pos--
+		buf[pos] = '-'
+	}
+	return string(buf[pos:])
+}
+
+// typeRefToString 是 TypeRef.String() 的轻包装,留扩展点(C.3 之后真要做 nested type
+// FQN 时,在这里集中改)。
+func typeRefToString(t javaparser.TypeRef) string {
+	return t.String()
 }
 
 // pickServiceType 找第一个 interface(老 serviceTypeKind 行为),没 interface 用第一个顶层 type。

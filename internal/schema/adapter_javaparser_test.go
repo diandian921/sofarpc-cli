@@ -267,3 +267,153 @@ public class Real {}`)
 		t.Errorf("Real should be present: %v", types)
 	}
 }
+
+func TestAdaptInterfaceMethodsBasic(t *testing.T) {
+	src := []byte(`package com.x.facade;
+
+import com.x.dto.AssetDTO;
+import com.x.dto.AssetQuery;
+import java.util.List;
+import java.util.Map;
+
+public interface AssetFacade {
+    /** 查询资产 */
+    List<AssetDTO> query(AssetQuery req);
+    Map<String, List<Long>> findFilters(String key, int limit);
+}`)
+	cu, _ := javaparser.Parse(src, "AssetFacade.java")
+	methods, _ := adaptCompilationUnit(cu, "AssetFacade.java", src, []string{"com.x.facade."}, nil)
+	if len(methods) != 2 {
+		t.Fatalf("methods = %v", methods)
+	}
+	m0 := methods[0]
+	if m0.Method != "query" || m0.ReturnType != "List<AssetDTO>" {
+		t.Errorf("query method = %+v", m0)
+	}
+	if len(m0.Parameters) != 1 || m0.Parameters[0].Name != "req" || m0.Parameters[0].Type != "AssetQuery" {
+		t.Errorf("query params = %+v", m0.Parameters)
+	}
+	if m0.Summary != "查询资产" {
+		t.Errorf("query summary = %q", m0.Summary)
+	}
+	if m0.Service != "com.x.facade.AssetFacade" || m0.Interface != "AssetFacade" || m0.Package != "com.x.facade" {
+		t.Errorf("metadata = %+v", m0)
+	}
+	if m0.OutOfPrefix {
+		t.Errorf("OutOfPrefix should be false for matching prefix")
+	}
+	if m0.SourceHash == "" || len(m0.SourceHash) != 16 {
+		t.Errorf("SourceHash = %q, want 16-char hex", m0.SourceHash)
+	}
+	if m0.Imports["AssetDTO"] != "com.x.dto.AssetDTO" {
+		t.Errorf("imports[AssetDTO] = %q", m0.Imports["AssetDTO"])
+	}
+
+	m1 := methods[1]
+	if m1.ReturnType != "Map<String, List<Long>>" {
+		t.Errorf("findFilters.ReturnType = %q", m1.ReturnType)
+	}
+	if len(m1.Parameters) != 2 || m1.Parameters[1].Name != "limit" || m1.Parameters[1].Type != "int" {
+		t.Errorf("findFilters params = %+v", m1.Parameters)
+	}
+}
+
+func TestAdaptMethodTypeParams(t *testing.T) {
+	src := []byte(`package p;
+public interface Foo {
+	<T, K extends Number> Page<T> query(T req, K key);
+}`)
+	cu, _ := javaparser.Parse(src, "Foo.java")
+	methods, _ := adaptCompilationUnit(cu, "Foo.java", src, nil, nil)
+	if len(methods) != 1 {
+		t.Fatalf("methods = %v", methods)
+	}
+	if len(methods[0].TypeParams) != 2 || methods[0].TypeParams[0] != "T" || methods[0].TypeParams[1] != "K" {
+		t.Errorf("TypeParams = %v, want [T, K]", methods[0].TypeParams)
+	}
+}
+
+func TestAdaptMethodInheritsServiceTypeParams(t *testing.T) {
+	src := []byte(`package p;
+public interface Facade<T, K> {
+	T get(K key);
+	<X> X cast(K input);
+}`)
+	cu, _ := javaparser.Parse(src, "Facade.java")
+	methods, _ := adaptCompilationUnit(cu, "Facade.java", src, nil, nil)
+	if len(methods) != 2 {
+		t.Fatalf("methods = %v", methods)
+	}
+	if !sliceEq(methods[0].TypeParams, []string{"T", "K"}) {
+		t.Errorf("get.TypeParams = %v, want [T, K] (inherited from service)", methods[0].TypeParams)
+	}
+	if !sliceEq(methods[1].TypeParams, []string{"T", "K", "X"}) {
+		t.Errorf("cast.TypeParams = %v, want [T, K, X] (service ++ method)", methods[1].TypeParams)
+	}
+}
+
+func TestMergeTypeParamsDedup(t *testing.T) {
+	got := mergeTypeParams([]string{"T", "K"}, []string{"T", "X"})
+	want := []string{"T", "K", "X"}
+	if !sliceEq(got, want) {
+		t.Errorf("mergeTypeParams dedup = %v, want %v", got, want)
+	}
+	if mergeTypeParams(nil, nil) != nil {
+		t.Errorf("nil+nil should return nil for JSON omitempty")
+	}
+}
+
+func sliceEq(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestAdaptClassDoesNotEmitMethods(t *testing.T) {
+	src := []byte(`package p;
+public class Helper {
+	public String greet() { return "hi"; }
+}`)
+	cu, _ := javaparser.Parse(src, "Helper.java")
+	methods, types := adaptCompilationUnit(cu, "Helper.java", src, nil, nil)
+	if methods != nil {
+		t.Errorf("class methods should be nil, got %v", methods)
+	}
+	if _, ok := types["p.Helper"]; !ok {
+		t.Errorf("Helper class TypeSchema missing")
+	}
+}
+
+func TestAdaptOutOfPrefix(t *testing.T) {
+	src := []byte(`package com.other.facade;
+public interface OtherFacade {
+	void noop();
+}`)
+	cu, _ := javaparser.Parse(src, "OtherFacade.java")
+	methods, _ := adaptCompilationUnit(cu, "OtherFacade.java", src, []string{"com.x.facade."}, nil)
+	if len(methods) != 1 {
+		t.Fatalf("methods = %v", methods)
+	}
+	if !methods[0].OutOfPrefix {
+		t.Errorf("OutOfPrefix should be true for non-matching prefix")
+	}
+}
+
+func TestAdaptInterfaceMethodSkipsCtor(t *testing.T) {
+	src := []byte(`package p;
+public interface Foo {
+	String hello();
+	default boolean ping() { return true; }
+}`)
+	cu, _ := javaparser.Parse(src, "Foo.java")
+	methods, _ := adaptCompilationUnit(cu, "Foo.java", src, nil, nil)
+	if len(methods) != 2 {
+		t.Fatalf("methods = %v", methods)
+	}
+}
