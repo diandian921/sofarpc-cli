@@ -164,6 +164,112 @@ func TestParserGoldenOverloadedFacade(t *testing.T) {
 	})
 }
 
+func TestParserGoldenWildcardImport(t *testing.T) {
+	root := filepath.Join("testdata", "golden", "wildcard")
+	idx, err := BuildIndex(Project{
+		Name:            "wildcard",
+		WorkspaceRoot:   root,
+		ServicePrefixes: []string{"com.acme.wildcard.facade."},
+	})
+	if err != nil {
+		t.Fatalf("BuildIndex: %v", err)
+	}
+	desc, err := Describe(idx, "com.acme.wildcard.facade.WildcardFacade", "query")
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if len(desc.Methods) != 1 {
+		t.Fatalf("methods = %#v", desc.Methods)
+	}
+	method := desc.Methods[0]
+	if method.ReturnType != "WildResp" {
+		t.Errorf("ReturnType = %q, want WildResp", method.ReturnType)
+	}
+	if method.Parameters[0].Type != "WildReq" {
+		t.Errorf("param[0].Type = %q, want WildReq", method.Parameters[0].Type)
+	}
+	if method.Imports["WildReq"] != "com.acme.wildcard.dto.WildReq" {
+		t.Errorf("imports[WildReq] = %q, want com.acme.wildcard.dto.WildReq (wildcard expanded?)", method.Imports["WildReq"])
+	}
+	if method.Imports["WildResp"] != "com.acme.wildcard.dto.WildResp" {
+		t.Errorf("imports[WildResp] = %q, want com.acme.wildcard.dto.WildResp", method.Imports["WildResp"])
+	}
+	req := desc.Types["com.acme.wildcard.dto.WildReq"]
+	if req.Type == "" {
+		t.Fatalf("WildReq schema missing in desc.Types = %v", desc.Types)
+	}
+	assertFields(t, req, map[string]string{"key": "String", "mpCode": "Long"})
+
+	resp := desc.Types["com.acme.wildcard.dto.WildResp"]
+	if resp.Type == "" {
+		t.Fatalf("WildResp schema missing in desc.Types = %v", desc.Types)
+	}
+	assertFields(t, resp, map[string]string{"success": "boolean", "messages": "List<String>"})
+}
+
+func TestParserGoldenInnerClass(t *testing.T) {
+	root := filepath.Join("testdata", "golden", "inner")
+	idx, err := BuildIndex(Project{
+		Name:            "inner",
+		WorkspaceRoot:   root,
+		ServicePrefixes: []string{"com.acme.inner.facade."},
+	})
+	if err != nil {
+		t.Fatalf("BuildIndex: %v", err)
+	}
+	desc, err := Describe(idx, "com.acme.inner.facade.OuterFacade", "listPages")
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	method := desc.Methods[0]
+	if method.ReturnType != "List<PageResult>" {
+		t.Errorf("ReturnType = %q, want List<PageResult>", method.ReturnType)
+	}
+	if method.Parameters[0].Type != "PageQuery" {
+		t.Errorf("param.Type = %q, want PageQuery", method.Parameters[0].Type)
+	}
+	query := desc.Types["com.acme.inner.facade.PageQuery"]
+	if query.Type == "" {
+		t.Fatalf("PageQuery schema missing: %v", desc.Types)
+	}
+	assertFields(t, query, map[string]string{"mpCode": "Long", "offset": "int"})
+
+	result := desc.Types["com.acme.inner.facade.PageResult"]
+	if result.Type == "" {
+		t.Fatalf("PageResult schema missing: %v", desc.Types)
+	}
+	assertFields(t, result, map[string]string{"name": "String", "tags": "List<String>"})
+}
+
+func TestParserGoldenWildcardExpansionDoesNotPolluteUnrelatedPackages(t *testing.T) {
+	root := filepath.Join("testdata", "golden", "wildcard")
+	idx, err := BuildIndex(Project{
+		Name:            "wildcard",
+		WorkspaceRoot:   root,
+		ServicePrefixes: []string{"com.acme.wildcard.facade."},
+	})
+	if err != nil {
+		t.Fatalf("BuildIndex: %v", err)
+	}
+	desc, _ := Describe(idx, "com.acme.wildcard.facade.WildcardFacade", "query")
+	method := desc.Methods[0]
+	if len(method.Imports) != 3 {
+		t.Fatalf("imports = %v, want exactly 3 (top-level of wildcard package only)", method.Imports)
+	}
+	want := []string{"WildReq", "WildResp", "WildContainer"}
+	for _, w := range want {
+		if _, ok := method.Imports[w]; !ok {
+			t.Errorf("expected import %q missing: %v", w, method.Imports)
+		}
+	}
+	if _, ok := method.Imports["WildInner"]; ok {
+		t.Errorf("WildInner (nested) should NOT be in wildcard imports: %v", method.Imports)
+	}
+	if _, ok := method.Imports["Unrelated"]; ok {
+		t.Errorf("Unrelated (different package) should NOT be in wildcard imports: %v", method.Imports)
+	}
+}
+
 func assertFields(t *testing.T, schema TypeSchema, wantFields map[string]string) {
 	t.Helper()
 	if schema.Type == "" {
