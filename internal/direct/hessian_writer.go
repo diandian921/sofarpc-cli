@@ -399,9 +399,24 @@ func (w *writer) writeJavaScalar(javaType string, v interface{}) (bool, error) {
 		return true, w.writeTypedObject(typedObject{name: base, fields: map[string]interface{}{"value": s}})
 	case "java.math.BigInteger":
 		return true, fmt.Errorf("java.math.BigInteger encoding is not supported")
+	case "java.util.Date", "java.sql.Date", "java.sql.Time", "java.sql.Timestamp":
+		n, ok := int64Value(v)
+		if !ok {
+			return true, fmt.Errorf("cannot encode %T as %s (expected epoch millis as number)", v, base)
+		}
+		w.writeDate(n)
+		return true, nil
 	default:
 		return false, nil
 	}
+}
+
+// writeDate 写 Hessian Date(tag 'd' + 8 bytes big-endian int64 epoch millis)。
+// 对齐 hessian_reader.go:129 (case tag == 'L' || tag == 'd' → int64)。
+// 用于 java.util.Date / java.sql.Date / Time / Timestamp。
+func (w *writer) writeDate(epochMillis int64) {
+	w.buf = append(w.buf, 'd')
+	w.writeUint64(uint64(epochMillis))
 }
 
 func (w *writer) writeBytes(b []byte) error {

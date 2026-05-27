@@ -354,6 +354,58 @@ func writeTestResponse(w io.Writer, id uint32, content []byte) error {
 }
 
 
+func TestWriteJavaDateRoundTrip(t *testing.T) {
+	// Bug report: 入参 Date 类型报错。 root cause:writeJavaScalar 没 case java.util.Date,
+	// fallthrough 到 default 把它当 untyped object 写,服务端反序列化 fail。
+	// Hessian-Lite Date wire 格式:tag 'd' (0x64) + 8 bytes big-endian int64 epoch millis。
+	// 跟 hessian_reader.go:129 (case tag == 'L' || tag == 'd' → int64) 对齐。
+	cases := []struct {
+		name string
+		typ  string
+		in   interface{}
+		want int64
+	}{
+		{"util.Date_int64", "java.util.Date", int64(1700000000000), 1700000000000},
+		{"util.Date_int", "java.util.Date", 1700000000000, 1700000000000},
+		{"util.Date_zero", "java.util.Date", int64(0), 0},
+		{"util.Date_jsonnumber", "java.util.Date", json.Number("1700000000000"), 1700000000000},
+		{"sql.Date", "java.sql.Date", int64(123456789), 123456789},
+		{"sql.Timestamp", "java.sql.Timestamp", int64(987654321), 987654321},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWriter()
+			value := javavalue.Scalar(tc.typ, tc.in)
+			if err := w.writeTypedValue(value); err != nil {
+				t.Fatalf("writeTypedValue: %v", err)
+			}
+			wire := w.bytes()
+			if len(wire) != 9 || wire[0] != 'd' {
+				t.Fatalf("wire = % x, want 'd' + 8 bytes", wire)
+			}
+			// reader round-trip:验 readValue 解出来 == epoch millis
+			got, err := (&reader{data: wire}).readValue()
+			if err != nil {
+				t.Fatalf("readValue: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("readValue = %v (%T), want %d (int64)", got, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWriteJavaDateRejectsNonNumber(t *testing.T) {
+	w := newWriter()
+	err := w.writeTypedValue(javavalue.Scalar("java.util.Date", "not-a-number"))
+	if err == nil {
+		t.Fatal("expected error for non-number Date input")
+	}
+	if !strings.Contains(err.Error(), "java.util.Date") {
+		t.Errorf("error should mention type, got: %v", err)
+	}
+}
+
 func TestWriteTypedValueErasesGenericInWireClassName(t *testing.T) {
 	value := javavalue.Object("com.x.dto.MaterialAddRequest", map[string]javavalue.TypedValue{
 		"items": javavalue.List("java.util.List<com.x.dto.MaterialItem>", []javavalue.TypedValue{
