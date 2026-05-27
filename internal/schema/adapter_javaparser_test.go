@@ -184,3 +184,86 @@ interface Top2 {}`), "T.java")
 		t.Errorf("topDst size = %d, want %d (%v)", len(topDst), len(wantTop), topDst)
 	}
 }
+
+func TestAdaptServiceTypeIsInterface(t *testing.T) {
+	src := []byte(`package com.x.facade;
+public interface AssetFacade {}`)
+	cu, _ := javaparser.Parse(src, "AssetFacade.java")
+	_, types := adaptCompilationUnit(cu, "AssetFacade.java", src, nil, nil)
+	fqn := "com.x.facade.AssetFacade"
+	schema, ok := types[fqn]
+	if !ok {
+		t.Fatalf("types = %v, want %s", types, fqn)
+	}
+	if schema.Kind != "interface" {
+		t.Errorf("Kind = %q, want interface", schema.Kind)
+	}
+}
+
+func TestAdaptServiceTypeIsClassWhenNoInterface(t *testing.T) {
+	src := []byte(`package com.x.dto;
+public class AssetDTO {}`)
+	cu, _ := javaparser.Parse(src, "AssetDTO.java")
+	_, types := adaptCompilationUnit(cu, "AssetDTO.java", src, nil, nil)
+	schema, ok := types["com.x.dto.AssetDTO"]
+	if !ok {
+		t.Fatalf("types = %v", types)
+	}
+	if schema.Kind != "class" {
+		t.Errorf("Kind = %q, want class", schema.Kind)
+	}
+}
+
+func TestAdaptInterfaceWithMultipleTypesPicksInterfaceFirst(t *testing.T) {
+	src := []byte(`package p;
+class FirstHelper {}
+interface PrimaryFacade {}
+class LastHelper {}`)
+	cu, _ := javaparser.Parse(src, "T.java")
+	_, types := adaptCompilationUnit(cu, "T.java", src, nil, nil)
+	for _, name := range []string{"FirstHelper", "PrimaryFacade", "LastHelper"} {
+		if _, ok := types["p."+name]; !ok {
+			t.Errorf("missing type %s", name)
+		}
+	}
+}
+
+func TestAdaptTypeSchemaTypeParams(t *testing.T) {
+	src := []byte(`package com.x.dto;
+public class Page<T, K extends Number> {}`)
+	cu, _ := javaparser.Parse(src, "Page.java")
+	_, types := adaptCompilationUnit(cu, "Page.java", src, nil, nil)
+	page := types["com.x.dto.Page"]
+	if len(page.TypeParams) != 2 || page.TypeParams[0] != "T" || page.TypeParams[1] != "K" {
+		t.Errorf("Page.TypeParams = %v, want [T, K]", page.TypeParams)
+	}
+}
+
+func TestAdaptNestedTypesFlatKeying(t *testing.T) {
+	src := []byte(`package p;
+class Outer {
+	class Inner {}
+	enum Status {}
+}`)
+	cu, _ := javaparser.Parse(src, "T.java")
+	_, types := adaptCompilationUnit(cu, "T.java", src, nil, nil)
+	for _, name := range []string{"Outer", "Inner", "Status"} {
+		if _, ok := types["p."+name]; !ok {
+			t.Errorf("missing flat-keyed nested type p.%s; got %v", name, types)
+		}
+	}
+}
+
+func TestAdaptAnnotationDeclarationSkipped(t *testing.T) {
+	src := []byte(`package p;
+public @interface Marker {}
+public class Real {}`)
+	cu, _ := javaparser.Parse(src, "T.java")
+	_, types := adaptCompilationUnit(cu, "T.java", src, nil, nil)
+	if _, ok := types["p.Marker"]; ok {
+		t.Errorf("Marker(@interface) should be skipped: %v", types)
+	}
+	if _, ok := types["p.Real"]; !ok {
+		t.Errorf("Real should be present: %v", types)
+	}
+}

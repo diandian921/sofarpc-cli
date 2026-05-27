@@ -36,7 +36,107 @@ func adaptCompilationUnit(cu *javaparser.CompilationUnit, sourcePath string, bod
 	if cu == nil || cu.Package == nil || len(cu.Types) == 0 {
 		return nil, nil
 	}
-	return nil, nil
+	pkg := cu.Package.Name
+	imports := extractImports(cu.Imports, topLevelFQNs)
+	sourceHash := computeSourceHash(body)
+
+	// service type:优先找第一个 interface;无则取第一个顶层 type(对齐既有
+	// serviceTypeKind 行为)
+	service := pickServiceType(cu.Types)
+	if service == nil {
+		return nil, nil
+	}
+	fqn := pkg + "." + service.Name
+
+	out := map[string]TypeSchema{}
+
+	// 顶层 + 嵌套全部产 TypeSchema(flat keying)
+	emitTypeSchemas(cu.Types, pkg, sourcePath, imports, out)
+
+	// 没有显式 service type schema 时补一个(对齐既有 parseTypes 末尾的兜底)
+	if _, ok := out[fqn]; !ok {
+		out[fqn] = TypeSchema{Type: fqn, Kind: "class", SourceFile: sourcePath, Imports: imports}
+	}
+
+	// methods 只在 service 是 interface 时生成 —— Task 4 接入,Task 3 阶段先空
+	var methods []Method
+	_ = sourceHash
+	_ = prefixes
+	return methods, out
+}
+
+// pickServiceType 找第一个 interface(老 serviceTypeKind 行为),没 interface 用第一个顶层 type。
+// Annotation declaration (@interface) 不算 service type(老 parser 同样跳过)。
+func pickServiceType(types []javaparser.TypeDecl) *javaparser.TypeDecl {
+	for i := range types {
+		if types[i].Kind == javaparser.TypeKindInterface {
+			return &types[i]
+		}
+	}
+	for i := range types {
+		switch types[i].Kind {
+		case javaparser.TypeKindClass, javaparser.TypeKindEnum, javaparser.TypeKindRecord:
+			return &types[i]
+		}
+	}
+	return nil
+}
+
+// emitTypeSchemas 把 types(含递归 NestedTypes)全部转成 TypeSchema 写进 out。
+// Flat keying:pkg + "." + Name(沿用既有 parseTypes 行为,跟 resolveType 兼容)。
+// Task 3 阶段只填 Type / Kind / SourceFile / Imports / TypeParams;Fields / EnumValues 在 Task 5 接入。
+func emitTypeSchemas(types []javaparser.TypeDecl, pkg, sourcePath string, imports map[string]string, out map[string]TypeSchema) {
+	for _, t := range types {
+		// annotation declaration 不产 TypeSchema(老 parser 用 typeKindRE 不匹配 @interface,跟齐)
+		if t.Kind == javaparser.TypeKindAnnotation {
+			if len(t.NestedTypes) > 0 {
+				emitTypeSchemas(t.NestedTypes, pkg, sourcePath, imports, out)
+			}
+			continue
+		}
+		fqn := pkg + "." + t.Name
+		schema := TypeSchema{
+			Type:       fqn,
+			Kind:       typeKindName(t.Kind),
+			SourceFile: sourcePath,
+			Imports:    imports,
+			TypeParams: typeParamNames(t.TypeParams),
+		}
+		out[fqn] = schema
+		if len(t.NestedTypes) > 0 {
+			emitTypeSchemas(t.NestedTypes, pkg, sourcePath, imports, out)
+		}
+	}
+}
+
+// typeKindName 把 javaparser TypeKind 映射成 schema.TypeSchema.Kind 字符串
+// (对齐既有 typeKindRE 输出:"class" / "interface" / "enum" / "record")。
+// 注意:@interface declaration 既有 regex parser 也跳过,这里不应被调用,默认 fallback "class"。
+func typeKindName(k javaparser.TypeKind) string {
+	switch k {
+	case javaparser.TypeKindClass:
+		return "class"
+	case javaparser.TypeKindInterface:
+		return "interface"
+	case javaparser.TypeKindEnum:
+		return "enum"
+	case javaparser.TypeKindRecord:
+		return "record"
+	}
+	return "class"
+}
+
+// typeParamNames 只取 TypeParam.Name(bound 不存进 schema —— Plan B P3 fix 只需要 name 列表)。
+// nil 输入返回 nil,空 slice 也返回 nil(让 JSON omitempty 起效)。
+func typeParamNames(params []javaparser.TypeParam) []string {
+	if len(params) == 0 {
+		return nil
+	}
+	out := make([]string, len(params))
+	for i, p := range params {
+		out[i] = p.Name
+	}
+	return out
 }
 
 // extractImports 把 ImportDecl 列表展平成既有 `map[shortName]fqn` 形态。
