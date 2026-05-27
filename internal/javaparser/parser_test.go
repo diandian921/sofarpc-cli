@@ -841,3 +841,203 @@ func TestParseFieldInitializerComplexSkip(t *testing.T) {
 		t.Fatalf("fields = %d, want 4 (initializer skip 不应误吃 ;)", len(fields))
 	}
 }
+
+func TestParseEnumValuesSimple(t *testing.T) {
+	src := `enum Color { RED, GREEN, BLUE }`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	enum := cu.Types[0]
+	if enum.Kind != TypeKindEnum {
+		t.Fatalf("kind = %s", enum.Kind)
+	}
+	names := []string{}
+	for _, v := range enum.EnumValues {
+		names = append(names, v.Name)
+	}
+	if !sliceEq(names, []string{"RED", "GREEN", "BLUE"}) {
+		t.Errorf("enum values = %v", names)
+	}
+}
+
+func TestParseEnumWithCtorArgsAndMethods(t *testing.T) {
+	src := `enum Status {
+		OK("ok", 0),
+		FAIL("fail", -1) { @Override public String code() { return "X"; } },
+		;
+		private final String label;
+		private final int value;
+		Status(String label, int value) { this.label = label; this.value = value; }
+		public String code() { return label; }
+	}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	enum := cu.Types[0]
+	names := []string{}
+	for _, v := range enum.EnumValues {
+		names = append(names, v.Name)
+	}
+	if !sliceEq(names, []string{"OK", "FAIL"}) {
+		t.Errorf("enum values = %v", names)
+	}
+	if len(enum.Fields) != 2 {
+		t.Errorf("fields = %+v", enum.Fields)
+	}
+	if len(enum.Methods) != 2 {
+		t.Errorf("methods = %+v", enum.Methods)
+	}
+}
+
+func TestParseEnumEmpty(t *testing.T) {
+	src := `enum Empty {}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	enum := cu.Types[0]
+	if len(enum.EnumValues) != 0 || len(enum.Fields) != 0 {
+		t.Errorf("empty enum has stuff: %+v", enum)
+	}
+}
+
+func TestParseRecordHeaderAndBody(t *testing.T) {
+	src := `record Point(int x, int y) {
+		public Point {
+			if (x < 0) throw new IllegalArgumentException();
+		}
+		public int sum() { return x + y; }
+	}
+	record Unprefixed(int a) {
+		Unprefixed {}
+		public int doubled() { return a * 2; }
+	}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(cu.Types) != 2 {
+		t.Fatalf("types = %d, want 2", len(cu.Types))
+	}
+	rec := cu.Types[0]
+	if rec.Kind != TypeKindRecord {
+		t.Fatalf("kind = %s", rec.Kind)
+	}
+	if len(rec.RecordComponents) != 2 {
+		t.Fatalf("components = %+v", rec.RecordComponents)
+	}
+	if rec.RecordComponents[0].Name != "x" || rec.RecordComponents[0].Type.String() != "int" {
+		t.Errorf("comp[0] = %+v", rec.RecordComponents[0])
+	}
+	if rec.RecordComponents[1].Name != "y" || rec.RecordComponents[1].Type.String() != "int" {
+		t.Errorf("comp[1] = %+v", rec.RecordComponents[1])
+	}
+	if len(rec.Methods) != 1 || rec.Methods[0].Name != "sum" {
+		t.Errorf("Point.Methods = %+v, want [sum]", rec.Methods)
+	}
+
+	rec2 := cu.Types[1]
+	if rec2.Kind != TypeKindRecord || rec2.Name != "Unprefixed" {
+		t.Fatalf("rec2 = %+v", rec2)
+	}
+	if len(rec2.RecordComponents) != 1 || rec2.RecordComponents[0].Name != "a" {
+		t.Errorf("Unprefixed.RecordComponents = %+v", rec2.RecordComponents)
+	}
+	if len(rec2.Methods) != 1 || rec2.Methods[0].Name != "doubled" {
+		t.Errorf("Unprefixed.Methods = %+v, want [doubled]", rec2.Methods)
+	}
+}
+
+func TestParseEnumBodyNestedTypes(t *testing.T) {
+	src := `enum E {
+		A, B;
+		static class Helper {
+			public int compute() { return 0; }
+		}
+		enum Sub { X, Y }
+		record Pair(int a, int b) {}
+	}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	e := cu.Types[0]
+	if e.Kind != TypeKindEnum {
+		t.Fatalf("kind = %s", e.Kind)
+	}
+	names := []string{}
+	for _, v := range e.EnumValues {
+		names = append(names, v.Name)
+	}
+	if !sliceEq(names, []string{"A", "B"}) {
+		t.Errorf("enum values = %v", names)
+	}
+	if len(e.NestedTypes) != 3 {
+		t.Fatalf("NestedTypes = %+v, want 3", e.NestedTypes)
+	}
+	wantKinds := []TypeKind{TypeKindClass, TypeKindEnum, TypeKindRecord}
+	wantNames := []string{"Helper", "Sub", "Pair"}
+	for i, n := range wantNames {
+		if e.NestedTypes[i].Name != n || e.NestedTypes[i].Kind != wantKinds[i] {
+			t.Errorf("NestedTypes[%d] = {%s, %s}, want {%s, %s}",
+				i, e.NestedTypes[i].Name, e.NestedTypes[i].Kind, n, wantKinds[i])
+		}
+	}
+}
+
+func TestParseEnumConstantJavadocWithAnnotation(t *testing.T) {
+	src := `enum E {
+		/** alpha doc */
+		@Deprecated
+		ALPHA,
+		/** beta doc */
+		BETA
+	}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	e := cu.Types[0]
+	if len(e.EnumValues) != 2 {
+		t.Fatalf("values = %+v", e.EnumValues)
+	}
+	if !contains(e.EnumValues[0].Javadoc, "alpha doc") {
+		t.Errorf("ALPHA.Javadoc = %q, want contains 'alpha doc'", e.EnumValues[0].Javadoc)
+	}
+	if len(e.EnumValues[0].Annotations) != 1 || e.EnumValues[0].Annotations[0].Name != "Deprecated" {
+		t.Errorf("ALPHA.Annotations = %+v", e.EnumValues[0].Annotations)
+	}
+	if !contains(e.EnumValues[1].Javadoc, "beta doc") {
+		t.Errorf("BETA.Javadoc = %q", e.EnumValues[1].Javadoc)
+	}
+}
+
+func TestParseAnnotationDeclarationBody(t *testing.T) {
+	src := `public @interface Cacheable {
+		String key() default "";
+		int ttlSeconds() default 60;
+		String[] tags() default {};
+	}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	ann := cu.Types[0]
+	if ann.Kind != TypeKindAnnotation {
+		t.Fatalf("kind = %s", ann.Kind)
+	}
+	if len(ann.Methods) != 3 {
+		t.Fatalf("annotation methods = %+v", ann.Methods)
+	}
+	wantNames := []string{"key", "ttlSeconds", "tags"}
+	for i, m := range ann.Methods {
+		if m.Name != wantNames[i] {
+			t.Errorf("ann.Methods[%d].Name = %q, want %q", i, m.Name, wantNames[i])
+		}
+	}
+	if ann.Methods[2].ReturnType.String() != "String[]" {
+		t.Errorf("tags ReturnType = %q", ann.Methods[2].ReturnType.String())
+	}
+}

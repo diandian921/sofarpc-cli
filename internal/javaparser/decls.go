@@ -231,13 +231,23 @@ func parseTypeRefList(c *cursor) ([]TypeRef, error) {
 
 // parseTypeBody 在已消费 `{` 之后、消费 `}` 之前,遍历 type body 内全部成员。
 // 不消费 trailing `}`,留给 caller。
-// kind 分支:
-//   - enum/annotation:走自己的 parser(Task 9 接入),此处只 brace-skip 占位
-//   - class/interface/record:走 member dispatch
 func parseTypeBody(c *cursor, decl *TypeDecl) error {
-	if decl.Kind == TypeKindEnum || decl.Kind == TypeKindAnnotation {
-		return skipUntilMatchingRBrace(c)
+	switch decl.Kind {
+	case TypeKindEnum:
+		return parseEnumBody(c, decl)
+	case TypeKindAnnotation:
+		// annotation body 跟 class/interface body 形态接近,但 method 可能有
+		// `default <literal>;`。 finishMethodDecl 已经容忍 `default` token,
+		// 直接走通用 member dispatch 即可。
+		return parseClassBodyMembers(c, decl)
+	default:
+		return parseClassBodyMembers(c, decl)
 	}
+}
+
+// parseClassBodyMembers 把 Task 6 的 dispatcher 主循环抽出来命名,parseTypeBody 与
+// annotation body 复用。
+func parseClassBodyMembers(c *cursor, decl *TypeDecl) error {
 	for {
 		if c.peek().Kind == TokenSemicolon {
 			c.consume()
@@ -252,28 +262,62 @@ func parseTypeBody(c *cursor, decl *TypeDecl) error {
 	}
 }
 
-// skipUntilMatchingRBrace 平衡 skip 到外层 RBrace 之前(不消费 RBrace)。
-// 用于 Task 6 阶段把 enum/annotation body 整段 skip(Task 9 替换)。
-func skipUntilMatchingRBrace(c *cursor) error {
-	depth := 0
-	for !c.eof() {
-		tok := c.peek()
-		if tok.Kind == TokenLBrace {
-			depth++
-			c.consume()
-			continue
+// parseEnumBody 解析 enum body:
+//
+//	(EnumConstant (',' EnumConstant)* (',')?)? (';' ClassBodyDeclaration*)?
+//
+// 形态:
+//   - 0+ 个 enum constant,逗号分隔,最后允许 trailing comma
+//   - 可选 `;`,之后是普通 class body(method / field / nested type)
+//   - 没有 `;` 时 body 直接以 `}` 结束
+//
+// 每个 enum constant:可选 annotation,然后 Ident,然后可选 `(...)`(ctor args,skip),
+// 然后可选 `{...}`(anonymous class body,skip)。
+func parseEnumBody(c *cursor, decl *TypeDecl) error {
+	for {
+		if c.peek().Kind == TokenRBrace || c.peek().Kind == TokenSemicolon || c.eof() {
+			break
 		}
-		if tok.Kind == TokenRBrace {
-			if depth == 0 {
-				return nil
+		// codex review #5:必须先 capture javadoc,后消费 annotation。
+		// 否则 `/** doc */ @A RED` 会丢 doc(annotation token 挡住 peekJavadoc 回溯)。
+		jdoc := cleanJavadocText(c.peekJavadoc())
+		var anns []Annotation
+		for c.peek().Kind == TokenAt {
+			ann, err := parseAnnotation(c)
+			if err != nil {
+				return err
 			}
-			depth--
-			c.consume()
-			continue
+			anns = append(anns, ann)
 		}
-		c.consume()
+		nameTok, err := expectIdentLike(c, "enum constant name")
+		if err != nil {
+			return err
+		}
+		ev := EnumValue{
+			Annotations: anns,
+			Javadoc:     jdoc,
+			Name:        nameTok.Value,
+			Pos:         tokenPos(nameTok),
+		}
+		if c.peek().Kind == TokenLParen {
+			if err := c.skipBalanced(TokenLParen, TokenRParen); err != nil {
+				return err
+			}
+		}
+		if c.peek().Kind == TokenLBrace {
+			if err := c.skipBalanced(TokenLBrace, TokenRBrace); err != nil {
+				return err
+			}
+		}
+		decl.EnumValues = append(decl.EnumValues, ev)
+		if !c.match(TokenComma) {
+			break
+		}
 	}
-	return parseError(c.pos(), "unexpected EOF in body")
+	if c.match(TokenSemicolon) {
+		return parseClassBodyMembers(c, decl)
+	}
+	return nil
 }
 
 // parseMember 解析单个 type body 成员。 调用前提:peek 不是 RBrace 也不是 Semicolon。
@@ -451,6 +495,19 @@ func parseMethodOrField(c *cursor, pre preamble, owner *TypeDecl) (*MethodDecl, 
 	tparams, err := parseTypeParams(c)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// compact ctor(record only):`R { ... }` / `public R { ... }`,无参数列表。
+	// 注意不检查 pre.Modifiers —— 即使没 modifier 也是合法 compact ctor。
+	// 必须在普通 ctor 快路径之前,否则会被 parseTypeRef 当 ReturnType 误吃。
+	if owner.Kind == TypeKindRecord {
+		if tok := c.peek(); tok.Kind == TokenIdent && tok.Value == owner.Name && c.peekN(1).Kind == TokenLBrace {
+			c.consume() // ctor name
+			if err := c.skipBalanced(TokenLBrace, TokenRBrace); err != nil {
+				return nil, nil, err
+			}
+			return nil, nil, nil
+		}
 	}
 
 	// ctor 快路径:Ident(owner.Name) + `(`
@@ -735,12 +792,10 @@ func skipFieldInitializer(c *cursor) error {
 	return parseError(c.pos(), "field initializer hit EOF without `;`")
 }
 
-// parseRecordHeader Task 9 才实现,Task 5 阶段只 brace-skip 占位以让 record decl 整体可解析。
+// parseRecordHeader 解析 `record Point(int x, String name)` 中的 `(...)`。
+// 复用 parseParamList(record component 形态与 method param 相同)。
 func parseRecordHeader(c *cursor) ([]ParamDecl, error) {
-	if err := c.skipBalanced(TokenLParen, TokenRParen); err != nil {
-		return nil, err
-	}
-	return nil, nil
+	return parseParamList(c)
 }
 
 // cleanJavadocText 把 `/** ... */` 原文(含 javadoc 注释符)清洗成纯文本。
