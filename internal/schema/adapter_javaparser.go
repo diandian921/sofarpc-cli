@@ -183,7 +183,12 @@ func typeRefToString(t javaparser.TypeRef) string {
 	return t.String()
 }
 
-// pickServiceType 找第一个 interface(老 serviceTypeKind 行为),没 interface 用第一个顶层 type。
+// pickServiceType 找 service candidate(对齐老 serviceTypeKind 全文 regex 行为):
+//   1. 顶层 interface 优先
+//   2. 没顶层 interface 时,**递归 NestedTypes 找第一个 interface**(老 typeKindRE 全文扫
+//      会匹配 nested,test TestNestedInterfaceCanBeServiceCandidate 依赖此行为)
+//   3. 都没 interface,用第一个顶层 class/enum/record
+//
 // Annotation declaration (@interface) 不算 service type(老 parser 同样跳过)。
 func pickServiceType(types []javaparser.TypeDecl) *javaparser.TypeDecl {
 	for i := range types {
@@ -191,10 +196,28 @@ func pickServiceType(types []javaparser.TypeDecl) *javaparser.TypeDecl {
 			return &types[i]
 		}
 	}
+	if nested := findNestedInterface(types); nested != nil {
+		return nested
+	}
 	for i := range types {
 		switch types[i].Kind {
 		case javaparser.TypeKindClass, javaparser.TypeKindEnum, javaparser.TypeKindRecord:
 			return &types[i]
+		}
+	}
+	return nil
+}
+
+// findNestedInterface 递归在 NestedTypes 找第一个 interface。
+func findNestedInterface(types []javaparser.TypeDecl) *javaparser.TypeDecl {
+	for i := range types {
+		if types[i].Kind == javaparser.TypeKindInterface {
+			return &types[i]
+		}
+		if len(types[i].NestedTypes) > 0 {
+			if inner := findNestedInterface(types[i].NestedTypes); inner != nil {
+				return inner
+			}
 		}
 	}
 	return nil

@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/diandian921/sofarpc-cli/internal/javaparser"
@@ -592,5 +594,88 @@ public class Page<T, K> {
 	}
 	if page.Fields[1].Type != "K" {
 		t.Errorf("Fields[1].Type = %q, want K", page.Fields[1].Type)
+	}
+}
+
+func TestBuildIndexWildcardImportExpansion(t *testing.T) {
+	tmp := t.TempDir()
+	mustWriteFile(t, filepath.Join(tmp, "src/main/java/com/x/facade/MyFacade.java"), `package com.x.facade;
+import com.x.dto.*;
+public interface MyFacade {
+	MyResp query(MyReq req);
+}`)
+	mustWriteFile(t, filepath.Join(tmp, "src/main/java/com/x/dto/MyReq.java"), `package com.x.dto;
+public class MyReq {
+	public String key;
+}`)
+	mustWriteFile(t, filepath.Join(tmp, "src/main/java/com/x/dto/MyResp.java"), `package com.x.dto;
+public class MyResp {
+	public String value;
+}`)
+
+	idx, err := BuildIndex(Project{Name: "wild", WorkspaceRoot: tmp, ServicePrefixes: []string{"com.x.facade."}})
+	if err != nil {
+		t.Fatalf("BuildIndex: %v", err)
+	}
+
+	var facadeMethod Method
+	for _, m := range idx.Methods {
+		if m.Service == "com.x.facade.MyFacade" && m.Method == "query" {
+			facadeMethod = m
+			break
+		}
+	}
+	if facadeMethod.Method == "" {
+		t.Fatalf("query method not found in index: %+v", idx.Methods)
+	}
+	if facadeMethod.Imports["MyReq"] != "com.x.dto.MyReq" {
+		t.Errorf("MyReq import not expanded from wildcard: imports = %v", facadeMethod.Imports)
+	}
+	if facadeMethod.Imports["MyResp"] != "com.x.dto.MyResp" {
+		t.Errorf("MyResp import not expanded from wildcard: imports = %v", facadeMethod.Imports)
+	}
+
+	desc, err := Describe(idx, "com.x.facade.MyFacade", "query")
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	req := desc.Types["com.x.dto.MyReq"]
+	if req.Type == "" {
+		t.Fatalf("MyReq schema missing in desc.Types = %v", desc.Types)
+	}
+	if len(req.Fields) != 1 || req.Fields[0].Name != "key" {
+		t.Errorf("MyReq.Fields = %+v", req.Fields)
+	}
+}
+
+// mustWriteFile 是 test helper:写文件 + 父目录 mkdir。
+func mustWriteFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+}
+
+func TestBuildIndexSilentlySkipsMalformedFiles(t *testing.T) {
+	tmp := t.TempDir()
+	mustWriteFile(t, filepath.Join(tmp, "src/main/java/com/x/Good.java"), `package com.x;
+public class Good { public String name; }`)
+	mustWriteFile(t, filepath.Join(tmp, "src/main/java/com/x/Broken.java"), `package com.x;
+public class Broken {
+	// 未闭合 string —— lexer 会报错
+	String bad = "no close`)
+
+	idx, err := BuildIndex(Project{Name: "skip", WorkspaceRoot: tmp})
+	if err != nil {
+		t.Fatalf("BuildIndex: %v (should silently skip malformed)", err)
+	}
+	if _, ok := idx.Types["com.x.Good"]; !ok {
+		t.Errorf("Good.java should still be indexed: %+v", idx.Types)
+	}
+	if _, ok := idx.Types["com.x.Broken"]; ok {
+		t.Errorf("Broken.java should be silently skipped (no schema), got %+v", idx.Types["com.x.Broken"])
 	}
 }

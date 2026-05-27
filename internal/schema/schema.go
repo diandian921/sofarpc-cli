@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/diandian921/sofarpc-cli/internal/javaparser"
 )
 
 type Project struct {
@@ -85,12 +87,61 @@ var (
 	enumValueRE = regexp.MustCompile(`(?s)\benum\s+[A-Za-z_]\w*\s*\{(.*?)\}`)
 )
 
+// BuildIndex 走 2 pass:
+//   Pass 1: walk + parse 所有 .java 文件,收集全工程 type FQN 集合
+//   Pass 2: in-memory 调 adapter,wildcard import 用 Pass 1 的集合展开
+//
+// 老的 1-pass parseJavaFile 在 Task 7 cutover 之后从 schema 包内部被 adapter 替换;
+// 这里 BuildIndex 主循环已经走 javaparser + adapter 路径。
 func BuildIndex(project Project) (*Index, error) {
 	roots, err := DiscoverSourceRoots(project.WorkspaceRoot)
 	if err != nil {
 		return nil, err
 	}
 	idx := &Index{Project: project, Types: map[string]TypeSchema{}}
+
+	parsed, topLevelFQNs, err := gatherCompilationUnits(roots)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, p := range parsed {
+		methods, types := adaptCompilationUnit(p.cu, p.path, p.body, project.ServicePrefixes, topLevelFQNs)
+		idx.Methods = append(idx.Methods, methods...)
+		for fqn, typ := range types {
+			idx.Types[fqn] = typ
+		}
+	}
+
+	sort.Slice(idx.Methods, func(i, j int) bool {
+		if idx.Methods[i].Service == idx.Methods[j].Service {
+			return idx.Methods[i].Method < idx.Methods[j].Method
+		}
+		return idx.Methods[i].Service < idx.Methods[j].Service
+	})
+	return idx, nil
+}
+
+// parsedFile 把每个 .java 文件的解析结果跟原始 bytes 一起缓存,避免 Pass 2 再 parse 一遍。
+//
+// 内存 trade-off(codex review #2):假设 100 个 .java 文件 / 每个 10KB body + 30KB AST,
+// 总 cache ≈ 4MB。 facade 工程典型规模(fundsalesmrksupport ~600 个 .java 文件,平均 6KB)
+// 估算上限 ~25MB,可接受。 大型 monorepo(>5000 文件)真撞到再切 2-pass re-parse 模式。
+type parsedFile struct {
+	path string
+	body []byte
+	cu   *javaparser.CompilationUnit
+}
+
+// gatherCompilationUnits 是 BuildIndex 的 Pass 1。
+// 遍历所有 source root,parse 每个 .java 文件;失败 file 静默跳过(对齐老 parseJavaFile
+// 在 os.ReadFile 错误时 return nil, nil 行为 —— codex review #3:syntax 错误也静默跳过,
+// **不向 caller 报告**;若未来要 logging 加观测,在这一层加 callback,本 plan 暂不引入)。
+//
+// 收集顶层 type FQN 进 topLevelFQNs(用于 wildcard import 展开);nested 不在 topLevel。
+func gatherCompilationUnits(roots []string) ([]parsedFile, map[string]bool, error) {
+	var parsed []parsedFile
+	topLevelFQNs := map[string]bool{}
 	for _, root := range roots {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -105,24 +156,27 @@ func BuildIndex(project Project) (*Index, error) {
 			if !strings.HasSuffix(path, ".java") {
 				return nil
 			}
-			methods, types := parseJavaFile(path, project.ServicePrefixes)
-			idx.Methods = append(idx.Methods, methods...)
-			for fqn, typ := range types {
-				idx.Types[fqn] = typ
+			body, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return nil
 			}
+			cu, parseErr := javaparser.Parse(body, path)
+			if parseErr != nil || cu == nil {
+				return nil
+			}
+			if cu.Package != nil {
+				// dstAll = nil: BuildIndex 只需要 topLevel 给 wildcard 用,nested 已通过
+				// 各文件 adapter 路径单独 emit 进 idx.Types
+				collectTypeFQNs(cu.Package.Name, cu.Types, nil, topLevelFQNs)
+			}
+			parsed = append(parsed, parsedFile{path: path, body: body, cu: cu})
 			return nil
 		})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	sort.Slice(idx.Methods, func(i, j int) bool {
-		if idx.Methods[i].Service == idx.Methods[j].Service {
-			return idx.Methods[i].Method < idx.Methods[j].Method
-		}
-		return idx.Methods[i].Service < idx.Methods[j].Service
-	})
-	return idx, nil
+	return parsed, topLevelFQNs, nil
 }
 
 func DiscoverSourceRoots(workspace string) ([]string, error) {
