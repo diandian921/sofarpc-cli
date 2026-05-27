@@ -591,6 +591,62 @@ public interface AssetFacade {}`
 	}
 }
 
+func TestParseTypeBodyDispatchSkipsMembersAndNested(t *testing.T) {
+	src := `package p;
+public class Outer {
+    private int x;
+    public Outer(int x) { this.x = x; }
+    public void greet() { System.out.println("hi"); }
+    static { /* static init */ }
+    {  /* instance init */ }
+    static class Inner {}
+    record Point(int x, int y) {}
+}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(cu.Types) != 1 {
+		t.Fatalf("types = %d", len(cu.Types))
+	}
+	outer := cu.Types[0]
+	if outer.Name != "Outer" || outer.Kind != TypeKindClass {
+		t.Errorf("Outer = %+v", outer)
+	}
+	if len(outer.NestedTypes) != 2 {
+		t.Fatalf("NestedTypes len = %d, want 2", len(outer.NestedTypes))
+	}
+	if outer.NestedTypes[0].Name != "Inner" || outer.NestedTypes[0].Kind != TypeKindClass {
+		t.Errorf("Inner = %+v", outer.NestedTypes[0])
+	}
+	if outer.NestedTypes[1].Name != "Point" || outer.NestedTypes[1].Kind != TypeKindRecord {
+		t.Errorf("Point = %+v", outer.NestedTypes[1])
+	}
+	// Task 6 阶段 Methods / Fields 还是 nil(Task 7+ 接入)。 这里不 assert 内容,
+	// 只确保 parse 没炸出 error 且 nested type 正确识别。
+}
+
+func TestParseTypeBodyEmpty(t *testing.T) {
+	cu, err := Parse([]byte("class Empty {}"), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(cu.Types) != 1 || cu.Types[0].Name != "Empty" {
+		t.Errorf("types = %+v", cu.Types)
+	}
+}
+
+func TestParseTypeBodyEnumStubSkips(t *testing.T) {
+	cu, err := Parse([]byte("enum Color { RED, GREEN, BLUE; public String code() { return name(); } }"), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(cu.Types) != 1 || cu.Types[0].Kind != TypeKindEnum {
+		t.Errorf("types = %+v", cu.Types)
+	}
+	// Task 9 才有 EnumValues 内容,这里只确认 parse 不炸。
+}
+
 func sliceEq(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
