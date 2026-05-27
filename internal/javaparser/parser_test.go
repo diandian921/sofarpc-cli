@@ -300,3 +300,167 @@ func TestParseImportMalformedReturnsError(t *testing.T) {
 		})
 	}
 }
+
+func TestParseTypeRefBasic(t *testing.T) {
+	cases := []struct {
+		src  string
+		want string
+	}{
+		{"int", "int"},
+		{"String", "String"},
+		{"java.util.List", "java.util.List"},
+		{"List<String>", "List<String>"},
+		{"Map<String, List<Long>>", "Map<String, List<Long>>"},
+		{"List<?>", "List<?>"},
+		{"List<? extends Number>", "List<? extends Number>"},
+		{"List<? super Integer>", "List<? super Integer>"},
+		{"String[]", "String[]"},
+		{"String[][]", "String[][]"},
+		{"List<String>[]", "List<String>[]"},
+		{"Map<String, java.util.List<X>>", "Map<String, java.util.List<X>>"},
+		// Note: `<>` diamond 仅在构造调用 `new List<>()` 合法,在 declaration / type
+		// reference 位置非法。 parser 容错接受(空 Args),但 TypeRef.String() 是有损
+		// 序列化:`List<>` → 空 Args → `List`(不带括号)。 不测试覆盖。
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			tokens, err := Tokenize([]byte(tc.src))
+			if err != nil {
+				t.Fatalf("tokenize: %v", err)
+			}
+			c := newCursor(tokens)
+			ref, err := parseTypeRef(c)
+			if err != nil {
+				t.Fatalf("parseTypeRef: %v", err)
+			}
+			if ref.String() != tc.want {
+				t.Errorf("String() = %q, want %q", ref.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestParseTypeParams(t *testing.T) {
+	cases := []struct {
+		src       string
+		wantNames []string
+		wantBound map[string]string // name → bound.String()(只看第一个 bound)
+	}{
+		{"<T>", []string{"T"}, nil},
+		{"<T, K>", []string{"T", "K"}, nil},
+		{"<T extends Number>", []string{"T"}, map[string]string{"T": "Number"}},
+		{"<T extends A & B>", []string{"T"}, map[string]string{"T": "A"}},
+		{"<T, K extends Comparable<K>>", []string{"T", "K"}, map[string]string{"K": "Comparable<K>"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			tokens, _ := Tokenize([]byte(tc.src))
+			c := newCursor(tokens)
+			params, err := parseTypeParams(c)
+			if err != nil {
+				t.Fatalf("parseTypeParams: %v", err)
+			}
+			if len(params) != len(tc.wantNames) {
+				t.Fatalf("params = %+v, want names %v", params, tc.wantNames)
+			}
+			for i, n := range tc.wantNames {
+				if params[i].Name != n {
+					t.Errorf("params[%d].Name = %q, want %q", i, params[i].Name, n)
+				}
+				if want, ok := tc.wantBound[n]; ok {
+					if len(params[i].Bounds) == 0 {
+						t.Errorf("params[%d] bound missing, want %q", i, want)
+					} else if got := params[i].Bounds[0].String(); got != want {
+						t.Errorf("params[%d] bound = %q, want %q", i, got, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestParseTypeRefArrayDimsBoundary(t *testing.T) {
+	// `String[ ]` (中间空格)应该正常识别为 1 维
+	tokens, _ := Tokenize([]byte("String[ ]"))
+	c := newCursor(tokens)
+	ref, err := parseTypeRef(c)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if ref.ArrayDims != 1 {
+		t.Errorf("dims = %d, want 1", ref.ArrayDims)
+	}
+}
+
+func TestParseTypeRefTypeUseAnnotations(t *testing.T) {
+	// codex review #9:type-use annotation 在 type ref / generic arg 位置
+	cases := []struct {
+		src  string
+		want string
+	}{
+		{"@NonNull String", "String"},
+		{"@Min(0) int", "int"},
+		{"List<@NonNull String>", "List<String>"},
+		{"Map<@Key String, @Val Foo>", "Map<String, Foo>"},
+		{"@A String @B []", "String[]"},
+		{"List<@A ? extends @B Number>", "List<? extends Number>"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			tokens, err := Tokenize([]byte(tc.src))
+			if err != nil {
+				t.Fatalf("tokenize: %v", err)
+			}
+			c := newCursor(tokens)
+			ref, err := parseTypeRef(c)
+			if err != nil {
+				t.Fatalf("parseTypeRef: %v", err)
+			}
+			if ref.String() != tc.want {
+				t.Errorf("String() = %q, want %q (annotation skipped)", ref.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestParseTypeRefContextualKeywordInQualifiedName(t *testing.T) {
+	// codex review #2:Java 真实代码 `com.acme.record.User` 中 record 是 contextual keyword
+	cases := []struct {
+		src  string
+		want string
+	}{
+		{"com.acme.record.User", "com.acme.record.User"},
+		{"java.util.module.X", "java.util.module.X"},
+		{"List<com.acme.record.User>", "List<com.acme.record.User>"},
+		{"sealed", "sealed"}, // 单独 contextual keyword 当类型名也可以
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			tokens, _ := Tokenize([]byte(tc.src))
+			c := newCursor(tokens)
+			ref, err := parseTypeRef(c)
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if ref.String() != tc.want {
+				t.Errorf("String() = %q, want %q", ref.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestParseTypeParamsAnnotated(t *testing.T) {
+	// codex review #10
+	tokens, _ := Tokenize([]byte("<@Nonnull T, @A K extends @B Comparable<K>>"))
+	c := newCursor(tokens)
+	params, err := parseTypeParams(c)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(params) != 2 || params[0].Name != "T" || params[1].Name != "K" {
+		t.Errorf("params = %+v", params)
+	}
+	if len(params[1].Bounds) != 1 || params[1].Bounds[0].String() != "Comparable<K>" {
+		t.Errorf("K bound = %+v", params[1].Bounds)
+	}
+}
