@@ -12,3 +12,4 @@ sofarpc-cli-skill-workspace
 dist/
 .claude/
 .codex-pet-runs/
+.context/
