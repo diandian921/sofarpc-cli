@@ -766,30 +766,73 @@ func finishFieldDecl(c *cursor, pre preamble, typ TypeRef, firstName string, sta
 }
 
 // skipFieldInitializer 从 `=` 之后(已消费)跳到下一个顶层 `;` 或 `,`(留给 caller 看)。
-// 内部正确平衡 () [] {}。 不消费目标分隔符。
+// 内部平衡 () [] {} 与 `<>` 泛型。 不消费目标分隔符。
+//
+// `<>` 的歧义:`<` 既是泛型起头(`Map<K, V>`),也是比较运算符(`a < b`)。
+// 启发式:`<` 前是 ident-like(普通 ident 或 contextual keyword)时算泛型,否则算运算符。
+// codex review (round 3, code diff):未平衡 `<>` 会把 `new HashMap<K, V>()` 里的 `,` 误判
+// 为 multi-decl 分隔符,后续 `V>` 当字段名 parse 失败 —— 真业务 facade DTO 常用。
+// 已知 limitation:`boolean x = a < b;` 这种纯比较仍会被误算为 generic 起头(因为 `a` 也是 ident),
+// 但 facade / DTO 类几乎不出现此形态,接受 trade-off。
 func skipFieldInitializer(c *cursor) error {
+	angleDepth := 0
+	var prevKind TokenKind = TokenError
 	for !c.eof() {
 		tok := c.peek()
 		switch tok.Kind {
-		case TokenSemicolon, TokenComma:
-			return nil
+		case TokenSemicolon:
+			if angleDepth == 0 {
+				return nil
+			}
+			c.consume()
+			prevKind = tok.Kind
+		case TokenComma:
+			if angleDepth == 0 {
+				return nil
+			}
+			c.consume()
+			prevKind = tok.Kind
 		case TokenLParen:
 			if err := c.skipBalanced(TokenLParen, TokenRParen); err != nil {
 				return err
 			}
+			prevKind = TokenRParen
 		case TokenLBracket:
 			if err := c.skipBalanced(TokenLBracket, TokenRBracket); err != nil {
 				return err
 			}
+			prevKind = TokenRBracket
 		case TokenLBrace:
 			if err := c.skipBalanced(TokenLBrace, TokenRBrace); err != nil {
 				return err
 			}
+			prevKind = TokenRBrace
+		case TokenLAngle:
+			if isIdentLikeKind(prevKind) || prevKind == TokenRAngle {
+				angleDepth++
+			}
+			c.consume()
+			prevKind = TokenLAngle
+		case TokenRAngle:
+			if angleDepth > 0 {
+				angleDepth--
+			}
+			c.consume()
+			prevKind = TokenRAngle
 		default:
 			c.consume()
+			prevKind = tok.Kind
 		}
 	}
 	return parseError(c.pos(), "field initializer hit EOF without `;`")
+}
+
+// isIdentLikeKind 仅按 Kind 判断是否 ident-like 位置。 用于 skipFieldInitializer 启发式;
+// 不能用 isIdentLike(那个要 Token 全字段判断 contextual keyword value)。
+// Keyword 这里粗略归为 ident-like:类型位置 `Map<K, V>` 里 Map 是 Ident,但 contextual keyword
+// 命名的类型 (e.g. `record`) 是 Keyword,也应算 ident-like。
+func isIdentLikeKind(k TokenKind) bool {
+	return k == TokenIdent || k == TokenKeyword
 }
 
 // parseRecordHeader 解析 `record Point(int x, String name)` 中的 `(...)`。

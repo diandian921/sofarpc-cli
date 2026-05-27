@@ -847,6 +847,32 @@ func TestParseFieldInitializerComplexSkip(t *testing.T) {
 	}
 }
 
+func TestParseFieldInitializerWithGenericArgs(t *testing.T) {
+	// codex review (round 3, code diff):未平衡 `<>` 会把 `new HashMap<K, V>()` 里的
+	// `,` 误判为 multi-decl 分隔符。 skipFieldInitializer 已经加 angle depth tracking
+	// 修复,这里 regression 一下。
+	src := `class Foo {
+		private Map<String, Integer> m = new HashMap<String, Integer>();
+		private List<Map.Entry<String, Long>> entries = createEntries();
+		private Comparator<Map.Entry<String, Integer>> cmp = Map.Entry.comparingByValue();
+		private int trailing = 0;
+	}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	fields := cu.Types[0].Fields
+	if len(fields) != 4 {
+		t.Fatalf("fields = %d, want 4 (generic-args initializer should not split fields): %+v", len(fields), fields)
+	}
+	wantNames := []string{"m", "entries", "cmp", "trailing"}
+	for i, n := range wantNames {
+		if fields[i].Name != n {
+			t.Errorf("fields[%d].Name = %q, want %q", i, fields[i].Name, n)
+		}
+	}
+}
+
 func TestParseEnumValuesSimple(t *testing.T) {
 	src := `enum Color { RED, GREEN, BLUE }`
 	cu, err := Parse([]byte(src), "T.java")
