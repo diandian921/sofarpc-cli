@@ -3587,6 +3587,7 @@ go build ./...                           # 无 error
 - **Generic-qualified inner type `Outer<T>.Inner<U>`**(codex review #3):TypeRef 的单段 `Name` + flat `Args` 表达不支持外段带 generic 之后再 `.Inner<U>`。 在 `Outer<T>` 解析完后停止,留下 `.Inner` 给上层。 真业务 facade 几乎不出现(`Map.Entry<K,V>` 这种 outer 不带 generic 的形态正常 work)。 真撞到时升级 TypeRef 为 segmented representation。
 - **Segmented TypeRef representation**(codex review #11):当前 `TypeRef.Name` 是单段 dotted string(如 `"java.util.Map"`)。 C.3 adapter 需要做 import resolution 时,要靠 string 分段 + 现有 schema 包 `resolveBaseType` 处理,稍 awkward 但可工作。 若 C.3 实施时痛点明显,在那一份 plan 里重构成 `TypeRef.Segments []TypeRefSegment{Name, Args}` 形态;C.2 不预 refactor。
 - **Annotation method `default` 值的深 skip**(codex review #14):`finishMethodDecl` 用 `skipUntil(TokenSemicolon)` 跳 `default <expr>;`,不做 `()` `{}` 平衡。 因 C.1 lexer 把 string/char/text-block 当原子 token,真实 annotation default 值里出现的 `;` 都已被 lexer 包在 literal 里;`default` 后到 `;` 之间剩余的 `;` 都是结构性分隔符。 codex 二审标 acceptable for declaration-only 用途,不升级。
+- **Field initializer 中的 `<` 比较运算符**(codex round-3 code review):`skipFieldInitializer` 用启发式 `<` 前是 ident-like 时才算 generic 起头,所以 `Map<K, V>` / `Comparator<Map.Entry<K, V>>` 等 generic args 含逗号的形态正确 balance。 但 `boolean x = a < b;` 这种纯比较(`<` 前后都是 ident)会被误算为 generic depth,初始化器 skip 到 EOF 出 error。 facade / DTO 类几乎不出现这种 field init,接受 trade-off;真撞到时可用 `boolean x = (a < b);` workaround,或在 C.3 之后扩 skip 逻辑成 expression-aware。
 
 ## What Comes Next(C.3 预告)
 
