@@ -202,7 +202,7 @@ func pickServiceType(types []javaparser.TypeDecl) *javaparser.TypeDecl {
 
 // emitTypeSchemas 把 types(含递归 NestedTypes)全部转成 TypeSchema 写进 out。
 // Flat keying:pkg + "." + Name(沿用既有 parseTypes 行为,跟 resolveType 兼容)。
-// Task 3 阶段只填 Type / Kind / SourceFile / Imports / TypeParams;Fields / EnumValues 在 Task 5 接入。
+// Task 5:除 Type / Kind / SourceFile / Imports / TypeParams 外,填 Fields / EnumValues / RecordComponents。
 func emitTypeSchemas(types []javaparser.TypeDecl, pkg, sourcePath string, imports map[string]string, out map[string]TypeSchema) {
 	for _, t := range types {
 		// annotation declaration 不产 TypeSchema(老 parser 用 typeKindRE 不匹配 @interface,跟齐)
@@ -220,11 +220,77 @@ func emitTypeSchemas(types []javaparser.TypeDecl, pkg, sourcePath string, import
 			Imports:    imports,
 			TypeParams: typeParamNames(t.TypeParams),
 		}
+		switch t.Kind {
+		case javaparser.TypeKindEnum:
+			schema.EnumValues = buildEnumValues(t.EnumValues)
+			// enum body 里也可能有 Fields(`private final String label;`),老 parser 走
+			// parseFields,这里 adapter 也填上
+			schema.Fields = buildFieldsForType(t)
+		case javaparser.TypeKindRecord:
+			// record 组件视为 Fields(老 parseRecordFields 行为)
+			schema.Fields = buildRecordFields(t.RecordComponents)
+			// record body 内的额外字段(`private final int extra = 1;`)也追加进去 ——
+			// 罕见但合法,跟齐老 parseFields 全文 regex 覆盖行为
+			if extra := buildFieldsForType(t); len(extra) > 0 {
+				schema.Fields = append(schema.Fields, extra...)
+			}
+		default:
+			schema.Fields = buildFieldsForType(t)
+		}
 		out[fqn] = schema
 		if len(t.NestedTypes) > 0 {
 			emitTypeSchemas(t.NestedTypes, pkg, sourcePath, imports, out)
 		}
 	}
+}
+
+// buildFieldsForType 把 TypeDecl.Fields 转成 schema.Field 列表。
+// 跳过 control keyword(if/for/while/...)—— 老 parseFields 通过 isControlKeyword
+// 过滤,javaparser 走 AST 不会产生这种 noise,但保留 guard 防 future regression。
+func buildFieldsForType(t javaparser.TypeDecl) []Field {
+	if len(t.Fields) == 0 {
+		return nil
+	}
+	out := make([]Field, 0, len(t.Fields))
+	for _, f := range t.Fields {
+		if isControlKeyword(f.Name) {
+			continue
+		}
+		out = append(out, Field{Name: f.Name, Type: typeRefToString(f.Type)})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// buildRecordFields 把 RecordComponents([]ParamDecl)转成 Field 列表。
+// 老 parseRecordFields 走 parseParameters → Field{Name, Type},等价。
+func buildRecordFields(components []javaparser.ParamDecl) []Field {
+	if len(components) == 0 {
+		return nil
+	}
+	out := make([]Field, 0, len(components))
+	for _, c := range components {
+		name := c.Name
+		if name == "" {
+			name = fallbackParamName(len(out))
+		}
+		out = append(out, Field{Name: name, Type: typeRefToString(c.Type)})
+	}
+	return out
+}
+
+// buildEnumValues 把 EnumValue 列表只取 Name(老 parseEnumValues 同样只存名)。
+func buildEnumValues(values []javaparser.EnumValue) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, len(values))
+	for i, v := range values {
+		out[i] = v.Name
+	}
+	return out
 }
 
 // typeKindName 把 javaparser TypeKind 映射成 schema.TypeSchema.Kind 字符串

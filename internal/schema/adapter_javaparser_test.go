@@ -417,3 +417,180 @@ public interface Foo {
 		t.Fatalf("methods = %v", methods)
 	}
 }
+
+func TestAdaptClassFields(t *testing.T) {
+	src := []byte(`package p;
+public class Asset {
+	private Long id;
+	public String name = "default";
+	protected final java.util.List<String> tags;
+	private static final int CONST = 1;
+}`)
+	cu, _ := javaparser.Parse(src, "Asset.java")
+	_, types := adaptCompilationUnit(cu, "Asset.java", src, nil, nil)
+	asset := types["p.Asset"]
+	if asset.Type == "" {
+		t.Fatalf("missing Asset schema: %v", types)
+	}
+	wantFields := map[string]string{
+		"id":    "Long",
+		"name":  "String",
+		"tags":  "java.util.List<String>",
+		"CONST": "int",
+	}
+	if len(asset.Fields) != len(wantFields) {
+		t.Fatalf("Fields = %+v, want %d entries", asset.Fields, len(wantFields))
+	}
+	for _, f := range asset.Fields {
+		if want, ok := wantFields[f.Name]; !ok || f.Type != want {
+			t.Errorf("Field %s = %q, want %q", f.Name, f.Type, want)
+		}
+	}
+}
+
+func TestAdaptEnumValues(t *testing.T) {
+	src := []byte(`package p;
+public enum Status {
+	ACTIVE("a"),
+	INACTIVE("i");
+	private final String code;
+	Status(String code) { this.code = code; }
+}`)
+	cu, _ := javaparser.Parse(src, "Status.java")
+	_, types := adaptCompilationUnit(cu, "Status.java", src, nil, nil)
+	status := types["p.Status"]
+	if status.Kind != "enum" {
+		t.Fatalf("Kind = %q", status.Kind)
+	}
+	wantValues := []string{"ACTIVE", "INACTIVE"}
+	if len(status.EnumValues) != len(wantValues) {
+		t.Fatalf("EnumValues = %v, want %v", status.EnumValues, wantValues)
+	}
+	for i, v := range wantValues {
+		if status.EnumValues[i] != v {
+			t.Errorf("EnumValues[%d] = %q, want %q", i, status.EnumValues[i], v)
+		}
+	}
+	if len(status.Fields) != 1 || status.Fields[0].Name != "code" || status.Fields[0].Type != "String" {
+		t.Errorf("enum Fields = %+v, want [{code, String}]", status.Fields)
+	}
+}
+
+func TestAdaptRecordComponents(t *testing.T) {
+	src := []byte(`package p;
+public record Point(int x, int y, java.util.List<String> tags) {}`)
+	cu, _ := javaparser.Parse(src, "Point.java")
+	_, types := adaptCompilationUnit(cu, "Point.java", src, nil, nil)
+	point := types["p.Point"]
+	if point.Kind != "record" {
+		t.Fatalf("Kind = %q", point.Kind)
+	}
+	wantFields := []Field{
+		{Name: "x", Type: "int"},
+		{Name: "y", Type: "int"},
+		{Name: "tags", Type: "java.util.List<String>"},
+	}
+	if len(point.Fields) != len(wantFields) {
+		t.Fatalf("Fields = %+v, want %v", point.Fields, wantFields)
+	}
+	for i, w := range wantFields {
+		if point.Fields[i] != w {
+			t.Errorf("Fields[%d] = %+v, want %+v", i, point.Fields[i], w)
+		}
+	}
+}
+
+func TestAdaptInterfaceTypeSchemaHasNoFields(t *testing.T) {
+	src := []byte(`package p;
+public interface Foo {
+	int VERSION = 1;
+	String hello();
+}`)
+	cu, _ := javaparser.Parse(src, "Foo.java")
+	_, types := adaptCompilationUnit(cu, "Foo.java", src, nil, nil)
+	foo := types["p.Foo"]
+	if len(foo.Fields) != 1 || foo.Fields[0].Name != "VERSION" {
+		t.Errorf("interface constants Fields = %+v", foo.Fields)
+	}
+}
+
+func TestAdaptMultiDeclFieldsExpanded(t *testing.T) {
+	src := []byte(`package p;
+public class Bag {
+	protected final long a = 1L, b, c = 3L;
+}`)
+	cu, _ := javaparser.Parse(src, "Bag.java")
+	_, types := adaptCompilationUnit(cu, "Bag.java", src, nil, nil)
+	bag := types["p.Bag"]
+	if len(bag.Fields) != 3 {
+		t.Fatalf("Fields = %+v, want 3 (multi-decl)", bag.Fields)
+	}
+	names := []string{bag.Fields[0].Name, bag.Fields[1].Name, bag.Fields[2].Name}
+	want := []string{"a", "b", "c"}
+	for i, w := range want {
+		if names[i] != w {
+			t.Errorf("Fields[%d].Name = %q, want %q", i, names[i], w)
+		}
+	}
+}
+
+func TestAdaptPackagePrivateFieldsIncluded(t *testing.T) {
+	src := []byte(`package p;
+public class Bag {
+	String packagePrivate;
+	public String pub;
+}`)
+	cu, _ := javaparser.Parse(src, "Bag.java")
+	_, types := adaptCompilationUnit(cu, "Bag.java", src, nil, nil)
+	bag := types["p.Bag"]
+	if len(bag.Fields) != 2 {
+		t.Fatalf("Fields = %+v, want 2 (package-private 也算)", bag.Fields)
+	}
+	names := []string{bag.Fields[0].Name, bag.Fields[1].Name}
+	want := []string{"packagePrivate", "pub"}
+	for i, w := range want {
+		if names[i] != w {
+			t.Errorf("Fields[%d].Name = %q, want %q", i, names[i], w)
+		}
+	}
+}
+
+func TestAdaptGenericRecordHeader(t *testing.T) {
+	src := []byte(`package p;
+public record Page<T>(int total, java.util.List<T> records) {}`)
+	cu, _ := javaparser.Parse(src, "Page.java")
+	_, types := adaptCompilationUnit(cu, "Page.java", src, nil, nil)
+	page := types["p.Page"]
+	if !sliceEq(page.TypeParams, []string{"T"}) {
+		t.Errorf("Page.TypeParams = %v, want [T]", page.TypeParams)
+	}
+	if len(page.Fields) != 2 {
+		t.Fatalf("Fields = %+v, want 2 (record components)", page.Fields)
+	}
+	if page.Fields[0].Name != "total" || page.Fields[0].Type != "int" {
+		t.Errorf("Fields[0] = %+v", page.Fields[0])
+	}
+	if page.Fields[1].Name != "records" || page.Fields[1].Type != "java.util.List<T>" {
+		t.Errorf("Fields[1] = %+v", page.Fields[1])
+	}
+}
+
+func TestAdaptGenericClassFields(t *testing.T) {
+	src := []byte(`package p;
+public class Page<T, K> {
+	private java.util.List<T> records;
+	private K key;
+}`)
+	cu, _ := javaparser.Parse(src, "Page.java")
+	_, types := adaptCompilationUnit(cu, "Page.java", src, nil, nil)
+	page := types["p.Page"]
+	if !sliceEq(page.TypeParams, []string{"T", "K"}) {
+		t.Errorf("Page.TypeParams = %v, want [T, K]", page.TypeParams)
+	}
+	if page.Fields[0].Type != "java.util.List<T>" {
+		t.Errorf("Fields[0].Type = %q, want java.util.List<T>", page.Fields[0].Type)
+	}
+	if page.Fields[1].Type != "K" {
+		t.Errorf("Fields[1].Type = %q, want K", page.Fields[1].Type)
+	}
+}
