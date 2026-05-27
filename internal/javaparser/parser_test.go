@@ -182,3 +182,121 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+func TestParsePackageOnly(t *testing.T) {
+	cu, err := Parse([]byte("package com.acme.facade;"), "Foo.java")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if cu.Package == nil {
+		t.Fatal("Package = nil")
+	}
+	if cu.Package.Name != "com.acme.facade" {
+		t.Errorf("Package.Name = %q, want com.acme.facade", cu.Package.Name)
+	}
+}
+
+func TestParseImportsAllForms(t *testing.T) {
+	src := `package p;
+import a.b.C;
+import a.b.D;
+import a.b.*;
+import static a.b.C.foo;
+import static a.b.C.*;
+`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	want := []ImportDecl{
+		{Path: "a.b.C"},
+		{Path: "a.b.D"},
+		{Path: "a.b", Wildcard: true},
+		{Path: "a.b.C.foo", Static: true},
+		{Path: "a.b.C", Static: true, Wildcard: true},
+	}
+	if len(cu.Imports) != len(want) {
+		t.Fatalf("imports len = %d, want %d (imports=%+v)", len(cu.Imports), len(want), cu.Imports)
+	}
+	for i, w := range want {
+		got := cu.Imports[i]
+		if got.Path != w.Path || got.Static != w.Static || got.Wildcard != w.Wildcard {
+			t.Errorf("imports[%d] = %+v, want %+v (path/static/wildcard only)", i, got, w)
+		}
+	}
+}
+
+func TestParsePackageWithFileLevelAnnotation(t *testing.T) {
+	src := "@Deprecated @SuppressWarnings(\"all\") package p;"
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if cu.Package == nil || cu.Package.Name != "p" {
+		t.Errorf("Package = %+v, want {Name:p}", cu.Package)
+	}
+}
+
+func TestParseDefaultPackageNoPackage(t *testing.T) {
+	cu, err := Parse([]byte("import a.b.C;"), "T.java")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if cu.Package != nil {
+		t.Errorf("Package = %+v, want nil (default package)", cu.Package)
+	}
+	if len(cu.Imports) != 1 || cu.Imports[0].Path != "a.b.C" {
+		t.Errorf("imports = %+v, want [a.b.C]", cu.Imports)
+	}
+}
+
+func TestParseImportContextualKeywordSegments(t *testing.T) {
+	// codex review #2:Java 包名常含 contextual keyword(record / sealed / var 等)
+	src := `import com.acme.record.UserDO;
+import com.thfund.sales.fundsalesmrksupport.facade.model.module.X;
+import java.util.var;`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	wantPaths := []string{
+		"com.acme.record.UserDO",
+		"com.thfund.sales.fundsalesmrksupport.facade.model.module.X",
+		"java.util.var",
+	}
+	if len(cu.Imports) != len(wantPaths) {
+		t.Fatalf("imports = %+v, want %d entries", cu.Imports, len(wantPaths))
+	}
+	for i, p := range wantPaths {
+		if cu.Imports[i].Path != p {
+			t.Errorf("imports[%d].Path = %q, want %q", i, cu.Imports[i].Path, p)
+		}
+	}
+}
+
+func TestParsePackageContextualKeywordSegments(t *testing.T) {
+	cu, err := Parse([]byte("package com.acme.record.dto;"), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if cu.Package == nil || cu.Package.Name != "com.acme.record.dto" {
+		t.Errorf("package = %+v", cu.Package)
+	}
+}
+
+func TestParseImportMalformedReturnsError(t *testing.T) {
+	cases := []string{
+		"import ;",            // 缺 ident
+		"import a.;",          // dot 后无 ident 或 *
+		"import a.b.C",        // 缺 ;
+		"import static ;",     // static 后缺 ident
+	}
+	for _, src := range cases {
+		t.Run(src, func(t *testing.T) {
+			_, err := Parse([]byte(src), "T.java")
+			if err == nil {
+				t.Errorf("expected error, got nil for %q", src)
+			}
+		})
+	}
+}
