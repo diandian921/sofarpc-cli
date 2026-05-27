@@ -51,3 +51,134 @@ func TestTypeRefString(t *testing.T) {
 		})
 	}
 }
+
+func TestCursorPeekConsumeSkipsTrivia(t *testing.T) {
+	tokens, err := Tokenize([]byte("/** doc */ public class Foo { }"))
+	if err != nil {
+		t.Fatalf("tokenize: %v", err)
+	}
+	c := newCursor(tokens)
+
+	first := c.peek()
+	if first.Kind != TokenKeyword || first.Value != "public" {
+		t.Fatalf("peek[0] = %v, want public", first)
+	}
+	c.consume()
+	second := c.consume()
+	if second.Kind != TokenKeyword || second.Value != "class" {
+		t.Fatalf("consume[1] = %v, want class", second)
+	}
+}
+
+func TestCursorPeekJavadoc(t *testing.T) {
+	// peekJavadoc 设计:从 idx-1 向前找最近的 Javadoc,中间只能是 trivia。
+	// 必须在消费 public 之前调用 —— 此时 idx 已被 skipTrivia 推到 public,
+	// idx-1 是 Javadoc。 若先 consume(public),idx 推到 class,回看遇到 public(非 trivia)
+	// 立即返回 ""。
+	tokens, err := Tokenize([]byte("/** hello */ public class Foo {}"))
+	if err != nil {
+		t.Fatalf("tokenize: %v", err)
+	}
+	c := newCursor(tokens)
+	c.peek() // 触发 skipTrivia 把 idx 推到 public 上;不消费
+	doc := c.peekJavadoc()
+	if doc == "" || !contains(doc, "hello") {
+		t.Errorf("javadoc = %q, want contains 'hello'", doc)
+	}
+}
+
+func TestCursorPeekJavadocBlockedByOtherTokens(t *testing.T) {
+	tokens, err := Tokenize([]byte("/** doc */ private int x; public void m() {}"))
+	if err != nil {
+		t.Fatalf("tokenize: %v", err)
+	}
+	c := newCursor(tokens)
+	// 把游标推到 public 之前
+	for {
+		tok := c.peek()
+		if tok.Kind == TokenKeyword && tok.Value == "public" {
+			break
+		}
+		c.consume()
+	}
+	doc := c.peekJavadoc()
+	if doc != "" {
+		t.Errorf("javadoc = %q, want empty (blocked by intervening declaration)", doc)
+	}
+}
+
+func TestCursorMatchAndExpect(t *testing.T) {
+	tokens, _ := Tokenize([]byte("{ } ( )"))
+	c := newCursor(tokens)
+	if !c.match(TokenLBrace) {
+		t.Fatal("match LBrace failed")
+	}
+	if _, err := c.expect(TokenRBrace, "}"); err != nil {
+		t.Fatalf("expect RBrace: %v", err)
+	}
+	if _, err := c.expect(TokenLParen, "("); err != nil {
+		t.Fatalf("expect LParen: %v", err)
+	}
+	if c.match(TokenLBrace) {
+		t.Fatal("match LBrace unexpectedly succeeded")
+	}
+}
+
+func TestCursorSkipBalancedNested(t *testing.T) {
+	tokens, _ := Tokenize([]byte("{ a { b } c { d { e } } } trailing"))
+	c := newCursor(tokens)
+	if err := c.skipBalanced(TokenLBrace, TokenRBrace); err != nil {
+		t.Fatalf("skipBalanced: %v", err)
+	}
+	tok := c.peek()
+	if tok.Kind != TokenIdent || tok.Value != "trailing" {
+		t.Errorf("after skip: %v, want Ident(trailing)", tok)
+	}
+}
+
+func TestCursorSkipBalancedUnmatched(t *testing.T) {
+	tokens, _ := Tokenize([]byte("{ no close"))
+	c := newCursor(tokens)
+	if err := c.skipBalanced(TokenLBrace, TokenRBrace); err == nil {
+		t.Fatal("expected unmatched error")
+	}
+}
+
+func TestCursorSkipUntilFound(t *testing.T) {
+	tokens, _ := Tokenize([]byte("a b ; c"))
+	c := newCursor(tokens)
+	if !c.skipUntil(TokenSemicolon) {
+		t.Fatal("skipUntil semicolon not found")
+	}
+	if c.peek().Kind != TokenSemicolon {
+		t.Errorf("after skipUntil: %v, want ;", c.peek())
+	}
+}
+
+func TestCursorPeekN(t *testing.T) {
+	tokens, _ := Tokenize([]byte("/** d */ a b /* c */ c d"))
+	c := newCursor(tokens)
+	if v := c.peekN(0); v.Value != "a" {
+		t.Errorf("peekN(0) = %v, want a", v)
+	}
+	if v := c.peekN(1); v.Value != "b" {
+		t.Errorf("peekN(1) = %v, want b", v)
+	}
+	if v := c.peekN(2); v.Value != "c" {
+		t.Errorf("peekN(2) = %v, want c (block comment skipped)", v)
+	}
+}
+
+// contains 是 strings.Contains 的简写,test only。
+func contains(s, sub string) bool {
+	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
