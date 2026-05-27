@@ -1,8 +1,10 @@
 package schema
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -325,4 +327,53 @@ func contains(items []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestMethodTypeParamsJSONRoundTrip(t *testing.T) {
+	original := Method{
+		Service:    "com.x.facade.PageFacade",
+		Method:     "query",
+		TypeParams: []string{"T", "K"},
+	}
+	body, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(body), `"typeParams":["T","K"]`) {
+		t.Errorf("json missing typeParams: %s", body)
+	}
+	var decoded Method
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(decoded.TypeParams) != 2 || decoded.TypeParams[0] != "T" || decoded.TypeParams[1] != "K" {
+		t.Errorf("decoded.TypeParams = %v, want [T, K]", decoded.TypeParams)
+	}
+}
+
+func TestTypeSchemaTypeParamsJSONRoundTrip(t *testing.T) {
+	original := TypeSchema{
+		Type:       "com.x.dto.Page",
+		Kind:       "class",
+		TypeParams: []string{"T"},
+	}
+	body, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(body), `"typeParams":["T"]`) {
+		t.Errorf("json missing typeParams: %s", body)
+	}
+}
+
+func TestTypeSchemaTypeParamsOmitEmpty(t *testing.T) {
+	// TypeParams 为空时 JSON 不应包含字段(omitempty)
+	original := TypeSchema{Type: "X", Kind: "class"}
+	body, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(body), "typeParams") {
+		t.Errorf("empty TypeParams should be omitted: %s", body)
+	}
 }

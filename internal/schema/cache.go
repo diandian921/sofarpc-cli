@@ -21,7 +21,9 @@ type cacheFile struct {
 	LastAccessedAt    int64   `json:"lastAccessedAt"`
 }
 
-const indexCacheVersion = "3"
+// indexCacheVersion 注意:每次 Method / TypeSchema struct 字段变化都要 bump,
+// 旧 cache 反序列化时无法填充新字段,LoadOrBuildIndex 会强制重建。
+const indexCacheVersion = "4"
 
 func LoadOrBuildIndex(project Project) (*Index, error) {
 	fingerprint, err := SourceFingerprint(project.WorkspaceRoot)

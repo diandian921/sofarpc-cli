@@ -33,6 +33,9 @@ type Method struct {
 	OutOfPrefix bool              `json:"outOfPrefix,omitempty"`
 	SourceHash  string            `json:"sourceHash,omitempty"`
 	Imports     map[string]string `json:"imports,omitempty"`
+	// TypeParams 是方法 declared type parameters 的简单名列表(`<T, K extends X>` → ["T", "K"])。
+	// rpc_types.go 用它精确识别 type variable,避免把同名 same-pkg class 误判为 DTO(Plan B P3 fix)。
+	TypeParams []string `json:"typeParams,omitempty"`
 }
 
 type Parameter struct {
@@ -48,6 +51,9 @@ type TypeSchema struct {
 	Unresolved bool              `json:"unresolved,omitempty"`
 	SourceFile string            `json:"sourceFile,omitempty"`
 	Imports    map[string]string `json:"imports,omitempty"`
+	// TypeParams 是 class declared type parameters 的简单名列表(`class Page<T, K>` → ["T", "K"])。
+	// rpc_types.go 用它精确识别 type variable(Plan B P3 fix)。
+	TypeParams []string `json:"typeParams,omitempty"`
 }
 
 type Field struct {
