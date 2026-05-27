@@ -194,7 +194,7 @@ func needsSchemaAnnotation(types []string) bool {
 // —— wildcard element 永远走 untyped Map 兜底,这是预期行为。
 // types 用于 same-package lookup:有 schema 的 acronym DTO(URL/XML/ID 等)
 // 优先按 schema FQN 解析,只在 schema miss 时才让 type variable 启发式生效。
-func resolveGenericType(typ string, imports map[string]string, pkg string, types map[string]schema.TypeSchema) string {
+func resolveGenericType(typ string, imports map[string]string, pkg string, types map[string]schema.TypeSchema, declaredTypeParams []string) string {
 	typ = strings.TrimSpace(typ)
 	typ = strings.TrimPrefix(typ, "final ")
 	if typ == "" {
@@ -217,32 +217,30 @@ func resolveGenericType(typ string, imports map[string]string, pkg string, types
 		base = strings.TrimSpace(typ[:open])
 		genericRaw = typ[open:]
 	}
-	resolvedBase := resolveBaseType(base, imports, pkg, types)
+	resolvedBase := resolveBaseType(base, imports, pkg, types, declaredTypeParams)
 	if genericRaw == "" {
 		return resolvedBase + suffix
 	}
 	args := extractGenericArgs(typ)
 	resolved := make([]string, len(args))
 	for i, arg := range args {
-		resolved[i] = resolveGenericType(arg, imports, pkg, types)
+		resolved[i] = resolveGenericType(arg, imports, pkg, types, declaredTypeParams)
 	}
 	return resolvedBase + "<" + strings.Join(resolved, ", ") + ">" + suffix
 }
 
 // resolveBaseType 把无泛型的短名解析成 FQN。
-// 顺序:Java built-in → 已带 "." → 显式 import → same-pkg schema lookup → type variable 启发式 → pkg fallback。
-// **same-pkg schema lookup 在 type variable 启发式之前**:
-//   - 真有 schema 的 acronym DTO(`URL` / `ID` / `XML`)走 schema FQN
-//   - 没 schema 又长得像 type var 才走启发式 return as-is
-//   - 没 schema 也不像 type var 才 pkg fallback(legacy)
+// 顺序:Java built-in → 已带 "." → 显式 import → declared type params 精确匹配 → same-pkg
+// schema lookup → type variable 启发式 fallback → pkg fallback。
 //
-// Known limitation (codex review 3, P3): 当 class declared type parameter
-// 跟 same-pkg class 同名(e.g. `class Page<T>` 同 package 真有 `com.x.dto.T`),
-// Java 语义 T 应绑 type-param,但本 resolver 会优先 same-pkg lookup 解为
-// `com.x.dto.T`。 真实业务几乎不出现(全大写 single-char class 反 convention),
-// 要修需要扩 schema parser 记录 declared type parameters 列表,scope 蔓延,
-// 接受作为 trade-off。 真撞到再做。
-func resolveBaseType(base string, imports map[string]string, pkg string, types map[string]schema.TypeSchema) string {
+// declaredTypeParams 是当前 method 或 type 的 declared type parameter 简单名列表
+// (`<T, K>` → ["T", "K"])。 在 pkg fallback 之前精确匹配:命中即 return as-is,
+// 不进 same-pkg lookup。 根治 [[rpc-types-generic-preservation]] P3(`class Page<T>`
+// 同 package 真有 `com.x.dto.T` 类时不被误解析为 DTO)。
+//
+// declaredTypeParams 为 nil 时(老 schema cache 还没填 TypeParams,或调用方没传)
+// 退化为老的启发式行为(`isLikelyTypeVariable`)。
+func resolveBaseType(base string, imports map[string]string, pkg string, types map[string]schema.TypeSchema, declaredTypeParams []string) string {
 	if base == "" {
 		return base
 	}
@@ -252,6 +250,12 @@ func resolveBaseType(base string, imports map[string]string, pkg string, types m
 	}
 	if imported, ok := imports[base]; ok {
 		return imported
+	}
+	// 精确匹配 declared type params —— same-pkg DTO 同名时按 type var 处理
+	for _, tp := range declaredTypeParams {
+		if tp == base {
+			return base
+		}
 	}
 	if pkg != "" {
 		fqn := pkg + "." + base
@@ -323,6 +327,12 @@ func rpcParamTypeForMethod(typ string, method schema.Method) string {
 	if imported, ok := method.Imports[base]; ok {
 		return imported
 	}
+	// declared type param 精确匹配 → 不 pkg fallback,return as-is
+	for _, tp := range method.TypeParams {
+		if tp == base {
+			return base
+		}
+	}
 	if method.Package != "" {
 		return method.Package + "." + base
 	}
@@ -337,7 +347,7 @@ func rpcParamTypeForMethod(typ string, method schema.Method) string {
 // MUST NOT leak to wire ArgTypes — hessian writer's eraseJavaType backstops,
 // but call sites should never plumb this string into Request.ArgTypes.
 func rpcValueTypeForMethod(typ string, method schema.Method, types map[string]schema.TypeSchema) string {
-	return resolveGenericType(typ, method.Imports, method.Package, types)
+	return resolveGenericType(typ, method.Imports, method.Package, types, method.TypeParams)
 }
 
 // rpcFieldTypeForType returns the *identity* form of a field type. See
@@ -354,6 +364,11 @@ func rpcFieldTypeForType(typ string, owner schema.TypeSchema) string {
 	}
 	if imported, ok := owner.Imports[base]; ok {
 		return imported
+	}
+	for _, tp := range owner.TypeParams {
+		if tp == base {
+			return base
+		}
 	}
 	if owner.Type != "" {
 		if lastDot := strings.LastIndex(owner.Type, "."); lastDot > 0 {
@@ -372,7 +387,7 @@ func rpcValueTypeForType(typ string, owner schema.TypeSchema, types map[string]s
 			pkg = owner.Type[:lastDot]
 		}
 	}
-	return resolveGenericType(typ, owner.Imports, pkg, types)
+	return resolveGenericType(typ, owner.Imports, pkg, types, owner.TypeParams)
 }
 
 func rpcParamType(typ string) string {

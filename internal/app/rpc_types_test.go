@@ -138,7 +138,7 @@ func TestResolveGenericType(t *testing.T) {
 		//  imports 表如果显式有 T -> com.x.T,会走 imports lookup,见下个单测)
 	}
 	for _, tc := range cases {
-		got := resolveGenericType(tc.in, imports, pkg, nil)
+		got := resolveGenericType(tc.in, imports, pkg, nil, nil)
 		if got != tc.want {
 			t.Errorf("resolveGenericType(%q) = %q, want %q", tc.in, got, tc.want)
 		}
@@ -272,7 +272,7 @@ func TestResolveTypeVariableOverriddenByExplicitImport(t *testing.T) {
 	// 边界 case:如果 user 真的 import 了一个叫 T 的 class(违反 convention 但可能),
 	// explicit import 必须优先于 type variable 启发式。
 	imports := map[string]string{"T": "com.example.weird.T"}
-	got := resolveGenericType("T", imports, "com.example.pkg", nil)
+	got := resolveGenericType("T", imports, "com.example.pkg", nil, nil)
 	if got != "com.example.weird.T" {
 		t.Errorf("explicit import should win over type-var heuristic, got %q", got)
 	}
@@ -282,14 +282,14 @@ func TestResolveAcronymDTOWithSchemaUsesPkgLookup(t *testing.T) {
 	types := map[string]schema.TypeSchema{
 		"com.example.dto.URL": {Type: "com.example.dto.URL", Kind: "class"},
 	}
-	got := resolveGenericType("URL", nil, "com.example.dto", types)
+	got := resolveGenericType("URL", nil, "com.example.dto", types, nil)
 	if got != "com.example.dto.URL" {
 		t.Errorf("same-pkg schema lookup should win over type-var heuristic, got %q", got)
 	}
 }
 
 func TestResolveAcronymDTOWithoutSchemaFallsBackUntyped(t *testing.T) {
-	got := resolveGenericType("URL", nil, "com.example.dto", nil)
+	got := resolveGenericType("URL", nil, "com.example.dto", nil, nil)
 	if got != "URL" {
 		t.Errorf("no-schema acronym should hit type-var heuristic, got %q", got)
 	}
@@ -363,5 +363,70 @@ func TestTypedArgumentsListOfTypeVariableFallsBackUntyped(t *testing.T) {
 	}
 	if strings.Contains(element.JavaType, "com.x.dto.T") {
 		t.Errorf("type variable T leaked into FQN: %q", element.JavaType)
+	}
+}
+
+func TestResolveBaseTypeP3DeclaredTypeParamShadowsSamePkgClass(t *testing.T) {
+	imports := map[string]string{}
+	pkg := "com.x.dto"
+	types := map[string]schema.TypeSchema{
+		"com.x.dto.T": {Type: "com.x.dto.T", Kind: "class"},
+	}
+	got := resolveBaseType("T", imports, pkg, types, []string{"T", "K"})
+	if got != "T" {
+		t.Errorf("resolveBaseType(T) = %q, want T (declared type param wins over same-pkg lookup)", got)
+	}
+	got = resolveBaseType("K", imports, pkg, types, []string{"T", "K"})
+	if got != "K" {
+		t.Errorf("resolveBaseType(K) = %q, want K", got)
+	}
+	types["com.x.dto.MaterialItem"] = schema.TypeSchema{Type: "com.x.dto.MaterialItem", Kind: "class"}
+	got = resolveBaseType("MaterialItem", imports, pkg, types, []string{"T", "K"})
+	if got != "com.x.dto.MaterialItem" {
+		t.Errorf("resolveBaseType(MaterialItem) = %q, want com.x.dto.MaterialItem", got)
+	}
+}
+
+func TestResolveBaseTypeP3NilDeclaredTypeParamsFallsBackToHeuristic(t *testing.T) {
+	imports := map[string]string{}
+	pkg := "com.x.dto"
+	types := map[string]schema.TypeSchema{}
+	got := resolveBaseType("T", imports, pkg, types, nil)
+	if got != "T" {
+		t.Errorf("nil TypeParams + likely type var → %q, want T (heuristic still fires)", got)
+	}
+	types["com.x.dto.ID"] = schema.TypeSchema{Type: "com.x.dto.ID", Kind: "class"}
+	got = resolveBaseType("ID", imports, pkg, types, nil)
+	if got != "com.x.dto.ID" {
+		t.Errorf("nil TypeParams + ID with schema → %q, want com.x.dto.ID", got)
+	}
+}
+
+func TestRpcParamTypeForMethodP3SkipsTypeParamPkgFallback(t *testing.T) {
+	method := schema.Method{
+		Package:    "com.x.facade",
+		TypeParams: []string{"T"},
+		Imports:    map[string]string{},
+	}
+	got := rpcParamTypeForMethod("T", method)
+	if got != "T" {
+		t.Errorf("rpcParamTypeForMethod(T) = %q, want T (TypeParam should bypass pkg fallback)", got)
+	}
+	got = rpcParamTypeForMethod("MaterialItem", method)
+	if got != "com.x.facade.MaterialItem" {
+		t.Errorf("rpcParamTypeForMethod(MaterialItem) = %q, want com.x.facade.MaterialItem", got)
+	}
+}
+
+func TestRpcFieldTypeForTypeP3SkipsTypeParamPkgFallback(t *testing.T) {
+	owner := schema.TypeSchema{
+		Type:       "com.x.dto.Page",
+		Kind:       "class",
+		TypeParams: []string{"T"},
+		Imports:    map[string]string{},
+	}
+	got := rpcFieldTypeForType("T", owner)
+	if got != "T" {
+		t.Errorf("rpcFieldTypeForType(T) = %q, want T (class TypeParam should bypass pkg fallback)", got)
 	}
 }
