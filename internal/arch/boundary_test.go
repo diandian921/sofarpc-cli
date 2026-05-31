@@ -69,6 +69,67 @@ func TestPackageBoundaries(t *testing.T) {
 	}
 }
 
+// packageExists reports whether go list can load pkg. It returns false before a
+// package is created, so the MCP layering rules below can be committed ahead of
+// the packages they govern and activate automatically as each lands.
+func packageExists(pkg string) bool {
+	cmd := exec.Command("go", "list", pkg)
+	cmd.Dir = filepath.Join("..", "..")
+	return cmd.Run() == nil
+}
+
+// TestMCPLayerBoundaries enforces the three-layer dependency direction
+// cli/mcp facade -> tools -> server -> proto. proto depends only on stdlib;
+// server never imports tools or app; tools never imports proto (progress and
+// logging reach tools through the server.Runtime interface instead).
+func TestMCPLayerBoundaries(t *testing.T) {
+	rules := []struct {
+		pkg       string
+		forbidden []string
+	}{
+		{
+			pkg: modulePath + "/internal/mcp/proto",
+			forbidden: []string{
+				modulePath + "/internal/app",
+				modulePath + "/internal/mcp/server",
+				modulePath + "/internal/mcp/tools",
+				modulePath + "/internal/cli",
+				modulePath + "/internal/schema",
+				modulePath + "/internal/appconfig",
+				modulePath + "/internal/direct",
+			},
+		},
+		{
+			pkg: modulePath + "/internal/mcp/server",
+			forbidden: []string{
+				modulePath + "/internal/mcp/tools",
+				modulePath + "/internal/app",
+			},
+		},
+		{
+			pkg: modulePath + "/internal/mcp/tools",
+			forbidden: []string{
+				modulePath + "/internal/mcp/proto",
+			},
+		},
+	}
+	for _, rule := range rules {
+		t.Run(shortPackageName(rule.pkg), func(t *testing.T) {
+			if !packageExists(rule.pkg) {
+				t.Skipf("%s not created yet", rule.pkg)
+			}
+			deps := packageDeps(t, rule.pkg)
+			for _, forbidden := range rule.forbidden {
+				for dep := range deps {
+					if samePackageOrChild(dep, forbidden) {
+						t.Fatalf("%s must not depend on %s; found dependency %s", rule.pkg, forbidden, dep)
+					}
+				}
+			}
+		})
+	}
+}
+
 func packageDeps(t *testing.T, pkg string) map[string]bool {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-deps", "-json", pkg)
