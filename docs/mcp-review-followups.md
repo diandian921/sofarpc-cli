@@ -119,3 +119,7 @@ DisableConfigWrite tools/list 形状:三审建议钉测试,核实 `server_test.g
 
 1. **resolve 多 server 读错 store**:见上「落地选择」——A 在注入 `ConfigStore` 时读全局配置,与 `appSvc.Resolve` 发散。改 B(原地脱敏 `resolved.Servers`)。`view.go`/`resolve.go`,新增 `TestResolveMultiServerUsesInjectedStore`。
 2. **progressToken `Int64` 路径绕过 ±2^53**:`9007199254740993` 能进 int64 但超安全范围,旧码 `Int64()` 成功即放行,违背自己写的契约。整数路径补范围检查;`progress_test.go` 加 `9007199254740992`(收)/`9007199254740993`(拒)用例。
+
+### codex 二审(commit 1a36d84)→ 1 处 P2,已修
+
+- **progressToken `Float64` 回退仍是有损的**:`9007199254740993e0` 这种指数形式 `Int64()` 失败 → 走 `Float64()`,**解析时即舍入成 2^53** 再过范围检查 → 越界值被放行。codex 指出「用 Float64 判范围/整数性本身有损」。**砍掉 float 路径**:只认 `Int64` 能精确解析的规范整数字面量(+范围),`1.0`/`2e3`/`...e0` 等非整数字面量一律拒(退化写法,拒=不发 progress,无害)。去掉 `math` 依赖,逻辑更简。`progress_test.go` 加 `9007199254740993e0`、`1.0`、`2e3` 均拒的用例。resolve-store fix 经 codex 复核认可。

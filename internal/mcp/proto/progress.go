@@ -3,7 +3,6 @@ package proto
 import (
 	"bytes"
 	"encoding/json"
-	"math"
 )
 
 // JSON can represent integers exactly only within ±2^53; a progressToken number
@@ -33,9 +32,11 @@ func progressTokenFromParams(params json.RawMessage) (json.RawMessage, bool) {
 }
 
 // validProgressToken enforces the MCP rule that a progressToken is a string or an
-// integer. A JSON number is accepted only when it is integral and within the safe
-// integer range; fractional numbers and any other JSON type are rejected so a
-// bad token is ignored instead of breaking later progress correlation.
+// integer. A JSON number is accepted only as a canonical integer literal within
+// ±2^53 (Int64 parses it exactly); fractional or exponent forms (e.g. 1.2, 2e3,
+// 9007199254740993e0) are rejected rather than range-checked through a lossy
+// Float64, and any other JSON type is rejected, so a bad token is ignored instead
+// of breaking later progress correlation.
 func validProgressToken(raw json.RawMessage) bool {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
@@ -47,14 +48,8 @@ func validProgressToken(raw json.RawMessage) bool {
 	case string:
 		return true
 	case json.Number:
-		if i, err := t.Int64(); err == nil {
-			return i >= minSafeInteger && i <= maxSafeInteger
-		}
-		f, err := t.Float64()
-		if err != nil {
-			return false
-		}
-		return f == math.Trunc(f) && f >= minSafeInteger && f <= maxSafeInteger
+		i, err := t.Int64()
+		return err == nil && i >= minSafeInteger && i <= maxSafeInteger
 	default:
 		return false
 	}
