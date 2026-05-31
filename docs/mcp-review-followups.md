@@ -122,4 +122,10 @@ DisableConfigWrite tools/list 形状:三审建议钉测试,核实 `server_test.g
 
 ### codex 二审(commit 1a36d84)→ 1 处 P2,已修
 
-- **progressToken `Float64` 回退仍是有损的**:`9007199254740993e0` 这种指数形式 `Int64()` 失败 → 走 `Float64()`,**解析时即舍入成 2^53** 再过范围检查 → 越界值被放行。codex 指出「用 Float64 判范围/整数性本身有损」。**砍掉 float 路径**:只认 `Int64` 能精确解析的规范整数字面量(+范围),`1.0`/`2e3`/`...e0` 等非整数字面量一律拒(退化写法,拒=不发 progress,无害)。去掉 `math` 依赖,逻辑更简。`progress_test.go` 加 `9007199254740993e0`、`1.0`、`2e3` 均拒的用例。resolve-store fix 经 codex 复核认可。
+- **progressToken `Float64` 回退仍是有损的**:`9007199254740993e0` 这种指数形式 `Int64()` 失败 → 走 `Float64()`,**解析时即舍入成 2^53** 再过范围检查 → 越界值被放行。codex 指出「用 Float64 判范围/整数性本身有损」。当时砍掉 float 路径改成 `Int64`-only(见三审纠偏)。resolve-store fix 经 codex 复核认可。
+
+### codex 三审(commit c06528e)→ 1 处 P2,已修(终态)
+
+- **`Int64`-only 又矫枉过正**:把 `1.0`/`2e3` 这类**整数值的合法 JSON 写法**也拒了 → 这些 client 的 async 调用静默收不到 progress。codex 要「精确解析:接受整数值的各种写法,仍拒 `...e0` 越界」。
+- **根因复盘**:`Int64`-only 和 `Float64` 是同一目标的两个错角——前者漏接合法整数值写法,后者有损。两轮 codex 其实指向同一真目标:**精确判断"值是否为 ±2^53 内整数",与字面量写法无关**。
+- **终态**:改用 `math/big.Rat` 精确解析——`SetString(t.String())` + `IsInt()` + `Num().CmpAbs(2^53)<=0`。实测:`5`/`-7`/`1.0`/`2e3`/`±2^53` 收,`9007199254740993`/`...e0`/`1.2`/非数字 拒,零精度损失。`progress_test.go` 覆盖全部边界。

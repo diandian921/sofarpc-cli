@@ -3,15 +3,15 @@ package proto
 import (
 	"bytes"
 	"encoding/json"
+	"math/big"
 )
 
 // JSON can represent integers exactly only within ±2^53; a progressToken number
 // outside this range (or with a fractional part) is rejected rather than echoed
 // back with silent precision loss.
-const (
-	maxSafeInteger = 1 << 53
-	minSafeInteger = -(1 << 53)
-)
+const maxSafeInteger = 1 << 53
+
+var maxSafeInt = big.NewInt(maxSafeInteger)
 
 // progressTokenFromParams extracts params._meta.progressToken, returning false
 // when the client did not request progress (progress must not be sent then) or
@@ -32,11 +32,12 @@ func progressTokenFromParams(params json.RawMessage) (json.RawMessage, bool) {
 }
 
 // validProgressToken enforces the MCP rule that a progressToken is a string or an
-// integer. A JSON number is accepted only as a canonical integer literal within
-// ±2^53 (Int64 parses it exactly); fractional or exponent forms (e.g. 1.2, 2e3,
-// 9007199254740993e0) are rejected rather than range-checked through a lossy
-// Float64, and any other JSON type is rejected, so a bad token is ignored instead
-// of breaking later progress correlation.
+// integer. A JSON number is accepted iff it is exactly integer-valued and within
+// ±2^53, parsed via big.Rat so every integer form (5, 1.0, 2e3) is accepted while
+// fractional values (1.2) and out-of-range ones (9007199254740993, ...e0) are
+// rejected without the precision loss a float64 round-trip would hide. Any other
+// JSON type is rejected, so a bad token is ignored instead of breaking later
+// progress correlation.
 func validProgressToken(raw json.RawMessage) bool {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
@@ -48,8 +49,8 @@ func validProgressToken(raw json.RawMessage) bool {
 	case string:
 		return true
 	case json.Number:
-		i, err := t.Int64()
-		return err == nil && i >= minSafeInteger && i <= maxSafeInteger
+		r, ok := new(big.Rat).SetString(t.String())
+		return ok && r.IsInt() && r.Num().CmpAbs(maxSafeInt) <= 0
 	default:
 		return false
 	}
