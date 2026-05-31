@@ -47,8 +47,8 @@ func validProgressToken(raw json.RawMessage) bool {
 	case string:
 		return true
 	case json.Number:
-		if _, err := t.Int64(); err == nil {
-			return true
+		if i, err := t.Int64(); err == nil {
+			return i >= minSafeInteger && i <= maxSafeInteger
 		}
 		f, err := t.Float64()
 		if err != nil {

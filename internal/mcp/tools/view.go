@@ -58,19 +58,28 @@ func publicEndpoint(e app.Endpoint) map[string]interface{} {
 	return out
 }
 
-// publicBoundServers lists the servers bound to project with attachment values
-// redacted, mirroring app.boundServers but routed through publicServer. Re-listed
-// from config in the tools layer so no caller hands a raw appconfig.Server out.
-func publicBoundServers(cfg appconfig.Config, project string) []map[string]interface{} {
-	servers := []map[string]interface{}{}
-	for _, name := range cfg.ServerNames() {
-		srv := cfg.Servers[name]
-		if srv.Project != project {
-			continue
+// publicServers redacts the "server" entry of an app-built bound-server list
+// (each element is {"name": string, "server": appconfig.Server}). Redacting the
+// list app already resolved keeps the output on the same ConfigStore appSvc used,
+// rather than re-reading the global config (which can diverge under an injected
+// store). A "server" value that is not an appconfig.Server is dropped, never
+// passed through raw, so an unexpected shape cannot leak attachment values.
+func publicServers(servers []map[string]interface{}) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(servers))
+	for _, entry := range servers {
+		redacted := make(map[string]interface{}, len(entry))
+		for k, v := range entry {
+			if k == "server" {
+				if srv, ok := v.(appconfig.Server); ok {
+					redacted[k] = publicServer(srv)
+				}
+				continue
+			}
+			redacted[k] = v
 		}
-		servers = append(servers, map[string]interface{}{"name": name, "server": publicServer(srv)})
+		out = append(out, redacted)
 	}
-	return servers
+	return out
 }
 
 // publicPlanDisplay is plan.Display() with the endpoint routed through

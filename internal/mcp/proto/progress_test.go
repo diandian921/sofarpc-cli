@@ -15,6 +15,8 @@ func TestValidProgressToken(t *testing.T) {
 		{`-7`, true},
 		{`1.0`, true},
 		{`2e3`, true},
+		{`9007199254740992`, true},
+		{`9007199254740993`, false},
 		{`1.2`, false},
 		{`true`, false},
 		{`null`, false},

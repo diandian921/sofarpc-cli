@@ -55,14 +55,10 @@ func ResolveTool(appSvc *app.Service) server.Tool[ResolveArgs] {
 					"diagnostics": resolved.Diagnostics,
 				})
 			}
-			cfg, cfgErr := loadConfig()
-			if cfgErr != nil {
-				return configFailure(cfgErr)
-			}
 			return success("Project resolved; no single endpoint was selected.", map[string]interface{}{
 				"project":     resolved.Project.Name,
 				"projectInfo": resolved.Project.Info,
-				"servers":     publicBoundServers(cfg, resolved.Project.Name),
+				"servers":     publicServers(resolved.Servers),
 				"network":     resolved.Network,
 				"diagnostics": resolved.Diagnostics,
 			})

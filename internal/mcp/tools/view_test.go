@@ -76,6 +76,35 @@ func assertRedacted(t *testing.T, label, js string) {
 	}
 }
 
+type fixedStore struct{ cfg appconfig.Config }
+
+func (s fixedStore) Load() (appconfig.Config, error) { return s.cfg, nil }
+
+// TestResolveMultiServerUsesInjectedStore pins that the multi-server branch reads
+// the servers app resolved from appSvc's ConfigStore, not the global config path.
+// SOFARPC_HOME points at an empty dir, so a re-read of the global config would
+// return no servers; only redacting resolved.Servers keeps the output correct.
+func TestResolveMultiServerUsesInjectedStore(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	cfg := appconfig.Config{
+		Projects: map[string]appconfig.Project{"user": {WorkspaceRoot: t.TempDir()}},
+		Servers: map[string]appconfig.Server{
+			"s1": {Address: "127.0.0.1:1", Project: "user", Attachments: map[string]string{sentinelKey: sentinelValue}},
+			"s2": {Address: "127.0.0.1:2", Project: "user", Attachments: map[string]string{sentinelKey: sentinelValue}},
+		},
+	}
+	out := ResolveTool(app.New(fixedStore{cfg: cfg})).Run(context.Background(), nopRuntime{}, ResolveArgs{})
+	r := asResult(t, out.Structured)
+	if !r.OK {
+		t.Fatalf("resolve must succeed off the injected store: %+v", r)
+	}
+	js := structuredJSON(t, out.Structured)
+	if !strings.Contains(js, "127.0.0.1:1") || !strings.Contains(js, "127.0.0.1:2") {
+		t.Fatalf("resolve must return the injected store's servers, not the global config: %s", js)
+	}
+	assertRedacted(t, "resolve(injected servers)", js)
+}
+
 func TestResolveSingleEndpointRedactsAttachments(t *testing.T) {
 	seedConfigAttach(t)
 	out := ResolveTool(app.New(nil)).Run(context.Background(), nopRuntime{}, ResolveArgs{Server: "user-test"})
