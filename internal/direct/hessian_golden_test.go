@@ -3,6 +3,7 @@ package direct
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -124,6 +125,27 @@ func TestHessianJavaGoldenDecode(t *testing.T) {
 			items := goldenListItems(t, got)
 			if len(items) != 3 || items[0] != "x" || items[1] != "y" || items[2] != "z" {
 				t.Fatalf("set items = %#v", items)
+			}
+		},
+		"local-date": func(t *testing.T, got interface{}) {
+			fields := goldenObjectFields(t, got, "com.caucho.hessian.io.jdk8.LocalDateHandle")
+			if fmt.Sprint(fields["year"]) != "2024" || fmt.Sprint(fields["month"]) != "1" || fmt.Sprint(fields["day"]) != "15" {
+				t.Fatalf("local-date fields = %#v", fields)
+			}
+		},
+		"local-date-time": func(t *testing.T, got interface{}) {
+			fields := goldenObjectFields(t, got, "com.caucho.hessian.io.jdk8.LocalDateTimeHandle")
+			if _, ok := fields["date"]; !ok {
+				t.Fatalf("local-date-time missing date: %#v", fields)
+			}
+			if _, ok := fields["time"]; !ok {
+				t.Fatalf("local-date-time missing time: %#v", fields)
+			}
+		},
+		"instant": func(t *testing.T, got interface{}) {
+			fields := goldenObjectFields(t, got, "com.caucho.hessian.io.jdk8.InstantHandle")
+			if fmt.Sprint(fields["seconds"]) != "1705314600" {
+				t.Fatalf("instant fields = %#v", fields)
 			}
 		},
 	}

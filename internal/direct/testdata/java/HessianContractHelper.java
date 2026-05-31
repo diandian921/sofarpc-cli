@@ -7,6 +7,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -220,6 +223,12 @@ public final class HessianContractHelper {
                 a.next = b;
                 b.next = a;
                 return a;
+            case "local-date":
+                return LocalDate.of(2024, 1, 15);
+            case "local-date-time":
+                return LocalDateTime.of(2024, 1, 15, 10, 30, 0);
+            case "instant":
+                return Instant.ofEpochMilli(1705314600000L);
             default:
                 throw new IllegalArgumentException("unknown case: " + name);
         }
@@ -269,6 +278,9 @@ public final class HessianContractHelper {
         }
         if (value instanceof Date) {
             return "Date:" + ((Date) value).getTime();
+        }
+        if (value instanceof LocalDate || value instanceof LocalDateTime || value instanceof Instant) {
+            return value.getClass().getName() + ":" + value.toString();
         }
         if (value instanceof List) {
             StringBuilder out = new StringBuilder("List[");

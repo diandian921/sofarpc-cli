@@ -78,6 +78,11 @@ func flattenJavaValueObject(class string, fields map[string]interface{}) (interf
 		return flattenJavaNumber(value), true
 	case "java.util.Date", "java.sql.Date", "java.sql.Time", "java.sql.Timestamp":
 		return flattenJavaDate(fields)
+	case "com.caucho.hessian.io.jdk8.LocalDateHandle",
+		"com.caucho.hessian.io.jdk8.LocalTimeHandle",
+		"com.caucho.hessian.io.jdk8.LocalDateTimeHandle",
+		"com.caucho.hessian.io.jdk8.InstantHandle":
+		return flattenJDKTime(class, fields)
 	case "java.util.Optional":
 		return flattenJavaOptional(fields)
 	case "java.util.OptionalInt", "java.util.OptionalLong":
@@ -108,6 +113,84 @@ func flattenJavaDate(fields map[string]interface{}) (interface{}, bool) {
 		}, true
 	}
 	return nil, false
+}
+
+// flattenJDKTime renders the alipay Hessian jdk8 *Handle proxy objects (how
+// java.time values arrive on the wire) into ISO-8601 strings, mirroring what Java
+// readResolve reconstructs. The raw {type, fields} decode stays faithful; this is
+// the agent-facing presentation.
+func flattenJDKTime(class string, fields map[string]interface{}) (interface{}, bool) {
+	switch class {
+	case "com.caucho.hessian.io.jdk8.LocalDateHandle":
+		return localDateString(fields)
+	case "com.caucho.hessian.io.jdk8.LocalTimeHandle":
+		return localTimeString(fields)
+	case "com.caucho.hessian.io.jdk8.LocalDateTimeHandle":
+		return localDateTimeString(fields)
+	case "com.caucho.hessian.io.jdk8.InstantHandle":
+		return instantString(fields)
+	}
+	return nil, false
+}
+
+func localDateString(fields map[string]interface{}) (interface{}, bool) {
+	y, ok1 := int64FromValue(fields["year"])
+	m, ok2 := int64FromValue(fields["month"])
+	d, ok3 := int64FromValue(fields["day"])
+	if !ok1 || !ok2 || !ok3 {
+		return nil, false
+	}
+	return fmt.Sprintf("%04d-%02d-%02d", y, m, d), true
+}
+
+func localTimeString(fields map[string]interface{}) (interface{}, bool) {
+	h, ok1 := int64FromValue(fields["hour"])
+	mi, ok2 := int64FromValue(fields["minute"])
+	s, ok3 := int64FromValue(fields["second"])
+	if !ok1 || !ok2 || !ok3 {
+		return nil, false
+	}
+	out := fmt.Sprintf("%02d:%02d:%02d", h, mi, s)
+	if n, ok := int64FromValue(fields["nano"]); ok && n > 0 {
+		out += "." + strings.TrimRight(fmt.Sprintf("%09d", n), "0")
+	}
+	return out, true
+}
+
+func localDateTimeString(fields map[string]interface{}) (interface{}, bool) {
+	dateFields, ok1 := handleFields(fields["date"])
+	timeFields, ok2 := handleFields(fields["time"])
+	if !ok1 || !ok2 {
+		return nil, false
+	}
+	date, ok1 := localDateString(dateFields)
+	clock, ok2 := localTimeString(timeFields)
+	if !ok1 || !ok2 {
+		return nil, false
+	}
+	return fmt.Sprintf("%vT%v", date, clock), true
+}
+
+func instantString(fields map[string]interface{}) (interface{}, bool) {
+	secs, ok := int64FromValue(fields["seconds"])
+	if !ok {
+		return nil, false
+	}
+	nanos, _ := int64FromValue(fields["nanos"])
+	t := time.Unix(secs, nanos).UTC()
+	if nanos == 0 {
+		return t.Format(time.RFC3339), true
+	}
+	return t.Format(time.RFC3339Nano), true
+}
+
+func handleFields(v interface{}) (map[string]interface{}, bool) {
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	f, ok := m["fields"].(map[string]interface{})
+	return f, ok
 }
 
 func flattenJavaOptional(fields map[string]interface{}) (interface{}, bool) {

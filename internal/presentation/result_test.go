@@ -59,6 +59,41 @@ func TestFlattenJDKValueTypes(t *testing.T) {
 	}
 }
 
+func TestFlattenJDKTimeTypes(t *testing.T) {
+	localDate := Flatten(map[string]interface{}{
+		"type":   "com.caucho.hessian.io.jdk8.LocalDateHandle",
+		"fields": map[string]interface{}{"year": 2024, "month": 1, "day": 15},
+	})
+	if localDate != "2024-01-15" {
+		t.Fatalf("localDate = %#v", localDate)
+	}
+
+	localDateTime := Flatten(map[string]interface{}{
+		"type": "com.caucho.hessian.io.jdk8.LocalDateTimeHandle",
+		"fields": map[string]interface{}{
+			"date": map[string]interface{}{
+				"type":   "com.caucho.hessian.io.jdk8.LocalDateHandle",
+				"fields": map[string]interface{}{"year": 2024, "month": 1, "day": 15},
+			},
+			"time": map[string]interface{}{
+				"type":   "com.caucho.hessian.io.jdk8.LocalTimeHandle",
+				"fields": map[string]interface{}{"hour": 10, "minute": 30, "second": 0, "nano": 0},
+			},
+		},
+	})
+	if localDateTime != "2024-01-15T10:30:00" {
+		t.Fatalf("localDateTime = %#v", localDateTime)
+	}
+
+	instant := Flatten(map[string]interface{}{
+		"type":   "com.caucho.hessian.io.jdk8.InstantHandle",
+		"fields": map[string]interface{}{"seconds": int64(1705314600), "nanos": 0},
+	})
+	if instant != "2024-01-15T10:30:00Z" {
+		t.Fatalf("instant = %#v", instant)
+	}
+}
+
 func TestFlattenMapKeysAndBigIntegerKnownGap(t *testing.T) {
 	out := Flatten(map[string]interface{}{
 		"type": "java.util.LinkedHashMap",
