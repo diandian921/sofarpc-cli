@@ -123,7 +123,7 @@ func endpointData(server appconfig.Server, timeoutMS int) map[string]interface{}
 		"protocol":    server.Protocol,
 		"timeoutMs":   timeoutMS,
 		"appName":     server.AppName,
-		"attachments": server.Attachments,
+		"attachments": redactAttachments(server.Attachments),
 	}
 }
 

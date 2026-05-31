@@ -81,12 +81,9 @@ func TestCallRejectsStringForBool(t *testing.T) {
 	}
 }
 
-func TestCallUnknownToolIsErrorResult(t *testing.T) {
-	res, derr := newRegistryWithEcho().Call(context.Background(), SessionRuntime{}, "nope", nil)
-	if derr != nil {
-		t.Fatalf("unknown tool should be a result, not a jsonrpc error: %+v", derr)
-	}
-	if !res.IsError {
-		t.Fatalf("unknown tool must be an error result")
+func TestCallUnknownToolIsInvalidParams(t *testing.T) {
+	_, derr := newRegistryWithEcho().Call(context.Background(), SessionRuntime{}, "nope", nil)
+	if derr == nil || derr.Code != -32602 {
+		t.Fatalf("unknown tool must be a -32602 jsonrpc error, got %+v", derr)
 	}
 }

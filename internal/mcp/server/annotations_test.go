@@ -15,11 +15,11 @@ func registerSpec(r *Registry, spec ToolSpec) {
 	})
 }
 
-func TestValidateRequiresOutputSchemaForRichTools(t *testing.T) {
+func TestValidateRequiresOutputSchemaForEveryTool(t *testing.T) {
 	r := NewRegistry()
 	registerSpec(r, ToolSpec{Name: "sofarpc_resolve", InputSchema: json.RawMessage(`{"type":"object"}`)})
 	if err := r.Validate(); err == nil {
-		t.Fatal("sofarpc_resolve without outputSchema must fail Validate")
+		t.Fatal("a tool without outputSchema must fail Validate")
 	}
 
 	r2 := NewRegistry()
@@ -29,14 +29,14 @@ func TestValidateRequiresOutputSchemaForRichTools(t *testing.T) {
 		OutputSchema: json.RawMessage(`{"type":"object"}`),
 	})
 	if err := r2.Validate(); err != nil {
-		t.Fatalf("sofarpc_resolve with outputSchema should pass Validate: %v", err)
+		t.Fatalf("a tool with outputSchema should pass Validate: %v", err)
 	}
 }
 
-func TestValidateIgnoresPlainTools(t *testing.T) {
+func TestValidateRejectsPlainToolsToo(t *testing.T) {
 	r := NewRegistry()
 	registerSpec(r, ToolSpec{Name: "sofarpc_probe", InputSchema: json.RawMessage(`{"type":"object"}`)})
-	if err := r.Validate(); err != nil {
-		t.Fatalf("a tool without an outputSchema requirement should pass: %v", err)
+	if err := r.Validate(); err == nil {
+		t.Fatal("every registered tool must declare an outputSchema, even sofarpc_probe")
 	}
 }

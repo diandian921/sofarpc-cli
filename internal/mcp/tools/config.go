@@ -28,11 +28,12 @@ var configListInputSchema = json.RawMessage(`{
 func ConfigListTool(writeEnabled bool) server.Tool[ConfigListArgs] {
 	return server.Tool[ConfigListArgs]{
 		Spec: server.ToolSpec{
-			Name:        "sofarpc_config_list",
-			Title:       "SofaRPC Config: List",
-			Description: "List configured projects and servers from ~/.sofarpc/config.json.",
-			Annotations: server.Annotations{ReadOnlyHint: true, IdempotentHint: true},
-			InputSchema: configListInputSchema,
+			Name:         "sofarpc_config_list",
+			Title:        "SofaRPC Config: List",
+			Description:  "List configured projects and servers from ~/.sofarpc/config.json.",
+			Annotations:  server.Annotations{ReadOnlyHint: true, IdempotentHint: true},
+			InputSchema:  configListInputSchema,
+			OutputSchema: resultOutputSchema,
 		},
 		Run: func(_ context.Context, _ server.Runtime, a ConfigListArgs) server.Result {
 			cfg, err := loadConfig()
@@ -56,7 +57,7 @@ func ConfigListTool(writeEnabled bool) server.Tool[ConfigListArgs] {
 				if a.Project != "" && srv.Project != a.Project {
 					continue
 				}
-				servers = append(servers, map[string]interface{}{"name": name, "server": srv})
+				servers = append(servers, map[string]interface{}{"name": name, "server": publicServer(srv)})
 			}
 			return success("Config loaded.", map[string]interface{}{
 				"configPath":    path,
@@ -95,11 +96,12 @@ var configSaveProjectInputSchema = json.RawMessage(`{
 func ConfigSaveProjectTool() server.Tool[ConfigSaveProjectArgs] {
 	return server.Tool[ConfigSaveProjectArgs]{
 		Spec: server.ToolSpec{
-			Name:        "sofarpc_config_save_project",
-			Title:       "SofaRPC Config: Save Project",
-			Description: "Add or replace a local source project in config.json.",
-			Annotations: server.Annotations{},
-			InputSchema: configSaveProjectInputSchema,
+			Name:         "sofarpc_config_save_project",
+			Title:        "SofaRPC Config: Save Project",
+			Description:  "Add or replace a local source project in config.json.",
+			Annotations:  server.Annotations{},
+			InputSchema:  configSaveProjectInputSchema,
+			OutputSchema: resultOutputSchema,
 		},
 		Run: func(_ context.Context, _ server.Runtime, a ConfigSaveProjectArgs) server.Result {
 			if a.Name == "" || a.WorkspaceRoot == "" {
@@ -156,11 +158,12 @@ var configSaveServerInputSchema = json.RawMessage(`{
 func ConfigSaveServerTool() server.Tool[ConfigSaveServerArgs] {
 	return server.Tool[ConfigSaveServerArgs]{
 		Spec: server.ToolSpec{
-			Name:        "sofarpc_config_save_server",
-			Title:       "SofaRPC Config: Save Server",
-			Description: "Add or replace a configured RPC server in config.json.",
-			Annotations: server.Annotations{},
-			InputSchema: configSaveServerInputSchema,
+			Name:         "sofarpc_config_save_server",
+			Title:        "SofaRPC Config: Save Server",
+			Description:  "Add or replace a configured RPC server in config.json.",
+			Annotations:  server.Annotations{},
+			InputSchema:  configSaveServerInputSchema,
+			OutputSchema: resultOutputSchema,
 		},
 		Run: func(_ context.Context, _ server.Runtime, a ConfigSaveServerArgs) server.Result {
 			if a.Name == "" || a.Address == "" || a.Project == "" {
@@ -186,7 +189,7 @@ func ConfigSaveServerTool() server.Tool[ConfigSaveServerArgs] {
 			}); err != nil {
 				return configFailure(err)
 			}
-			return success("Server saved to config.json.", map[string]interface{}{"name": a.Name, "server": saved})
+			return success("Server saved to config.json.", map[string]interface{}{"name": a.Name, "server": publicServer(saved)})
 		},
 	}
 }
@@ -215,11 +218,12 @@ var configRemoveProjectInputSchema = json.RawMessage(`{
 func ConfigRemoveProjectTool() server.Tool[ConfigRemoveProjectArgs] {
 	return server.Tool[ConfigRemoveProjectArgs]{
 		Spec: server.ToolSpec{
-			Name:        "sofarpc_config_remove_project",
-			Title:       "SofaRPC Config: Remove Project",
-			Description: "Remove a project from config.json. Requires confirm=true.",
-			Annotations: server.Annotations{DestructiveHint: true},
-			InputSchema: configRemoveProjectInputSchema,
+			Name:         "sofarpc_config_remove_project",
+			Title:        "SofaRPC Config: Remove Project",
+			Description:  "Remove a project from config.json. Requires confirm=true.",
+			Annotations:  server.Annotations{DestructiveHint: true},
+			InputSchema:  configRemoveProjectInputSchema,
+			OutputSchema: resultOutputSchema,
 		},
 		Run: func(_ context.Context, _ server.Runtime, a ConfigRemoveProjectArgs) server.Result {
 			if a.Name == "" {
@@ -261,11 +265,12 @@ var configRemoveServerInputSchema = json.RawMessage(`{
 func ConfigRemoveServerTool() server.Tool[ConfigRemoveServerArgs] {
 	return server.Tool[ConfigRemoveServerArgs]{
 		Spec: server.ToolSpec{
-			Name:        "sofarpc_config_remove_server",
-			Title:       "SofaRPC Config: Remove Server",
-			Description: "Remove a server from config.json. Requires confirm=true.",
-			Annotations: server.Annotations{DestructiveHint: true},
-			InputSchema: configRemoveServerInputSchema,
+			Name:         "sofarpc_config_remove_server",
+			Title:        "SofaRPC Config: Remove Server",
+			Description:  "Remove a server from config.json. Requires confirm=true.",
+			Annotations:  server.Annotations{DestructiveHint: true},
+			InputSchema:  configRemoveServerInputSchema,
+			OutputSchema: resultOutputSchema,
 		},
 		Run: func(_ context.Context, _ server.Runtime, a ConfigRemoveServerArgs) server.Result {
 			if a.Name == "" {

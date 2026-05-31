@@ -227,7 +227,7 @@ Each JSON-RPC stdin frame is capped at 16 MiB. Oversized frames are rejected wit
 
 `sofarpc mcp` negotiates the MCP protocol version at `initialize`, advertising (newest first): `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`. An unknown requested version degrades to the newest supported version. Requests before the `initialize` / `notifications/initialized` handshake are rejected with `-32002`.
 
-Declared capabilities: `tools` (static list) and `logging` (`notifications/message`). Long-running tools (`sofarpc_invoke`, `sofarpc_invoke_plan`, `sofarpc_probe`, `sofarpc_describe`, `sofarpc_doctor`) emit `notifications/progress` when the client supplies a `progressToken`, and honor `notifications/cancelled` (a cancelled request receives no final response).
+Declared capabilities: `tools` (static list) and `logging` (`notifications/message`). The async tools (`sofarpc_invoke`, `sofarpc_invoke_plan`, `sofarpc_probe`, `sofarpc_describe`, `sofarpc_doctor`) honor `notifications/cancelled` (a cancelled request receives no final response). Of these, `sofarpc_invoke`, `sofarpc_doctor`, and `sofarpc_describe` emit `notifications/progress` when the client supplies a `progressToken` (accepted only as a JSON string or integer).
 
 Not supported (intentionally not advertised): `resources`, `prompts`, `roots`, `sampling`, `elicitation`. The config file is not exposed as a resource because it can contain credential-bearing attachments.
 

@@ -34,12 +34,13 @@ var probeInputSchema = json.RawMessage(`{
 func ProbeTool(appSvc *app.Service) server.Tool[ProbeArgs] {
 	return server.Tool[ProbeArgs]{
 		Spec: server.ToolSpec{
-			Name:        "sofarpc_probe",
-			Title:       "SofaRPC Probe",
-			Description: "Probe TCP reachability for a configured server or explicit address; this does not prove an interface or method exists.",
-			Annotations: server.Annotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: true},
-			InputSchema: probeInputSchema,
-			Async:       true,
+			Name:         "sofarpc_probe",
+			Title:        "SofaRPC Probe",
+			Description:  "Probe TCP reachability for a configured server or explicit address; this does not prove an interface or method exists.",
+			Annotations:  server.Annotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: true},
+			InputSchema:  probeInputSchema,
+			OutputSchema: resultOutputSchema,
+			Async:        true,
 		},
 		Run: func(ctx context.Context, _ server.Runtime, a ProbeArgs) server.Result {
 			probe := appSvc.ProbeEndpoint(ctx, app.ProbeInput{

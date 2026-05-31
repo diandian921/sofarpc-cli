@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/diandian921/sofarpc-cli/internal/app"
@@ -45,7 +46,14 @@ func (s *Server) Run() int {
 	if stderr == nil {
 		stderr = io.Discard
 	}
-	session := proto.NewSession(proto.Config{
+	return s.newSession(in, out, stderr).Run()
+}
+
+// newSession wires a proto.Session over the given streams with this server's
+// identity, capabilities, and dispatcher. Shared by Run and SelfTest so both go
+// through the real protocol engine.
+func (s *Server) newSession(in io.Reader, out, stderr io.Writer) *proto.Session {
+	return proto.NewSession(proto.Config{
 		In:           in,
 		Out:          out,
 		Stderr:       stderr,
@@ -54,13 +62,13 @@ func (s *Server) Run() int {
 		Instructions: serverInstructions,
 		Dispatcher:   &dispatcher{server: s, stderr: stderr},
 	})
-	return session.Run()
 }
 
 // SelfTest brings up the server machinery — config path, app service, tool
-// registry (including its invariants), version negotiation, and the tools/list
-// path — and exits without serving stdio, so a broken config fails here instead
-// of at first agent use.
+// registry (including its invariants) — then drives a real proto.Session through
+// the full lifecycle (initialize → notifications/initialized → tools/list →
+// tools/call) over in-memory streams, so a broken config or handshake fails here
+// instead of at first agent use.
 func (s *Server) SelfTest() error {
 	if _, err := appconfig.DefaultPath(); err != nil {
 		return fmt.Errorf("config path: %w", err)
@@ -74,23 +82,68 @@ func (s *Server) SelfTest() error {
 	if err := s.toolRegistry().Validate(); err != nil {
 		return fmt.Errorf("tool registry invalid: %w", err)
 	}
-	if _, verr := proto.NegotiateVersion("2025-06-18"); verr != nil {
-		return fmt.Errorf("version negotiation failed: %s", verr.Message)
+	frames := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sofarpc_config_list","arguments":{}}}`,
+		"",
+	}, "\n")
+	out := &bytes.Buffer{}
+	if code := s.newSession(strings.NewReader(frames), out, io.Discard).Run(); code != 0 {
+		return fmt.Errorf("self-test session exited with code %d", code)
 	}
-	ctx := context.Background()
-	if resp, _ := s.handle(ctx, proto.Request{JSONRPC: "2.0", Method: "tools/list"}); resp.Error != nil {
-		return fmt.Errorf("tools/list failed: %s", resp.Error.Message)
+	return verifySelfTest(out.String())
+}
+
+// verifySelfTest checks that each self-test request got a healthy response.
+func verifySelfTest(out string) error {
+	byID := map[string]map[string]interface{}{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var resp map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &resp); err != nil {
+			continue
+		}
+		if resp["id"] != nil {
+			byID[fmt.Sprint(resp["id"])] = resp
+		}
 	}
-	result, perr := s.dispatchTool(ctx, json.RawMessage(`{"name":"sofarpc_config_list","arguments":{}}`))
-	if perr != nil {
-		return fmt.Errorf("config_list failed: %s", perr.Message)
+	initResp := byID["0"]
+	if initResp == nil || initResp["error"] != nil {
+		return fmt.Errorf("initialize failed: %s", out)
 	}
-	if cr, ok := result.(mcpserver.CallResult); ok && cr.IsError {
+	if r, _ := initResp["result"].(map[string]interface{}); r == nil || r["protocolVersion"] == nil {
+		return errors.New("initialize response missing protocolVersion")
+	}
+	listResp := byID["1"]
+	if listResp == nil || listResp["error"] != nil {
+		return errors.New("tools/list failed")
+	}
+	if r, _ := listResp["result"].(map[string]interface{}); r == nil || r["tools"] == nil {
+		return errors.New("tools/list missing tools")
+	}
+	callResp := byID["2"]
+	if callResp == nil || callResp["error"] != nil {
+		return fmt.Errorf("tools/call config_list failed: %v", callResp["error"])
+	}
+	r, _ := callResp["result"].(map[string]interface{})
+	if r == nil {
+		return errors.New("tools/call config_list missing result")
+	}
+	if isErr, _ := r["isError"].(bool); isErr {
 		return errors.New("config_list returned an error result")
 	}
 	return nil
 }
 
+// handle answers tools/list and tools/call for the dispatcher. It is the
+// dispatcher's entry only — never call it from tests or self-test, which must go
+// through a real proto.Session so lifecycle / ping / cancel / transport behavior
+// is exercised.
 func (s *Server) handle(ctx context.Context, req proto.Request) (proto.Response, bool) {
 	base := proto.Response{JSONRPC: "2.0", ID: req.ID}
 	switch req.Method {

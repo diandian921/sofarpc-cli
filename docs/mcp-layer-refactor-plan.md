@@ -1,5 +1,7 @@
 # MCP Layer Refactor — Implementation Plan
 
+> **历史实施计划。** 三层重构已落地;后续以 `docs/mcp-review-followups.md` 为准(第二/三轮 review 跟进项)。本文保留 PR 分段与设计推导,供回溯,**不再是当前工作准绳**。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 Date: 2026-05-31

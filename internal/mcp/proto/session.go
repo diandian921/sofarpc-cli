@@ -96,6 +96,9 @@ func (s *Session) Run() int {
 
 func (s *Session) handleRequest(req Request) {
 	switch req.Method {
+	case "ping":
+		s.handlePing(req)
+		return
 	case "initialize":
 		s.handleInitialize(req)
 		return
@@ -118,7 +121,23 @@ func (s *Session) handleRequest(req Request) {
 	s.dispatchReady(req)
 }
 
+// handlePing answers a liveness probe with an empty result in any lifecycle
+// state, without gating on initialization (per the MCP ping utility). A ping
+// notification (no id) is ignored.
+func (s *Session) handlePing(req Request) {
+	if req.IsNotification() {
+		return
+	}
+	_ = s.transport.Write(Response{JSONRPC: "2.0", ID: req.ID, Result: struct{}{}})
+}
+
 func (s *Session) handleInitialize(req Request) {
+	if s.getState() != StateNew {
+		if !req.IsNotification() {
+			_ = s.transport.Write(errorResponse(req.ID, CodeInvalidRequest, "server already initialized"))
+		}
+		return
+	}
 	var p struct {
 		ProtocolVersion string `json:"protocolVersion"`
 	}

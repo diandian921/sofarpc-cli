@@ -95,6 +95,35 @@ func TestToolsListRegistersWorkflowTools(t *testing.T) {
 	}
 }
 
+func TestAllToolsAdvertiseOutputSchema(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	out := &bytes.Buffer{}
+	s := &Server{
+		BuildVersion: "test",
+		Stdin:        strings.NewReader(handshake() + `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}` + "\n"),
+		Stdout:       out,
+		Stderr:       &bytes.Buffer{},
+	}
+	if code := s.Run(); code != 0 {
+		t.Fatalf("Run exit = %d", code)
+	}
+	resp := responsesByID(t, out.String())["1"]
+	if resp == nil {
+		t.Fatalf("no tools/list response: %s", out.String())
+	}
+	result, _ := resp["result"].(map[string]interface{})
+	rawTools, _ := result["tools"].([]interface{})
+	if len(rawTools) == 0 {
+		t.Fatalf("tools/list returned no tools: %s", out.String())
+	}
+	for _, item := range rawTools {
+		tool, _ := item.(map[string]interface{})
+		if tool["outputSchema"] == nil {
+			t.Fatalf("tool %q must advertise outputSchema: %s", tool["name"], out.String())
+		}
+	}
+}
+
 func TestDisableConfigWriteHidesWriteTools(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	out := &bytes.Buffer{}

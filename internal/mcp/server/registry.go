@@ -78,15 +78,13 @@ func (r *Registry) ToolList() []map[string]interface{} {
 	return out
 }
 
-// Call dispatches a tools/call. A decode failure is a JSON-RPC error; an unknown
-// tool or a business failure is a CallResult with IsError set.
+// Call dispatches a tools/call. An unknown tool name or a strict-decode failure
+// is a JSON-RPC -32602 (the tools/call method exists; its params.name/arguments
+// are invalid). A business failure is a CallResult with IsError set.
 func (r *Registry) Call(ctx context.Context, rt Runtime, name string, rawArgs json.RawMessage) (CallResult, *proto.Error) {
 	t, ok := r.tools[name]
 	if !ok {
-		return CallResult{
-			Content: []contentBlock{{Type: "text", Text: "unknown tool: " + name}},
-			IsError: true,
-		}, nil
+		return CallResult{}, &proto.Error{Code: proto.CodeInvalidParams, Message: "unknown tool: " + name}
 	}
 	start := time.Now()
 	res, derr := t.invoke(ctx, rt, rawArgs)
@@ -96,21 +94,17 @@ func (r *Registry) Call(ctx context.Context, rt Runtime, name string, rawArgs js
 	return wrapResult(res, time.Since(start)), nil
 }
 
-// Validate enforces invariants that must hold before serving: tools that emit
-// rich structured output must declare an outputSchema.
+// Validate enforces invariants that must hold before serving: every registered
+// tool must declare an outputSchema, since they all emit the structured app.Result
+// envelope. This holds under --disable-config-write too, where only the read tools
+// are registered.
 func (r *Registry) Validate() error {
 	for _, name := range r.order {
-		if requiresOutputSchema[name] && len(r.tools[name].spec.OutputSchema) == 0 {
+		if len(r.tools[name].spec.OutputSchema) == 0 {
 			return fmt.Errorf("tool %q must declare an outputSchema", name)
 		}
 	}
 	return nil
-}
-
-var requiresOutputSchema = map[string]bool{
-	"sofarpc_resolve": true,
-	"sofarpc_invoke":  true,
-	"sofarpc_doctor":  true,
 }
 
 func annotationsMap(spec ToolSpec) map[string]interface{} {

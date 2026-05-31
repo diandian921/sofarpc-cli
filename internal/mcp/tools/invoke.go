@@ -87,8 +87,10 @@ var invokePlanInputSchema = json.RawMessage(`{
   }
 }`)
 
-// InvokeTool performs a real SofaRPC invocation. Destructive and open-world: it
-// can call any reachable address.
+// InvokeTool performs a real SofaRPC invocation against a configured server,
+// resolved by server/project name — there is no address argument, so it cannot
+// target an arbitrary host. Marked destructive and open-world because the remote
+// side effect is outside our control.
 func InvokeTool(appSvc *app.Service) server.Tool[InvokeArgs] {
 	return server.Tool[InvokeArgs]{
 		Spec: server.ToolSpec{
@@ -119,19 +121,20 @@ func InvokeTool(appSvc *app.Service) server.Tool[InvokeArgs] {
 func InvokePlanTool(appSvc *app.Service) server.Tool[InvokeArgs] {
 	return server.Tool[InvokeArgs]{
 		Spec: server.ToolSpec{
-			Name:        "sofarpc_invoke_plan",
-			Title:       "SofaRPC Invoke Plan",
-			Description: "Resolve and validate a SofaRPC invocation (endpoint, argument types) without sending a request.",
-			Annotations: server.Annotations{ReadOnlyHint: true, IdempotentHint: true},
-			InputSchema: invokePlanInputSchema,
-			Async:       true,
+			Name:         "sofarpc_invoke_plan",
+			Title:        "SofaRPC Invoke Plan",
+			Description:  "Resolve and validate a SofaRPC invocation (endpoint, argument types) without sending a request.",
+			Annotations:  server.Annotations{ReadOnlyHint: true, IdempotentHint: true},
+			InputSchema:  invokePlanInputSchema,
+			OutputSchema: resultOutputSchema,
+			Async:        true,
 		},
 		Run: func(ctx context.Context, _ server.Runtime, a InvokeArgs) server.Result {
 			plan, err := appSvc.PlanInvocation(ctx, a.toInput())
 			if err != nil {
 				return failure(app.CodeBadRequest, err.Error(), app.DomainErrorDetails(err))
 			}
-			planData := plan.Display()
+			planData := publicPlanDisplay(plan)
 			planData["requestId"] = app.NewRequestID("invoke")
 			return success("Invoke plan resolved.", map[string]interface{}{"dryRun": true, "plan": planData})
 		},

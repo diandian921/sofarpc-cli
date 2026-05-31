@@ -42,12 +42,13 @@ var describeInputSchema = json.RawMessage(`{
 func DescribeTool(appSvc *app.Service) server.Tool[DescribeArgs] {
 	return server.Tool[DescribeArgs]{
 		Spec: server.ToolSpec{
-			Name:        "sofarpc_describe",
-			Title:       "SofaRPC Describe",
-			Description: "Search local Java source or describe methods and DTO fields for a service FQN.",
-			Annotations: server.Annotations{ReadOnlyHint: true, IdempotentHint: true},
-			InputSchema: describeInputSchema,
-			Async:       true,
+			Name:         "sofarpc_describe",
+			Title:        "SofaRPC Describe",
+			Description:  "Search local Java source or describe methods and DTO fields for a service FQN.",
+			Annotations:  server.Annotations{ReadOnlyHint: true, IdempotentHint: true},
+			InputSchema:  describeInputSchema,
+			OutputSchema: resultOutputSchema,
+			Async:        true,
 		},
 		Run: func(ctx context.Context, rt server.Runtime, a DescribeArgs) server.Result {
 			if a.Query == "" && a.Service == "" {
