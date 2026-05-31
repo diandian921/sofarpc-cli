@@ -121,6 +121,60 @@ func TestTypedArgumentsMergesInheritedFieldTypes(t *testing.T) {
 	}
 }
 
+func TestTypedArgumentsSubstitutesGenericInheritedField(t *testing.T) {
+	method := schema.Method{
+		Service:    "com.x.facade.OrderFacade",
+		Method:     "createOrder",
+		Package:    "com.x.facade",
+		Parameters: []schema.Parameter{{Name: "order", Type: "OrderDTO"}},
+		Imports:    map[string]string{"OrderDTO": "com.x.dto.OrderDTO"},
+	}
+	desc := schema.Description{
+		Methods: []schema.Method{method},
+		Types: map[string]schema.TypeSchema{
+			"com.x.dto.OrderDTO": {
+				Type:    "com.x.dto.OrderDTO",
+				Kind:    "class",
+				Fields:  []schema.Field{{Name: "orderId", Type: "String"}},
+				Extends: []string{"Base<OrderStatus>"},
+				Imports: map[string]string{"Base": "com.x.base.Base", "OrderStatus": "com.x.base.OrderStatus"},
+			},
+			"com.x.base.Base": {
+				Type:       "com.x.base.Base",
+				Kind:       "class",
+				TypeParams: []string{"T"},
+				Fields:     []schema.Field{{Name: "status", Type: "T"}, {Name: "history", Type: "List<T>"}},
+			},
+			"com.x.base.OrderStatus": {
+				Type:       "com.x.base.OrderStatus",
+				Kind:       "enum",
+				EnumValues: []string{"ACTIVE", "INACTIVE"},
+			},
+		},
+	}
+	args := []interface{}{
+		map[string]interface{}{"orderId": "o1", "status": "ACTIVE", "history": []interface{}{"INACTIVE"}},
+	}
+
+	got := typedArgumentsForMethod(args, method, desc)
+	if len(got) != 1 || got[0].Kind != javavalue.KindObject {
+		t.Fatalf("top-level not object: %#v", got)
+	}
+	// inherited `T status` -> OrderStatus enum (was unresolved type variable before)
+	status := got[0].Fields["status"]
+	if status.Kind != javavalue.KindObject || status.JavaType != "com.x.base.OrderStatus" {
+		t.Errorf("status = {Kind:%q JavaType:%q}, want enum com.x.base.OrderStatus", status.Kind, status.JavaType)
+	}
+	// inherited `List<T> history` -> List<OrderStatus>, element typed as the enum
+	history := got[0].Fields["history"]
+	if history.Kind != javavalue.KindList || len(history.Items) != 1 {
+		t.Fatalf("history not a 1-element list: %#v", history)
+	}
+	if history.Items[0].JavaType != "com.x.base.OrderStatus" {
+		t.Errorf("history element JavaType = %q, want com.x.base.OrderStatus", history.Items[0].JavaType)
+	}
+}
+
 func TestExtractGenericArgs(t *testing.T) {
 	cases := []struct {
 		in   string
