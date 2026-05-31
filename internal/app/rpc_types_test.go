@@ -72,6 +72,55 @@ func TestTypedArgumentsListOfDTOPreservesElementType(t *testing.T) {
 	}
 }
 
+func TestTypedArgumentsMergesInheritedFieldTypes(t *testing.T) {
+	method := schema.Method{
+		Service:    "com.x.facade.OrderFacade",
+		Method:     "createOrder",
+		Package:    "com.x.facade",
+		Parameters: []schema.Parameter{{Name: "order", Type: "OrderDTO"}},
+		Imports:    map[string]string{"OrderDTO": "com.x.dto.OrderDTO"},
+	}
+	desc := schema.Description{
+		Methods: []schema.Method{method},
+		Types: map[string]schema.TypeSchema{
+			"com.x.dto.OrderDTO": {
+				Type:    "com.x.dto.OrderDTO",
+				Kind:    "class",
+				Fields:  []schema.Field{{Name: "orderId", Type: "String"}},
+				Extends: []string{"BaseDTO"},
+				Imports: map[string]string{"BaseDTO": "com.x.base.BaseDTO"},
+			},
+			"com.x.base.BaseDTO": {
+				Type:    "com.x.base.BaseDTO",
+				Kind:    "class",
+				Fields:  []schema.Field{{Name: "gmtCreate", Type: "Long"}, {Name: "status", Type: "OrderStatus"}},
+				Imports: map[string]string{"OrderStatus": "com.x.base.OrderStatus"},
+			},
+			"com.x.base.OrderStatus": {
+				Type:       "com.x.base.OrderStatus",
+				Kind:       "enum",
+				EnumValues: []string{"ACTIVE", "INACTIVE"},
+			},
+		},
+	}
+	args := []interface{}{
+		map[string]interface{}{"orderId": "o1", "gmtCreate": 123, "status": "ACTIVE"},
+	}
+
+	got := typedArgumentsForMethod(args, method, desc)
+	if len(got) != 1 || got[0].Kind != javavalue.KindObject {
+		t.Fatalf("top-level not object: %#v", got)
+	}
+	gmt := got[0].Fields["gmtCreate"]
+	if !strings.Contains(gmt.JavaType, "Long") {
+		t.Errorf("inherited gmtCreate JavaType = %q, want a Long type (empty means inheritance not merged)", gmt.JavaType)
+	}
+	status := got[0].Fields["status"]
+	if status.Kind != javavalue.KindObject || status.JavaType != "com.x.base.OrderStatus" {
+		t.Errorf("inherited enum status = {Kind:%q JavaType:%q}, want enum object com.x.base.OrderStatus", status.Kind, status.JavaType)
+	}
+}
+
 func TestExtractGenericArgs(t *testing.T) {
 	cases := []struct {
 		in   string

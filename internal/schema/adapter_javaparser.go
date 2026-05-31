@@ -242,6 +242,7 @@ func emitTypeSchemas(types []javaparser.TypeDecl, pkg, sourcePath string, import
 			SourceFile: sourcePath,
 			Imports:    imports,
 			TypeParams: typeParamNames(t.TypeParams),
+			Extends:    extendsRefs(t.Extends),
 		}
 		switch t.Kind {
 		case javaparser.TypeKindEnum:
@@ -270,6 +271,8 @@ func emitTypeSchemas(types []javaparser.TypeDecl, pkg, sourcePath string, import
 // buildFieldsForType 把 TypeDecl.Fields 转成 schema.Field 列表。
 // 跳过 control keyword(if/for/while/...)—— 老 parseFields 通过 isControlKeyword
 // 过滤,javaparser 走 AST 不会产生这种 noise,但保留 guard 防 future regression。
+// 同时跳过 static / transient 字段:Hessian 序列化只覆盖实例非-transient 字段,
+// 把 serialVersionUID / 常量 / transient 缓存当成 DTO 参数会误导 agent。
 func buildFieldsForType(t javaparser.TypeDecl) []Field {
 	if len(t.Fields) == 0 {
 		return nil
@@ -279,12 +282,25 @@ func buildFieldsForType(t javaparser.TypeDecl) []Field {
 		if isControlKeyword(f.Name) {
 			continue
 		}
+		if hasModifier(f.Modifiers, "static") || hasModifier(f.Modifiers, "transient") {
+			continue
+		}
 		out = append(out, Field{Name: f.Name, Type: typeRefToString(f.Type)})
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+// hasModifier reports whether mods contains the given Java modifier keyword.
+func hasModifier(mods []string, want string) bool {
+	for _, m := range mods {
+		if m == want {
+			return true
+		}
+	}
+	return false
 }
 
 // buildRecordFields 把 RecordComponents([]ParamDecl)转成 Field 列表。
@@ -331,6 +347,25 @@ func typeKindName(k javaparser.TypeKind) string {
 		return "record"
 	}
 	return "class"
+}
+
+// extendsRefs 把 TypeDecl.Extends([]TypeRef)转成写法原样的字符串列表(如 "BaseDTO"
+// 或带泛型的 "Base<String>")。class 通常 1 个;interface 可多个。空输入返回 nil
+// 让 JSON omitempty 起效。Describe 沿这些 ref 解析继承字段。
+func extendsRefs(refs []javaparser.TypeRef) []string {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(refs))
+	for _, r := range refs {
+		if s := typeRefToString(r); s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // typeParamNames 只取 TypeParam.Name(bound 不存进 schema —— Plan B P3 fix 只需要 name 列表)。

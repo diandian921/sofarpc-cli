@@ -434,16 +434,20 @@ public class Asset {
 	if asset.Type == "" {
 		t.Fatalf("missing Asset schema: %v", types)
 	}
+	// CONST is `static final` and must be excluded — Hessian serializes only
+	// instance, non-transient fields. `tags` is `final` (not static) and stays.
 	wantFields := map[string]string{
-		"id":    "Long",
-		"name":  "String",
-		"tags":  "java.util.List<String>",
-		"CONST": "int",
+		"id":   "Long",
+		"name": "String",
+		"tags": "java.util.List<String>",
 	}
 	if len(asset.Fields) != len(wantFields) {
-		t.Fatalf("Fields = %+v, want %d entries", asset.Fields, len(wantFields))
+		t.Fatalf("Fields = %+v, want %d entries (static CONST excluded)", asset.Fields, len(wantFields))
 	}
 	for _, f := range asset.Fields {
+		if f.Name == "CONST" {
+			t.Errorf("static field CONST must be excluded (Hessian skips static)")
+		}
 		if want, ok := wantFields[f.Name]; !ok || f.Type != want {
 			t.Errorf("Field %s = %q, want %q", f.Name, f.Type, want)
 		}

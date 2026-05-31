@@ -50,6 +50,10 @@ type TypeSchema struct {
 	Unresolved bool              `json:"unresolved,omitempty"`
 	SourceFile string            `json:"sourceFile,omitempty"`
 	Imports    map[string]string `json:"imports,omitempty"`
+	// Extends lists the direct supertype refs as written (a class has at most one;
+	// kept as a slice for interfaces). Describe follows these to surface inherited
+	// fields, which Hessian serializes. Empty for types with no superclass.
+	Extends []string `json:"extends,omitempty"`
 	// TypeParams 是 class declared type parameters 的简单名列表(`class Page<T, K>` → ["T", "K"])。
 	// rpc_types.go 用它精确识别 type variable(Plan B P3 fix)。
 	TypeParams []string `json:"typeParams,omitempty"`
@@ -283,10 +287,20 @@ func addDescribedType(idx *Index, out map[string]TypeSchema, schema TypeSchema) 
 		return
 	}
 	out[schema.Type] = schema
-	if len(schema.Fields) == 0 {
-		return
-	}
 	pkg := packageFromType(schema.Type)
+	// Follow the superclass chain so inherited fields are visible: Hessian
+	// serializes them, and an agent walks leaf.Extends -> desc.Types[base]. The
+	// base ref is written in this type's file, so resolve it with this type's
+	// package and imports.
+	for _, base := range schema.Extends {
+		for _, typ := range referencedTypes(base) {
+			parent, ok := resolveType(idx, typ, pkg, schema.Imports)
+			if !ok {
+				continue
+			}
+			addDescribedType(idx, out, parent)
+		}
+	}
 	for _, field := range schema.Fields {
 		for _, typ := range referencedTypes(field.Type) {
 			child, ok := resolveType(idx, typ, pkg, schema.Imports)

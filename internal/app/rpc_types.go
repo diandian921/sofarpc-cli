@@ -84,10 +84,14 @@ func typedValueForJavaType(value interface{}, javaType string, types map[string]
 		if ok && typ.Kind == "class" {
 			fields := map[string]javavalue.TypedValue{}
 			fieldTypes := map[string]string{}
-			for _, field := range typ.Fields {
-				fieldType := rpcValueTypeForType(field.Type, typ, types)
+			for _, of := range collectFieldsWithInherited(typ, types, map[string]bool{}) {
+				if _, exists := fieldTypes[of.field.Name]; exists {
+					// subclass field shadows an inherited one of the same name
+					continue
+				}
+				fieldType := rpcValueTypeForType(of.field.Type, of.owner, types)
 				if fieldType != "" {
-					fieldTypes[field.Name] = fieldType
+					fieldTypes[of.field.Name] = fieldType
 				}
 			}
 			for name, child := range raw {
@@ -432,6 +436,65 @@ func eraseRPCGeneric(typ string) string {
 		base = strings.TrimSpace(base[:idx])
 	}
 	return strings.TrimSuffix(base, "[]")
+}
+
+// ownedField pairs a field with its declaring type, so an inherited field's type
+// resolves against the class that declared it (its own imports/package), not the
+// leaf subclass.
+type ownedField struct {
+	field schema.Field
+	owner schema.TypeSchema
+}
+
+// collectFieldsWithInherited returns a class's own fields followed by those of its
+// superclasses, walked via TypeSchema.Extends and resolved within types, so invoke
+// type-coerces inherited fields instead of falling back to an empty type (which
+// mis-encodes numbers / dates / enums). seen breaks inheritance cycles. Own fields
+// come first so the caller keeps the subclass field when names collide.
+//
+// Known limitation (deferred to a later typing-fidelity corpus): a parameterized
+// superclass like `Child extends Base<OrderStatus>` is not substituted — an
+// inherited field typed as the type variable `T` stays `T` (unresolved), not
+// `OrderStatus`.
+func collectFieldsWithInherited(typ schema.TypeSchema, types map[string]schema.TypeSchema, seen map[string]bool) []ownedField {
+	if typ.Type == "" || seen[typ.Type] {
+		return nil
+	}
+	seen[typ.Type] = true
+	out := make([]ownedField, 0, len(typ.Fields))
+	for _, f := range typ.Fields {
+		out = append(out, ownedField{field: f, owner: typ})
+	}
+	for _, base := range typ.Extends {
+		if parent, ok := resolveExtendsType(base, typ, types); ok {
+			out = append(out, collectFieldsWithInherited(parent, types, seen)...)
+		}
+	}
+	return out
+}
+
+// resolveExtendsType resolves a superclass ref (as written, e.g. "BaseDTO" or a
+// generic "Base<String>") to its TypeSchema within types, using the subclass's
+// imports/package — mirroring schema.resolveType over the described type map.
+func resolveExtendsType(ref string, owner schema.TypeSchema, types map[string]schema.TypeSchema) (schema.TypeSchema, bool) {
+	base := eraseRPCGeneric(ref)
+	if t, ok := types[base]; ok {
+		return t, true
+	}
+	if strings.Contains(base, ".") {
+		return schema.TypeSchema{}, false
+	}
+	if fqn, ok := owner.Imports[base]; ok {
+		if t, ok := types[fqn]; ok {
+			return t, true
+		}
+	}
+	if lastDot := strings.LastIndex(owner.Type, "."); lastDot > 0 {
+		if t, ok := types[owner.Type[:lastDot]+"."+base]; ok {
+			return t, true
+		}
+	}
+	return schema.TypeSchema{}, false
 }
 
 func isByteArrayType(typ string) bool {
