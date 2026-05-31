@@ -80,12 +80,14 @@ func packageExists(pkg string) bool {
 
 // TestMCPLayerBoundaries enforces the three-layer dependency direction
 // cli/mcp facade -> tools -> server -> proto. proto depends only on stdlib;
-// server never imports tools or app; tools never imports proto (progress and
-// logging reach tools through the server.Runtime interface instead).
+// server never imports tools or app (transitively). tools never imports proto
+// *directly* (it reaches progress/logging through the server.Runtime interface);
+// the transitive tools -> server -> proto edge is expected and allowed.
 func TestMCPLayerBoundaries(t *testing.T) {
 	rules := []struct {
-		pkg       string
-		forbidden []string
+		pkg        string
+		forbidden  []string
+		directOnly bool
 	}{
 		{
 			pkg: modulePath + "/internal/mcp/proto",
@@ -111,6 +113,7 @@ func TestMCPLayerBoundaries(t *testing.T) {
 			forbidden: []string{
 				modulePath + "/internal/mcp/proto",
 			},
+			directOnly: true,
 		},
 	}
 	for _, rule := range rules {
@@ -119,6 +122,9 @@ func TestMCPLayerBoundaries(t *testing.T) {
 				t.Skipf("%s not created yet", rule.pkg)
 			}
 			deps := packageDeps(t, rule.pkg)
+			if rule.directOnly {
+				deps = directImports(t, rule.pkg)
+			}
 			for _, forbidden := range rule.forbidden {
 				for dep := range deps {
 					if samePackageOrChild(dep, forbidden) {
@@ -128,6 +134,26 @@ func TestMCPLayerBoundaries(t *testing.T) {
 			}
 		})
 	}
+}
+
+// directImports returns only the packages pkg imports directly (not the full
+// transitive closure), used where a transitive edge through a lower layer is
+// legitimate but a direct import is not.
+func directImports(t *testing.T, pkg string) map[string]bool {
+	t.Helper()
+	cmd := exec.Command("go", "list", "-f", "{{range .Imports}}{{.}}\n{{end}}", pkg)
+	cmd.Dir = filepath.Join("..", "..")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list imports for %s: %v\n%s", pkg, err, output)
+	}
+	deps := map[string]bool{}
+	for _, line := range strings.Split(string(output), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			deps[line] = true
+		}
+	}
+	return deps
 }
 
 func packageDeps(t *testing.T, pkg string) map[string]bool {

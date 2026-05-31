@@ -1,0 +1,56 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/diandian921/sofarpc-cli/internal/app"
+	"github.com/diandian921/sofarpc-cli/internal/mcp/server"
+)
+
+// ProbeArgs are the arguments for sofarpc_probe.
+type ProbeArgs struct {
+	Server    string `json:"server,omitempty"`
+	Address   string `json:"address,omitempty"`
+	Service   string `json:"service,omitempty"`
+	Project   string `json:"project,omitempty"`
+	TimeoutMS int    `json:"timeoutMs,omitempty"`
+}
+
+var probeInputSchema = json.RawMessage(`{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "server": {"type": "string", "description": "Optional configured server name."},
+    "address": {"type": "string", "description": "Optional explicit host:port. Used when server is omitted."},
+    "service": {"type": "string", "description": "Optional service FQN for labeling diagnostics."},
+    "timeoutMs": {"type": "integer", "description": "Optional total timeout in milliseconds."}
+  }
+}`)
+
+// ProbeTool probes TCP reachability. Reaching the host does not prove the remote
+// interface or method exists.
+func ProbeTool(appSvc *app.Service) server.Tool[ProbeArgs] {
+	return server.Tool[ProbeArgs]{
+		Spec: server.ToolSpec{
+			Name:        "sofarpc_probe",
+			Title:       "SofaRPC Probe",
+			Description: "Probe TCP reachability for a configured server or explicit address; this does not prove an interface or method exists.",
+			Annotations: server.Annotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: true},
+			InputSchema: probeInputSchema,
+			Async:       true,
+		},
+		Run: func(ctx context.Context, _ server.Runtime, a ProbeArgs) server.Result {
+			probe := appSvc.ProbeEndpoint(ctx, app.ProbeInput{
+				Project:   a.Project,
+				Server:    a.Server,
+				Address:   a.Address,
+				Service:   a.Service,
+				TimeoutMS: a.TimeoutMS,
+			})
+			result := app.RenderProbe(probe)
+			result.RequestID = app.NewRequestID("ping")
+			return rendered(result, "Probe completed. Success only means the TCP transport path was reachable; it does not prove the remote interface or method exists.")
+		},
+	}
+}
