@@ -5,25 +5,27 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/diandian921/sofarpc-cli/internal/app"
 	"github.com/diandian921/sofarpc-cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-cli/internal/mcp/proto"
 )
 
-func handleWithRecover(req request, fn func() (response, bool)) (resp response, shouldReply bool) {
+// handleWithRecover runs fn and converts a panic into a JSON-RPC internal error
+// (suppressed for notifications, which never receive a response).
+func handleWithRecover(req proto.Request, fn func() (proto.Response, bool)) (resp proto.Response, shouldReply bool) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			if req.isNotification() {
-				resp = response{}
+			if req.IsNotification() {
+				resp = proto.Response{}
 				shouldReply = false
 				return
 			}
-			resp = response{
+			resp = proto.Response{
 				JSONRPC: "2.0",
 				ID:      req.ID,
-				Error: &rpcError{
-					Code:    -32603,
+				Error: &proto.Error{
+					Code:    proto.CodeInternalError,
 					Message: fmt.Sprintf("internal error: %v", recovered),
 				},
 			}
@@ -63,16 +65,6 @@ func toolErr(summary string, err error) toolResult {
 		}
 	}
 	return toolResult{Content: []content{{Type: "text", Text: summary}}, StructuredContent: data, IsError: true}
-}
-
-func write(w io.Writer, resp response) error {
-	body, err := json.Marshal(resp)
-	if err != nil {
-		return err
-	}
-	body = append(body, '\n')
-	_, err = w.Write(body)
-	return err
 }
 
 func decodeJSON(raw []byte, out interface{}) error {

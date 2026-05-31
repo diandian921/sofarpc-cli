@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/diandian921/sofarpc-cli/internal/app"
 	"github.com/diandian921/sofarpc-cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-cli/internal/mcp/proto"
 	"github.com/diandian921/sofarpc-cli/internal/schema"
 )
 
@@ -25,30 +25,9 @@ type Server struct {
 	App                *app.Service
 }
 
-type request struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-
-	toolCall *toolCallParams
-}
-
 type toolCallParams struct {
 	Name      string                 `json:"name"`
 	Arguments map[string]interface{} `json:"arguments"`
-}
-
-type response struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Result  interface{}     `json:"result,omitempty"`
-	Error   *rpcError       `json:"error,omitempty"`
-}
-
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
 }
 
 type content struct {
@@ -68,10 +47,6 @@ type tool struct {
 	InputSchema map[string]interface{} `json:"inputSchema"`
 }
 
-const maxJSONRPCLineBytes = 128 << 20
-
-var errJSONRPCLineTooLong = errors.New("json-rpc frame exceeds maximum line size")
-
 func (s *Server) Run() int {
 	_ = schema.CleanupUnused(7 * 24 * time.Hour)
 	in := s.Stdin
@@ -86,7 +61,16 @@ func (s *Server) Run() int {
 	if stderr == nil {
 		stderr = io.Discard
 	}
-	return newSession(s, in, out, stderr).run()
+	session := proto.NewSession(proto.Config{
+		In:           in,
+		Out:          out,
+		Stderr:       stderr,
+		Info:         s.serverInfo(),
+		Capabilities: s.serverCapabilities(),
+		Instructions: serverInstructions,
+		Dispatcher:   &dispatcher{server: s},
+	})
+	return session.Run()
 }
 
 // SelfTest brings up the server machinery — config path resolution, app
@@ -103,74 +87,23 @@ func (s *Server) SelfTest() error {
 	if len(s.tools()) == 0 {
 		return errors.New("no tools registered")
 	}
-	ctx := context.Background()
-	if resp, _ := s.handle(ctx, request{Method: "initialize"}); resp.Error != nil {
-		return fmt.Errorf("initialize failed: %s", resp.Error.Message)
+	if _, verr := proto.NegotiateVersion("2025-06-18"); verr != nil {
+		return fmt.Errorf("version negotiation failed: %s", verr.Message)
 	}
-	if resp, _ := s.handle(ctx, request{Method: "tools/list"}); resp.Error != nil {
+	ctx := context.Background()
+	if resp, _ := s.handle(ctx, proto.Request{JSONRPC: "2.0", Method: "tools/list"}); resp.Error != nil {
 		return fmt.Errorf("tools/list failed: %s", resp.Error.Message)
 	}
 	return nil
 }
 
-func (r request) isNotification() bool {
-	return len(r.ID) == 0
-}
-
-func readLineLimited(r *bufio.Reader, maxBytes int) ([]byte, error) {
-	var out []byte
-	tooLong := false
-	for {
-		chunk, err := r.ReadSlice('\n')
-		if !tooLong {
-			if len(out)+len(chunk) > maxBytes {
-				tooLong = true
-				out = nil
-			} else {
-				out = append(out, chunk...)
-			}
-		}
-		switch {
-		case err == nil:
-			if tooLong {
-				return nil, errJSONRPCLineTooLong
-			}
-			return out, nil
-		case errors.Is(err, bufio.ErrBufferFull):
-			continue
-		case errors.Is(err, io.EOF):
-			if tooLong {
-				return nil, errJSONRPCLineTooLong
-			}
-			if len(out) > 0 {
-				return out, nil
-			}
-			return nil, io.EOF
-		default:
-			return nil, err
-		}
-	}
-}
-
-func requestIDKey(id json.RawMessage) string {
-	id = bytes.TrimSpace(id)
-	if len(id) == 0 {
-		return ""
-	}
-	return string(id)
-}
-
-func shouldRunAsync(req request) bool {
-	if req.isNotification() || req.Method != "tools/call" {
+func shouldRunAsync(req proto.Request) bool {
+	if req.IsNotification() || req.Method != "tools/call" {
 		return false
 	}
-	params := req.toolCall
-	if params == nil {
-		var decoded toolCallParams
-		if err := decodeJSON(req.Params, &decoded); err != nil {
-			return false
-		}
-		params = &decoded
+	var params toolCallParams
+	if err := decodeJSON(req.Params, &params); err != nil {
+		return false
 	}
 	switch params.Name {
 	case "sofarpc_invoke":
@@ -182,42 +115,17 @@ func shouldRunAsync(req request) bool {
 	}
 }
 
-func (s *Server) handle(ctx context.Context, req request) (response, bool) {
-	base := response{JSONRPC: "2.0", ID: req.ID}
+func (s *Server) handle(ctx context.Context, req proto.Request) (proto.Response, bool) {
+	base := proto.Response{JSONRPC: "2.0", ID: req.ID}
 	switch req.Method {
-	case "initialize":
-		protocolVersion := "2024-11-05"
-		var params struct {
-			ProtocolVersion string `json:"protocolVersion"`
-		}
-		if len(req.Params) > 0 {
-			_ = decodeJSON(req.Params, &params)
-			if strings.TrimSpace(params.ProtocolVersion) != "" {
-				protocolVersion = strings.TrimSpace(params.ProtocolVersion)
-			}
-		}
-		base.Result = map[string]interface{}{
-			"protocolVersion": protocolVersion,
-			"capabilities": map[string]interface{}{
-				"tools": map[string]interface{}{},
-			},
-			"serverInfo": map[string]interface{}{
-				"name":    "sofarpc-mcp",
-				"version": s.BuildVersion,
-			},
-		}
-		return base, true
-	case "notifications/initialized":
-		return response{}, false
 	case "tools/list":
 		base.Result = map[string]interface{}{"tools": s.tools()}
 		return base, true
 	case "tools/call":
-		result := s.handleToolCall(ctx, req)
-		base.Result = result
+		base.Result = s.handleToolCall(ctx, req.Params)
 		return base, true
 	default:
-		base.Error = &rpcError{Code: -32601, Message: "method not found: " + req.Method}
+		base.Error = &proto.Error{Code: proto.CodeMethodNotFound, Message: "method not found: " + req.Method}
 		return base, true
 	}
 }
@@ -282,14 +190,12 @@ func (s *Server) tools() []tool {
 	}
 }
 
-func (s *Server) handleToolCall(ctx context.Context, req request) toolResult {
-	params := req.toolCall
-	if params == nil {
-		var decoded toolCallParams
-		if err := decodeJSON(req.Params, &decoded); err != nil {
+func (s *Server) handleToolCall(ctx context.Context, rawParams json.RawMessage) toolResult {
+	var params toolCallParams
+	if len(rawParams) > 0 {
+		if err := decodeJSON(rawParams, &params); err != nil {
 			return toolErr("invalid tools/call params", err)
 		}
-		params = &decoded
 	}
 	if params.Arguments == nil {
 		params.Arguments = map[string]interface{}{}
@@ -504,6 +410,10 @@ func (s *Server) describe(args map[string]interface{}) toolResult {
 }
 
 func (s *Server) invoke(ctx context.Context, args map[string]interface{}) toolResult {
+	dryRun, err := strictBoolArg(args, "dryRun")
+	if err != nil {
+		return toolErrRendered(app.RenderFailure(app.CodeBadRequest, err.Error(), nil))
+	}
 	input, err := invocationInput(args)
 	if err != nil {
 		return toolErr("bad arguments", err)
@@ -519,7 +429,7 @@ func (s *Server) invoke(ctx context.Context, args map[string]interface{}) toolRe
 	requestID := app.NewRequestID("invoke")
 	planData := plan.Display()
 	planData["requestId"] = requestID
-	if boolArg(args, "dryRun") {
+	if dryRun {
 		return toolOK("Invoke dry run completed.", map[string]interface{}{"dryRun": true, "plan": planData})
 	}
 	resp := app.RenderExecution(s.application().ExecuteInvocation(ctx, plan))

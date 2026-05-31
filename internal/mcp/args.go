@@ -78,6 +78,22 @@ func boolArg(args map[string]interface{}, key string) bool {
 	return b
 }
 
+// strictBoolArg reads a boolean argument without silent coercion: a non-boolean
+// value (e.g. the string "true") is rejected rather than read as false. This
+// guards dryRun, where a silent false would turn an intended dry run into a real
+// remote invocation.
+func strictBoolArg(args map[string]interface{}, key string) (bool, error) {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return false, nil
+	}
+	b, ok := v.(bool)
+	if !ok {
+		return false, fmt.Errorf("%s must be a boolean", key)
+	}
+	return b, nil
+}
+
 func intArgDefault(args map[string]interface{}, key string, def int) int {
 	v, ok := args[key]
 	if !ok || v == nil {
