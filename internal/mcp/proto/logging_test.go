@@ -17,6 +17,25 @@ func TestLoggingSetLevelIsAcknowledged(t *testing.T) {
 	}
 }
 
+func TestLoggingSetLevelRejectsInvalidLevel(t *testing.T) {
+	cases := map[string]string{
+		"unknown": `{"level":"warn"}`,
+		"empty":   `{}`,
+	}
+	for name, params := range cases {
+		t.Run(name, func(t *testing.T) {
+			out := &bytes.Buffer{}
+			in := handshakeFrames() + `{"jsonrpc":"2.0","id":5,"method":"logging/setLevel","params":` + params + `}` + "\n"
+			if code := newTestSession(strings.NewReader(in), out).Run(); code != 0 {
+				t.Fatalf("Run = %d", code)
+			}
+			if !strings.Contains(out.String(), `"code":-32602`) {
+				t.Fatalf("invalid level must be -32602, got: %s", out.String())
+			}
+		})
+	}
+}
+
 func TestLoggingSetLevelBeforeHandshakeRejected(t *testing.T) {
 	out := &bytes.Buffer{}
 	in := `{"jsonrpc":"2.0","id":5,"method":"logging/setLevel","params":{"level":"warning"}}` + "\n"

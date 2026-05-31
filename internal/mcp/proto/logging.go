@@ -33,6 +33,12 @@ func (s *Session) handleSetLevel(req Request) {
 		}
 		return
 	}
+	if _, ok := logLevelRank[p.Level]; !ok {
+		if !req.IsNotification() {
+			_ = s.transport.Write(errorResponse(req.ID, CodeInvalidParams, "unsupported logging level: "+p.Level))
+		}
+		return
+	}
 	s.logMu.Lock()
 	s.logLevel = p.Level
 	s.logMu.Unlock()
