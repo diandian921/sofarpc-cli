@@ -72,6 +72,17 @@ var hessianJavaGoldenCases = []hessianGoldenCase{
 		hex:                  "640000000000000000",
 		wantPresentationJSON: `0`,
 	},
+	{
+		name:                 "set",
+		hex:                  "567400176a6176612e7574696c2e4c696e6b6564486173685365746e0301780179017a7a",
+		wantPresentationJSON: `["x","y","z"]`,
+	},
 }
 
 const hessianBigIntegerGoldenHex = "4fa46a6176612e6d6174682e426967496e746567657296067369676e756d08626974436f756e74096269744c656e6774680c6c6f776573745365744269741266697273744e6f6e7a65726f496e744e756d036d61676f909190909090567400045b696e746e02497fffffff8f7a"
+
+// hessianCircularGoldenHex is a two-node self-referential graph (a.next=b,
+// b.next=a) — kept out of the presentation-based corpus because a cyclic value
+// cannot be rendered to JSON. TestHessianGoldenCircularReferenceResolves pins that
+// our reader resolves the Hessian back-reference into a shared object.
+const hessianCircularGoldenHex = "4faa4865737369616e436f6e747261637448656c706572244e6f646592046e616d65046e6578746f9001616f9001624a00"

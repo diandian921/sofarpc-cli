@@ -11,8 +11,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public final class HessianContractHelper {
     public enum Status {
@@ -89,6 +91,18 @@ public final class HessianContractHelper {
             this.history = history;
             this.attributes = attributes;
             this.mixed = mixed;
+        }
+    }
+
+    public static final class Node implements Serializable {
+        public String name;
+        public Node next;
+
+        public Node() {
+        }
+
+        public Node(String name) {
+            this.name = name;
         }
     }
 
@@ -194,6 +208,18 @@ public final class HessianContractHelper {
                 return Status.ACTIVE;
             case "enum-response":
                 return new EnumResponse(Status.ACTIVE, Arrays.asList(Status.INACTIVE));
+            case "set":
+                LinkedHashSet<Object> set = new LinkedHashSet<Object>();
+                set.add("x");
+                set.add("y");
+                set.add("z");
+                return set;
+            case "circular":
+                Node a = new Node("a");
+                Node b = new Node("b");
+                a.next = b;
+                b.next = a;
+                return a;
             default:
                 throw new IllegalArgumentException("unknown case: " + name);
         }
@@ -248,6 +274,24 @@ public final class HessianContractHelper {
             StringBuilder out = new StringBuilder("List[");
             boolean first = true;
             for (Object item : (List<?>) value) {
+                if (!first) {
+                    out.append(",");
+                }
+                out.append(describe(item));
+                first = false;
+            }
+            return out.append("]").toString();
+        }
+        if (value instanceof Node) {
+            Node v = (Node) value;
+            return "Node{name=" + describe(v.name)
+                    + ",next=" + (v.next == null ? "null" : "Node:" + v.next.name)
+                    + "}";
+        }
+        if (value instanceof Set) {
+            StringBuilder out = new StringBuilder("Set[");
+            boolean first = true;
+            for (Object item : (Set<?>) value) {
                 if (!first) {
                     out.append(",");
                 }

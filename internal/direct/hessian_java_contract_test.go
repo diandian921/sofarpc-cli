@@ -368,6 +368,12 @@ func TestHessianJavaContractGoldenBytesMatchJavaOracle(t *testing.T) {
 			t.Fatalf("BigInteger golden hex drifted from Java oracle\njava:   %s\ngolden: %s", got, hessianBigIntegerGoldenHex)
 		}
 	})
+	t.Run("circular", func(t *testing.T) {
+		got := contract.run(t, "encode", "circular")
+		if got != hessianCircularGoldenHex {
+			t.Fatalf("circular golden hex drifted from Java oracle\njava:   %s\ngolden: %s", got, hessianCircularGoldenHex)
+		}
+	})
 }
 
 func requireJavaHessianContract(t *testing.T) javaHessianContract {

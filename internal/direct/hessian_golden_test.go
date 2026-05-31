@@ -3,6 +3,7 @@ package direct
 import (
 	"encoding/hex"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/diandian921/sofarpc-cli/internal/presentation"
@@ -119,6 +120,12 @@ func TestHessianJavaGoldenDecode(t *testing.T) {
 				t.Fatalf("date = %#v, want epoch millis", got)
 			}
 		},
+		"set": func(t *testing.T, got interface{}) {
+			items := goldenListItems(t, got)
+			if len(items) != 3 || items[0] != "x" || items[1] != "y" || items[2] != "z" {
+				t.Fatalf("set items = %#v", items)
+			}
+		},
 	}
 
 	for _, tc := range hessianJavaGoldenCases {
@@ -131,6 +138,31 @@ func TestHessianJavaGoldenDecode(t *testing.T) {
 			check(t, got)
 			assertGoldenPresentationJSON(t, got, tc.wantPresentationJSON)
 		})
+	}
+}
+
+// TestHessianGoldenCircularReferenceResolves pins that a Hessian back-reference
+// in a self-referential object graph (a.next=b, b.next=a) resolves to the SAME
+// object — the reader registers an object before reading its fields, so cycles
+// share identity instead of erroring or looping.
+func TestHessianGoldenCircularReferenceResolves(t *testing.T) {
+	got := readGoldenHessian(t, hessianCircularGoldenHex)
+	topFields := goldenObjectFields(t, got, "HessianContractHelper$Node")
+	if topFields["name"] != "a" {
+		t.Fatalf("top name = %#v", topFields["name"])
+	}
+	bFields := goldenObjectFields(t, topFields["next"], "HessianContractHelper$Node")
+	if bFields["name"] != "b" {
+		t.Fatalf("next name = %#v", bFields["name"])
+	}
+	a2, ok := bFields["next"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("b.next = %#v, want an object", bFields["next"])
+	}
+	topMap, _ := got.(map[string]interface{})
+	// pointer identity, not DeepEqual — a cyclic value would recurse forever.
+	if reflect.ValueOf(a2).Pointer() != reflect.ValueOf(topMap).Pointer() {
+		t.Fatalf("b.next is not the same object as top — back-reference not resolved")
 	}
 }
 
