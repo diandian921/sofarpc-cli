@@ -26,8 +26,6 @@ func Run(args []string, env Env) int {
 		return 2
 	}
 	switch args[0] {
-	case "invoke":
-		return runInvoke(args[1:], env)
 	case "ping":
 		return runPing(args[1:], env)
 	case "project":
@@ -80,7 +78,6 @@ func printUsage(w io.Writer) {
 
 Usage:
   sofarpc install [claude|codex|all]   Install the binary and (optionally) register it with hosts.
-  sofarpc invoke [flags]               Invoke a SofaRPC method over direct BOLT/Hessian2.
   sofarpc ping <host:port|server>      Probe a target TCP address.
   sofarpc project add|list|remove      Manage local source projects.
   sofarpc server add|list|remove       Manage configured RPC servers.

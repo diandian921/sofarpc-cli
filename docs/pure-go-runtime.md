@@ -62,9 +62,10 @@ FQN plus optional `method` for schema description.
 
 - `paramTypes + orderedArguments` for exact invocation.
 - `arguments` for schema-guided named arguments when local source can resolve the method.
-- `dryRun=true` to return the resolved plan without sending a SofaRPC request.
 
-Assertions are not exposed on the MCP invoke tool. They remain available on the `sofarpc invoke --assertions-json` reproduction path, where the caller owns the exact request contract. There is no separate protocol envelope; MCP and CLI emit one shared rendered result contract.
+`sofarpc_invoke_plan` takes the same arguments but returns the resolved plan without sending a SofaRPC request (the former `dryRun` mode), so a host can auto-approve it.
+
+Method invocation is exposed only as the `sofarpc_invoke` MCP tool; there is no `sofarpc invoke` CLI command. There is no separate protocol envelope; MCP and the remaining CLI diagnostics emit one shared rendered `app.Result` contract.
 
 ## Known Limits
 

@@ -50,8 +50,9 @@ Human CLI usage:
 ```bash
 sofarpc server list
 sofarpc ping salesfundmp-test
-sofarpc invoke ...
 ```
+
+Method invocation is not a CLI command; it is the `sofarpc_invoke` MCP tool.
 
 MCP host usage:
 

@@ -2,7 +2,7 @@
 
 MCP-first SofaRPC testing toolkit for agents.
 
-A single binary `sofarpc` does everything: human commands (`sofarpc invoke`, `sofarpc ping`, ...) and the stdio MCP server (`sofarpc mcp`, which is what hosts launch). Invocation runs through a pure-Go direct BOLT/Hessian2 runtime; no Java process or sidecar is required.
+A single binary `sofarpc` does everything: setup/diagnostic commands (`sofarpc ping`, `sofarpc project`, `sofarpc server`, ...) and the stdio MCP server (`sofarpc mcp`, which is what hosts launch). Invocation runs through a pure-Go direct BOLT/Hessian2 runtime; no Java process or sidecar is required. All invocation is exposed as the `sofarpc_invoke` MCP tool, not a CLI command.
 
 ## What Gets Installed
 
@@ -100,12 +100,17 @@ requires `--force` to replace one.
 
 The MCP surface is intentionally small and workflow-oriented:
 
-- `sofarpc_config`: list or update `~/.sofarpc/config.json`.
+- `sofarpc_config_list`: list configured projects and servers from `~/.sofarpc/config.json`.
+- `sofarpc_config_save_project` / `sofarpc_config_save_server`: add or replace a project/server.
+- `sofarpc_config_remove_project` / `sofarpc_config_remove_server`: remove a project/server (requires `confirm=true`).
 - `sofarpc_resolve`: resolve the project, server, and endpoint without touching the network.
 - `sofarpc_probe`: probe TCP reachability for a configured server or explicit address.
 - `sofarpc_describe`: search local Java source or describe a service/method schema.
-- `sofarpc_invoke`: invoke a method, or return the planned request when `dryRun=true`.
+- `sofarpc_invoke_plan`: resolve and validate an invocation (endpoint, argument types) without sending a request.
+- `sofarpc_invoke`: invoke a method over direct BOLT/Hessian2.
 - `sofarpc_doctor`: run structured diagnostics for config, source schema, and invoke prerequisites.
+
+The four config-write tools are not registered when the server is started with `--disable-config-write`.
 
 `sofarpc_probe` checks the configured transport path. It does not prove the remote interface, method, or business behavior exists.
 
@@ -136,11 +141,11 @@ or named arguments when local source can resolve the method signature:
 }
 ```
 
-Use `dryRun=true` to inspect the endpoint, parameter types, ordered arguments, and protocol payload without sending a SofaRPC request.
+Use `sofarpc_invoke_plan` to inspect the endpoint, parameter types, ordered arguments, and protocol payload without sending a SofaRPC request.
 
 Set `rawResult=true` when debugging serialization or response shape problems. The response then includes both the normal flattened `result` and the decoded Java object shape as `rawResult`.
 
-Assertions are intentionally not part of `sofarpc_invoke`. For assertion-based exact reproduction, use `sofarpc invoke --assertions-json`.
+Use `sofarpc_invoke_plan` to inspect the endpoint, parameter types, and ordered arguments without sending a request (read-only); use `sofarpc_invoke` to actually call the method.
 
 ## Config File
 
@@ -180,18 +185,7 @@ sofarpc server add user-test 10.0.0.1:12200 --project user
 sofarpc server list --json
 ```
 
-The `invoke` and `ping` commands are available for exact reproduction; both emit the same structured result contract the MCP tools return.
-
-For invoke reproduction:
-
-```bash
-sofarpc invoke \
-  --address user-test \
-  --service com.example.UserService \
-  --method getUser \
-  --arg-types com.example.GetUserRequest \
-  --args-json '[{"userId":"u001"}]'
-```
+The `ping` command emits the same structured result contract the MCP tools return. Method invocation is not a CLI command — use the `sofarpc_invoke` MCP tool (or `sofarpc_invoke_plan` for a no-network dry run).
 
 ## Local Source Schema
 
