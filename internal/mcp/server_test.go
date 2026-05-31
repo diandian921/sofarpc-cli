@@ -234,22 +234,32 @@ func TestInitializeNegotiatesProtocolVersion(t *testing.T) {
 	}
 }
 
-func TestHandleWithRecoverReturnsInternalError(t *testing.T) {
+func TestHandleWithRecoverSanitizesPanic(t *testing.T) {
 	req := proto.Request{JSONRPC: "2.0", ID: json.RawMessage(`1`), Method: "tools/list"}
-	resp, shouldReply := handleWithRecover(req, func() (proto.Response, bool) {
-		panic("boom")
+	stderr := &bytes.Buffer{}
+	resp, shouldReply := handleWithRecover(req, stderr, func() (proto.Response, bool) {
+		panic("boom secret /etc/passwd")
 	})
 	if !shouldReply {
 		t.Fatalf("expected panic response")
 	}
-	if resp.Error == nil || resp.Error.Code != proto.CodeInternalError || !strings.Contains(resp.Error.Message, "boom") {
+	if resp.Error == nil || resp.Error.Code != proto.CodeInternalError {
 		t.Fatalf("unexpected panic response: %+v", resp)
+	}
+	if resp.Error.Message != "internal error" {
+		t.Fatalf("panic message must be the fixed string, got %q", resp.Error.Message)
+	}
+	if strings.Contains(resp.Error.Message, "boom") || strings.Contains(string(resp.Error.Data), "boom") {
+		t.Fatalf("panic detail must not leak to the client: %+v", resp.Error)
+	}
+	if !strings.Contains(stderr.String(), "boom") {
+		t.Fatalf("panic detail must be written to stderr: %s", stderr.String())
 	}
 }
 
 func TestHandleWithRecoverSuppressesNotificationPanic(t *testing.T) {
 	req := proto.Request{JSONRPC: "2.0", Method: "notifications/test"}
-	_, shouldReply := handleWithRecover(req, func() (proto.Response, bool) {
+	_, shouldReply := handleWithRecover(req, nil, func() (proto.Response, bool) {
 		panic("boom")
 	})
 	if shouldReply {

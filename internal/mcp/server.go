@@ -52,7 +52,7 @@ func (s *Server) Run() int {
 		Info:         s.serverInfo(),
 		Capabilities: s.serverCapabilities(),
 		Instructions: serverInstructions,
-		Dispatcher:   &dispatcher{server: s},
+		Dispatcher:   &dispatcher{server: s, stderr: stderr},
 	})
 	return session.Run()
 }
@@ -80,6 +80,13 @@ func (s *Server) SelfTest() error {
 	ctx := context.Background()
 	if resp, _ := s.handle(ctx, proto.Request{JSONRPC: "2.0", Method: "tools/list"}); resp.Error != nil {
 		return fmt.Errorf("tools/list failed: %s", resp.Error.Message)
+	}
+	result, perr := s.dispatchTool(ctx, json.RawMessage(`{"name":"sofarpc_config_list","arguments":{}}`))
+	if perr != nil {
+		return fmt.Errorf("config_list failed: %s", perr.Message)
+	}
+	if cr, ok := result.(mcpserver.CallResult); ok && cr.IsError {
+		return errors.New("config_list returned an error result")
 	}
 	return nil
 }

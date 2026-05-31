@@ -221,7 +221,15 @@ Known limits:
 
 `sofarpc mcp` is a local developer tool. Treat stdout as the JSON-RPC protocol stream; diagnostics and future logging must go to stderr. `sofarpc_probe` can dial an explicit address for diagnostics, so prefer configured servers when running against untrusted agent input.
 
-Each JSON-RPC stdin frame is capped at 128 MiB. Oversized frames are rejected with a parse error and the server continues reading subsequent frames.
+Each JSON-RPC stdin frame is capped at 16 MiB. Oversized frames are rejected with an Invalid Request error (`-32600`) and the server resyncs to the next frame. On a handler panic the client receives only a fixed `internal error` message plus an `errorId`; the detail and stack go to stderr under that id.
+
+## MCP Compliance
+
+`sofarpc mcp` negotiates the MCP protocol version at `initialize`, advertising (newest first): `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`. An unknown requested version degrades to the newest supported version. Requests before the `initialize` / `notifications/initialized` handshake are rejected with `-32002`.
+
+Declared capabilities: `tools` (static list) and `logging` (`notifications/message`). Long-running tools (`sofarpc_invoke`, `sofarpc_invoke_plan`, `sofarpc_probe`, `sofarpc_describe`, `sofarpc_doctor`) emit `notifications/progress` when the client supplies a `progressToken`, and honor `notifications/cancelled` (a cancelled request receives no final response).
+
+Not supported (intentionally not advertised): `resources`, `prompts`, `roots`, `sampling`, `elicitation`. The config file is not exposed as a resource because it can contain credential-bearing attachments.
 
 ## Troubleshooting
 
