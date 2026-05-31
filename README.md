@@ -241,11 +241,29 @@ Not supported (intentionally not advertised): `resources`, `prompts`, `roots`, `
 
 ## Test
 
+The pure-Go suite runs in CI (`.github/workflows/ci.yml`: `go build` + `go vet` +
+`go test -race`) and locally from the repo root:
+
 ```bash
-cd cli && go test ./...
+go test ./...
 ```
 
 Some tests open loopback ports. In restricted sandboxes, they need permission to bind `127.0.0.1`.
+
+### Real-compatibility oracle (local pre-release gate)
+
+The hand-written Hessian2/BOLT codec is verified against a real JVM. These tests
+are build-tag gated and excluded from CI because they need a JVM plus the internal
+alipay Hessian jar in `~/.m2`. Run them before cutting a release:
+
+```bash
+go test ./internal/direct -tags hessian_oracle   # Go<->Java Hessian contract + golden bytes == real Java
+go test ./internal/direct -tags bolt_oracle       # BOLT envelope oracle
+```
+
+They compile `internal/direct/testdata/java/HessianContractHelper.java` against the
+alipay Hessian jar, run it on the JVM, and assert the committed golden bytes still
+match real Java output. If the jar is absent they skip.
 
 ## Design Docs
 

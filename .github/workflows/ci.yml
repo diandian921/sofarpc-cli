@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: build + vet + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      # Pure-Go suite. The JVM compatibility oracle (-tags hessian_oracle /
+      # bolt_oracle) is intentionally excluded here: it needs a JVM and the
+      # internal alipay Hessian jar, so it runs as a local pre-release gate
+      # (see README "Test"). gofmt is not gated due to pre-existing comment-format
+      # debt in a few files.
+      - name: Test
+        run: go test -race ./...
