@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -69,6 +68,37 @@ func TestToolsListRegistersWorkflowTools(t *testing.T) {
 
 	out := &bytes.Buffer{}
 	s := &Server{
+		BuildVersion: "test",
+		Stdin:        strings.NewReader(handshake() + `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}` + "\n"),
+		Stdout:       out,
+		Stderr:       &bytes.Buffer{},
+	}
+	if code := s.Run(); code != 0 {
+		t.Fatalf("Run exit = %d", code)
+	}
+	names := toolNamesFromList(t, out.String())
+	want := []string{
+		"sofarpc_config_list",
+		"sofarpc_config_remove_project",
+		"sofarpc_config_remove_server",
+		"sofarpc_config_save_project",
+		"sofarpc_config_save_server",
+		"sofarpc_describe",
+		"sofarpc_doctor",
+		"sofarpc_invoke",
+		"sofarpc_invoke_plan",
+		"sofarpc_probe",
+		"sofarpc_resolve",
+	}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("tools = %v, want %v", names, want)
+	}
+}
+
+func TestDisableConfigWriteHidesWriteTools(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	out := &bytes.Buffer{}
+	s := &Server{
 		BuildVersion:       "test",
 		Stdin:              strings.NewReader(handshake() + `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}` + "\n"),
 		Stdout:             out,
@@ -78,9 +108,26 @@ func TestToolsListRegistersWorkflowTools(t *testing.T) {
 	if code := s.Run(); code != 0 {
 		t.Fatalf("Run exit = %d", code)
 	}
-	resp := responsesByID(t, out.String())["1"]
+	names := toolNamesFromList(t, out.String())
+	want := []string{
+		"sofarpc_config_list",
+		"sofarpc_describe",
+		"sofarpc_doctor",
+		"sofarpc_invoke",
+		"sofarpc_invoke_plan",
+		"sofarpc_probe",
+		"sofarpc_resolve",
+	}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("disabled tools = %v, want %v (no write tools)", names, want)
+	}
+}
+
+func toolNamesFromList(t *testing.T, out string) []string {
+	t.Helper()
+	resp := responsesByID(t, out)["1"]
 	if resp == nil {
-		t.Fatalf("no tools/list response: %s", out.String())
+		t.Fatalf("no tools/list response: %s", out)
 	}
 	result, _ := resp["result"].(map[string]interface{})
 	rawTools, _ := result["tools"].([]interface{})
@@ -90,17 +137,7 @@ func TestToolsListRegistersWorkflowTools(t *testing.T) {
 		names = append(names, fmt.Sprint(tool["name"]))
 	}
 	sort.Strings(names)
-	want := []string{
-		"sofarpc_config",
-		"sofarpc_describe",
-		"sofarpc_doctor",
-		"sofarpc_invoke",
-		"sofarpc_probe",
-		"sofarpc_resolve",
-	}
-	if strings.Join(names, ",") != strings.Join(want, ",") {
-		t.Fatalf("tools = %v, want %v", names, want)
-	}
+	return names
 }
 
 func TestCallBeforeInitializeIsRejected(t *testing.T) {
@@ -220,39 +257,6 @@ func TestHandleWithRecoverSuppressesNotificationPanic(t *testing.T) {
 	}
 }
 
-func TestInvokeRejectsNonBoolDryRun(t *testing.T) {
-	t.Setenv("SOFARPC_HOME", t.TempDir())
-	s := &Server{BuildVersion: "test"}
-	res := s.invoke(context.Background(), map[string]interface{}{
-		"service": "x.Y",
-		"method":  "m",
-		"server":  "user-test",
-		"dryRun":  "true",
-	})
-	if !res.IsError {
-		t.Fatal("string dryRun must be rejected, not silently treated as a real invoke")
-	}
-}
-
-func TestConfigWriteCanBeDisabled(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	workspace := filepath.Join(home, "workspace")
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		t.Fatalf("mkdir workspace: %v", err)
-	}
-
-	input := handshake() + `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"sofarpc_config","arguments":{"action":"save_project","name":"user","workspaceRoot":"` + workspace + `"}}}` + "\n"
-	out := &bytes.Buffer{}
-	s := &Server{BuildVersion: "test", Stdin: strings.NewReader(input), Stdout: out, Stderr: &bytes.Buffer{}, DisableConfigWrite: true}
-	if code := s.Run(); code != 0 {
-		t.Fatalf("Run exit = %d", code)
-	}
-	if !strings.Contains(out.String(), "config write tools are disabled") {
-		t.Fatalf("expected disabled write error: %s", out.String())
-	}
-}
-
 func TestConfigSaveAndListProjectTool(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -262,8 +266,8 @@ func TestConfigSaveAndListProjectTool(t *testing.T) {
 	}
 
 	input := handshake() + strings.Join([]string{
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"sofarpc_config","arguments":{"action":"save_project","name":"user","workspaceRoot":"` + workspace + `","servicePrefixes":["com.example"]}}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sofarpc_config","arguments":{"action":"list"}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"sofarpc_config_save_project","arguments":{"name":"user","workspaceRoot":"` + workspace + `","servicePrefixes":["com.example"]}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sofarpc_config_list","arguments":{}}}`,
 		"",
 	}, "\n")
 	out := &bytes.Buffer{}
@@ -290,10 +294,10 @@ func TestResolveAndInvokeDryRunUseWorkflowTools(t *testing.T) {
 	}
 
 	input := handshake() + strings.Join([]string{
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"sofarpc_config","arguments":{"action":"save_project","name":"user","workspaceRoot":"` + workspace + `"}}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sofarpc_config","arguments":{"action":"save_server","name":"user-test","address":"127.0.0.1:12200","project":"user"}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"sofarpc_config_save_project","arguments":{"name":"user","workspaceRoot":"` + workspace + `"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sofarpc_config_save_server","arguments":{"name":"user-test","address":"127.0.0.1:12200","project":"user"}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"sofarpc_resolve","arguments":{"server":"user-test"}}}`,
-		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"sofarpc_invoke","arguments":{"server":"user-test","service":"com.example.UserService","method":"getUser","paramTypes":["java.lang.String"],"args":["u001"],"dryRun":true}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"sofarpc_invoke_plan","arguments":{"server":"user-test","service":"com.example.UserService","method":"getUser","paramTypes":["java.lang.String"],"args":["u001"]}}}`,
 		"",
 	}, "\n")
 	out := &bytes.Buffer{}
@@ -308,7 +312,7 @@ func TestResolveAndInvokeDryRunUseWorkflowTools(t *testing.T) {
 	}
 	dry, _ := json.Marshal(byID["4"])
 	if !strings.Contains(string(dry), `"dryRun":true`) || !strings.Contains(string(dry), `"argTypes":["java.lang.String"]`) {
-		t.Fatalf("dry run response missing plan: %s", dry)
+		t.Fatalf("invoke_plan response missing plan: %s", dry)
 	}
 }
 
@@ -358,9 +362,9 @@ func TestCancelledInvokeSendsNoFinalResponse(t *testing.T) {
 	waitResponseID(t, stdout.ch, "0", 2*time.Second)
 	writeFrame(`{"jsonrpc":"2.0","method":"notifications/initialized"}`)
 
-	writeFrame(`{"jsonrpc":"2.0","id":"save-project","method":"tools/call","params":{"name":"sofarpc_config","arguments":{"action":"save_project","name":"user","workspaceRoot":"` + workspace + `"}}}`)
+	writeFrame(`{"jsonrpc":"2.0","id":"save-project","method":"tools/call","params":{"name":"sofarpc_config_save_project","arguments":{"name":"user","workspaceRoot":"` + workspace + `"}}}`)
 	waitResponseID(t, stdout.ch, "save-project", 2*time.Second)
-	writeFrame(`{"jsonrpc":"2.0","id":"save-server","method":"tools/call","params":{"name":"sofarpc_config","arguments":{"action":"save_server","name":"user-test","address":"` + addr + `","project":"user"}}}`)
+	writeFrame(`{"jsonrpc":"2.0","id":"save-server","method":"tools/call","params":{"name":"sofarpc_config_save_server","arguments":{"name":"user-test","address":"` + addr + `","project":"user"}}}`)
 	waitResponseID(t, stdout.ch, "save-server", 2*time.Second)
 
 	writeFrame(`{"jsonrpc":"2.0","id":"invoke-1","method":"tools/call","params":{"name":"sofarpc_invoke","arguments":{"server":"user-test","service":"com.example.UserService","method":"getUser","paramTypes":["java.lang.String"],"args":["u001"],"timeoutMs":20000}}}`)

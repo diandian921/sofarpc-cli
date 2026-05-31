@@ -34,19 +34,12 @@ func (d *dispatcher) Async(req proto.Request) bool {
 		return false
 	}
 	var call struct {
-		Name      string                 `json:"name"`
-		Arguments map[string]interface{} `json:"arguments"`
+		Name string `json:"name"`
 	}
 	if err := decodeJSON(req.Params, &call); err != nil {
 		return false
 	}
-	if d.server.toolRegistry().Async(call.Name) {
-		return true
-	}
-	if call.Name == "sofarpc_invoke" {
-		return !boolArg(call.Arguments, "dryRun")
-	}
-	return false
+	return d.server.toolRegistry().Async(call.Name)
 }
 
 func (d *dispatcher) Handle(ctx context.Context, req proto.Request) (proto.Response, bool) {

@@ -1,9 +1,12 @@
 package tools
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/diandian921/sofarpc-cli/internal/app"
 	"github.com/diandian921/sofarpc-cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-cli/internal/mcp/server"
 	"github.com/diandian921/sofarpc-cli/internal/schema"
 )
 
@@ -13,6 +16,31 @@ func loadConfig() (appconfig.Config, error) {
 		return appconfig.Config{}, err
 	}
 	return appconfig.Load(path)
+}
+
+func configPaths() (string, string, error) {
+	path, err := appconfig.DefaultPath()
+	if err != nil {
+		return "", "", err
+	}
+	lock, err := appconfig.DefaultLockPath()
+	if err != nil {
+		return "", "", err
+	}
+	return path, lock, nil
+}
+
+// configFailure renders an appconfig error, preserving its stable code and path
+// when present so the agent gets a consistent recovery hint.
+func configFailure(err error) server.Result {
+	code := app.CodeBadRequest
+	var details map[string]interface{}
+	var cfgErr *appconfig.ConfigError
+	if errors.As(err, &cfgErr) {
+		code = cfgErr.Code
+		details = map[string]interface{}{"configPath": cfgErr.Path}
+	}
+	return failure(code, err.Error(), details)
 }
 
 // resolveProject picks the project to describe given an explicit project name
