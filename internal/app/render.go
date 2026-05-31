@@ -47,7 +47,7 @@ func nextToolFor(code string, details map[string]interface{}) string {
 	if kind, _ := details["kind"].(string); kind != "" {
 		switch ErrorKind(kind) {
 		case ErrProjectNotFound, ErrServerNotFound:
-			return "sofarpc_config"
+			return "sofarpc_config_list"
 		case ErrEndpointNotFound:
 			return "sofarpc_resolve"
 		case ErrServiceNotFound, ErrMethodNotFound, ErrMethodAmbiguous, ErrArgumentTypeMismatch:

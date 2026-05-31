@@ -24,6 +24,7 @@ var probeInputSchema = json.RawMessage(`{
     "server": {"type": "string", "description": "Optional configured server name."},
     "address": {"type": "string", "description": "Optional explicit host:port. Used when server is omitted."},
     "service": {"type": "string", "description": "Optional service FQN for labeling diagnostics."},
+    "project": {"type": "string", "description": "Optional project name used to infer a single bound server when server is omitted."},
     "timeoutMs": {"type": "integer", "description": "Optional total timeout in milliseconds."}
   }
 }`)

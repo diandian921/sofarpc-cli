@@ -73,7 +73,7 @@ func TestNextToolForMapsCodesAndKinds(t *testing.T) {
 		{"invoke-failed", CodeInvokeFailed, nil, "sofarpc_doctor"},
 		{"internal", CodeInternalError, nil, "sofarpc_doctor"},
 		{"config-invalid", "CONFIG_INVALID", nil, "sofarpc_doctor"},
-		{"kind-project", CodeBadRequest, map[string]interface{}{"kind": string(ErrProjectNotFound)}, "sofarpc_config"},
+		{"kind-project", CodeBadRequest, map[string]interface{}{"kind": string(ErrProjectNotFound)}, "sofarpc_config_list"},
 		{"kind-endpoint", CodeInvokeFailed, map[string]interface{}{"kind": string(ErrEndpointNotFound)}, "sofarpc_resolve"},
 		{"kind-method", CodeBadRequest, map[string]interface{}{"kind": string(ErrMethodAmbiguous)}, "sofarpc_describe"},
 		{"unknown", "WEIRD_CODE", nil, ""},

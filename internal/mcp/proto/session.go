@@ -41,6 +41,9 @@ type Session struct {
 	state    State
 	inflight *inFlight
 	wg       sync.WaitGroup
+
+	logMu    sync.Mutex
+	logLevel string
 }
 
 // NewSession builds a session from cfg.
@@ -101,6 +104,9 @@ func (s *Session) handleRequest(req Request) {
 		return
 	case "notifications/cancelled":
 		s.handleCancel(req)
+		return
+	case "logging/setLevel":
+		s.handleSetLevel(req)
 		return
 	}
 	if s.getState() != StateReady {
