@@ -46,6 +46,15 @@ func (s *Server) Run() int {
 	if stderr == nil {
 		stderr = io.Discard
 	}
+	// Fail fast on a non-compliant tool registry rather than serving it. This is
+	// belt-and-suspenders: a tool registered without an outputSchema is already
+	// caught at test time (SelfTest / TestAllToolsAdvertiseOutputSchema), so a
+	// released binary always passes — but a direct `sofarpc mcp` start otherwise
+	// would not validate before the first tools/call.
+	if err := s.toolRegistry().Validate(); err != nil {
+		fmt.Fprintln(stderr, "mcp: tool registry invalid:", err)
+		return 1
+	}
 	return s.newSession(in, out, stderr).Run()
 }
 

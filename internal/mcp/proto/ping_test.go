@@ -67,6 +67,26 @@ func TestPingAnsweredInEveryState(t *testing.T) {
 	})
 }
 
+// TestNotificationInitializeIsIgnored pins that a no-id (notification) initialize
+// gets no response and does not advance lifecycle state.
+func TestNotificationInitializeIsIgnored(t *testing.T) {
+	frames := `{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-06-18"}}` + "\n" +
+		`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}` + "\n"
+	out := runFrames(t, frames)
+
+	if strings.Contains(out, "protocolVersion") {
+		t.Fatalf("notification initialize must not produce an initialize result: %s", out)
+	}
+	resp := responseByID(t, out, 1)
+	if resp == nil {
+		t.Fatalf("no tools/list response: %s", out)
+	}
+	errObj, _ := resp["error"].(map[string]interface{})
+	if errObj == nil || fmt.Sprint(errObj["code"]) != "-32002" {
+		t.Fatalf("state must stay uninitialized after a notification initialize (want -32002): %s", out)
+	}
+}
+
 // TestSecondInitializeIsRejectedWithoutRollback pins that a duplicate initialize
 // is rejected with -32600 and does not roll the session back out of Ready.
 func TestSecondInitializeIsRejectedWithoutRollback(t *testing.T) {

@@ -132,10 +132,13 @@ func (s *Session) handlePing(req Request) {
 }
 
 func (s *Session) handleInitialize(req Request) {
+	// initialize is a request in MCP; a no-id (notification) initialize is
+	// malformed — ignore it without responding or advancing state, per JSON-RPC.
+	if req.IsNotification() {
+		return
+	}
 	if s.getState() != StateNew {
-		if !req.IsNotification() {
-			_ = s.transport.Write(errorResponse(req.ID, CodeInvalidRequest, "server already initialized"))
-		}
+		_ = s.transport.Write(errorResponse(req.ID, CodeInvalidRequest, "server already initialized"))
 		return
 	}
 	var p struct {
