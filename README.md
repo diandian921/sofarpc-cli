@@ -229,6 +229,8 @@ Each JSON-RPC stdin frame is capped at 16 MiB. Oversized frames are rejected wit
 
 Declared capabilities: `tools` (static list) and `logging` (`notifications/message`). The async tools (`sofarpc_invoke`, `sofarpc_invoke_plan`, `sofarpc_probe`, `sofarpc_describe`, `sofarpc_doctor`) honor `notifications/cancelled` (a cancelled request receives no final response). Of these, `sofarpc_invoke`, `sofarpc_doctor`, and `sofarpc_describe` emit `notifications/progress` when the client supplies a `progressToken` (accepted only as a JSON string or integer).
 
+Every tool declares an `outputSchema` and returns its result both as `structuredContent` and as that same JSON serialized into a `text` content block, so a client that does not read structured content still receives the full result. The one-line human summary is carried in `_meta.summary`, alongside `requestId` and `elapsedMs`.
+
 Not supported (intentionally not advertised): `resources`, `prompts`, `roots`, `sampling`, `elicitation`. The config file is not exposed as a resource because it can contain credential-bearing attachments.
 
 ## Troubleshooting
