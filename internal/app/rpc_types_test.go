@@ -216,6 +216,36 @@ func TestTypedArgumentsEncodesJavaTimeFromISO(t *testing.T) {
 	}
 }
 
+func TestTypedArgumentsEncodesBigIntegerFromString(t *testing.T) {
+	method := schema.Method{
+		Service:    "com.x.facade.NumFacade",
+		Method:     "big",
+		Package:    "com.x.facade",
+		Parameters: []schema.Parameter{{Name: "n", Type: "BigInteger"}},
+		Imports:    map[string]string{"BigInteger": "java.math.BigInteger"},
+	}
+	desc := schema.Description{Methods: []schema.Method{method}}
+
+	got := typedArgumentsForMethod([]interface{}{"9223372036854775807"}, method, desc)
+	if len(got) != 1 {
+		t.Fatalf("want 1 arg, got %#v", got)
+	}
+	bi := got[0]
+	if bi.Kind != javavalue.KindObject || bi.JavaType != "java.math.BigInteger" {
+		t.Fatalf("BigInteger -> %#v", bi)
+	}
+	if fmt.Sprint(bi.Fields["signum"].Scalar) != "1" {
+		t.Fatalf("signum = %#v", bi.Fields["signum"])
+	}
+	mag := bi.Fields["mag"]
+	if mag.Kind != javavalue.KindList || len(mag.Items) != 2 {
+		t.Fatalf("mag = %#v", mag)
+	}
+	if fmt.Sprint(mag.Items[0].Scalar) != "2147483647" || fmt.Sprint(mag.Items[1].Scalar) != "-1" {
+		t.Fatalf("mag items = %#v", mag.Items)
+	}
+}
+
 func TestExtractGenericArgs(t *testing.T) {
 	cases := []struct {
 		in   string

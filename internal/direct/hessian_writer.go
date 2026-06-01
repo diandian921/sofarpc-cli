@@ -398,7 +398,7 @@ func (w *writer) writeJavaScalar(javaType string, v interface{}) (bool, error) {
 		}
 		return true, w.writeTypedObject(typedObject{name: base, fields: map[string]interface{}{"value": s}})
 	case "java.math.BigInteger":
-		return true, fmt.Errorf("java.math.BigInteger encoding is not supported")
+		return true, fmt.Errorf("java.math.BigInteger must be encoded as its signum/mag object form, not a scalar")
 	case "java.util.Date":
 		n, ok := int64Value(v)
 		if !ok {

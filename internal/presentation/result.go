@@ -3,6 +3,7 @@ package presentation
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"reflect"
 	"sort"
 	"strconv"
@@ -92,12 +93,17 @@ func flatten(v interface{}, seen map[uintptr]bool, depth int) interface{} {
 
 func flattenJavaValueObject(class string, fields map[string]interface{}, seen map[uintptr]bool, depth int) (interface{}, bool) {
 	switch class {
-	case "java.math.BigDecimal", "java.math.BigInteger":
+	case "java.math.BigDecimal":
 		value, ok := fields["value"]
 		if !ok {
 			return nil, false
 		}
 		return flattenJavaNumber(value, seen, depth), true
+	case "java.math.BigInteger":
+		if value, ok := fields["value"]; ok {
+			return flattenJavaNumber(value, seen, depth), true
+		}
+		return flattenBigInteger(fields)
 	case "java.util.Date", "java.sql.Date", "java.sql.Time", "java.sql.Timestamp":
 		return flattenJavaDate(fields)
 	case "com.caucho.hessian.io.jdk8.LocalDateHandle",
@@ -213,6 +219,59 @@ func handleFields(v interface{}) (map[string]interface{}, bool) {
 	}
 	f, ok := m["fields"].(map[string]interface{})
 	return f, ok
+}
+
+// flattenBigInteger reconstructs java.math.BigInteger's number from its serialized
+// signum + mag fields (mag is the big-endian magnitude as unsigned 32-bit words,
+// each stored as a signed Java int). Returns the value as a string so arbitrarily
+// large integers stay lossless. Needs both signum and mag, else leaves the raw
+// fields for inspection.
+func flattenBigInteger(fields map[string]interface{}) (interface{}, bool) {
+	signum, ok := int64FromValue(fields["signum"])
+	if !ok {
+		return nil, false
+	}
+	if signum == 0 {
+		return "0", true
+	}
+	words, ok := magWords(fields["mag"])
+	if !ok {
+		return nil, false
+	}
+	n := new(big.Int)
+	for _, w := range words {
+		n.Lsh(n, 32)
+		n.Or(n, new(big.Int).SetUint64(uint64(uint32(w))))
+	}
+	if signum < 0 {
+		n.Neg(n)
+	}
+	return n.String(), true
+}
+
+func magWords(v interface{}) ([]int32, bool) {
+	var items []interface{}
+	switch x := v.(type) {
+	case []interface{}:
+		items = x
+	case map[string]interface{}:
+		its, ok := x["items"].([]interface{})
+		if !ok {
+			return nil, false
+		}
+		items = its
+	default:
+		return nil, false
+	}
+	out := make([]int32, len(items))
+	for i, it := range items {
+		n, ok := int64FromValue(it)
+		if !ok {
+			return nil, false
+		}
+		out[i] = int32(n)
+	}
+	return out, true
 }
 
 func flattenJavaOptional(fields map[string]interface{}, seen map[uintptr]bool, depth int) (interface{}, bool) {

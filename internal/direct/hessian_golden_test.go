@@ -188,24 +188,17 @@ func TestHessianGoldenCircularReferenceResolves(t *testing.T) {
 	}
 }
 
-func TestHessianJavaGoldenDocumentsKnownBigIntegerPresentationGap(t *testing.T) {
+// TestHessianGoldenBigIntegerFlattensToNumber pins the formerly-known gap as
+// closed: the raw decode still exposes BigInteger's internal signum/mag fields,
+// but presentation now reconstructs the number from them.
+func TestHessianGoldenBigIntegerFlattensToNumber(t *testing.T) {
 	got := readGoldenHessian(t, hessianBigIntegerGoldenHex)
 	fields := goldenObjectFields(t, got, "java.math.BigInteger")
-	if _, ok := fields["value"]; ok {
-		t.Fatalf("BigInteger unexpectedly rendered as value; remove this known-gap test")
-	}
 	if fields["signum"] != int64(1) || fields["mag"] == nil {
 		t.Fatalf("fields = %#v", fields)
 	}
-	rendered, ok := presentation.Flatten(got).(map[string]interface{})
-	if !ok {
-		t.Fatalf("rendered BigInteger = %#v", rendered)
-	}
-	if _, ok := rendered["value"]; ok {
-		t.Fatalf("BigInteger unexpectedly rendered as value: %#v", rendered)
-	}
-	if rendered["signum"] != int64(1) || rendered["mag"] == nil {
-		t.Fatalf("rendered BigInteger = %#v", rendered)
+	if rendered := presentation.Flatten(got); rendered != "9223372036854775807" {
+		t.Fatalf("rendered BigInteger = %#v, want \"9223372036854775807\"", rendered)
 	}
 }
 

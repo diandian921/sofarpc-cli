@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -79,6 +80,9 @@ func typedValueForJavaType(value interface{}, javaType string, types map[string]
 		return javavalue.Scalar(javaType, value)
 	}
 	if tv, ok := javaTimeTypedValue(eraseRPCGeneric(javaType), value); ok {
+		return tv
+	}
+	if tv, ok := bigIntegerTypedValue(eraseRPCGeneric(javaType), value); ok {
 		return tv
 	}
 	if typ, ok := types[eraseRPCGeneric(javaType)]; ok && typ.Kind == "enum" {
@@ -510,6 +514,72 @@ func instantHandle(t time.Time) javavalue.TypedValue {
 		"seconds": javaLongScalar(t.Unix()),
 		"nanos":   javaIntScalar(t.Nanosecond()),
 	})
+}
+
+// bigIntegerTypedValue encodes a java.math.BigInteger argument (given as a string
+// or integer JSON number) into BigInteger's serialized signum + mag object form,
+// which the provider's Java Hessian reads back as a BigInteger. Returns false for
+// non-integer / unparseable values so the caller falls back to default handling.
+func bigIntegerTypedValue(javaType string, value interface{}) (javavalue.TypedValue, bool) {
+	if javaType != "java.math.BigInteger" {
+		return javavalue.TypedValue{}, false
+	}
+	n, ok := parseBigInt(value)
+	if !ok {
+		return javavalue.TypedValue{}, false
+	}
+	return bigIntegerHandle(n), true
+}
+
+func parseBigInt(value interface{}) (*big.Int, bool) {
+	switch x := value.(type) {
+	case string:
+		return new(big.Int).SetString(strings.TrimSpace(x), 10)
+	case json.Number:
+		return new(big.Int).SetString(x.String(), 10)
+	case int:
+		return big.NewInt(int64(x)), true
+	case int64:
+		return big.NewInt(x), true
+	case float64:
+		if x == float64(int64(x)) {
+			return big.NewInt(int64(x)), true
+		}
+	}
+	return nil, false
+}
+
+func bigIntegerHandle(n *big.Int) javavalue.TypedValue {
+	mag := magFromBigInt(n)
+	items := make([]javavalue.TypedValue, len(mag))
+	for i, w := range mag {
+		items[i] = javaIntScalar(int(int32(w)))
+	}
+	return javavalue.Object("java.math.BigInteger", map[string]javavalue.TypedValue{
+		"signum":             javaIntScalar(n.Sign()),
+		"bitCount":           javaIntScalar(0),
+		"bitLength":          javaIntScalar(0),
+		"lowestSetBit":       javaIntScalar(0),
+		"firstNonzeroIntNum": javaIntScalar(0),
+		"mag":                javavalue.List("[int", items),
+	})
+}
+
+// magFromBigInt returns the big-endian magnitude of n as unsigned 32-bit words
+// with no leading-zero word — the shape Java BigInteger.mag uses. Empty for zero.
+func magFromBigInt(n *big.Int) []uint32 {
+	b := new(big.Int).Abs(n).Bytes()
+	if len(b) == 0 {
+		return nil
+	}
+	if pad := (4 - len(b)%4) % 4; pad > 0 {
+		b = append(make([]byte, pad), b...)
+	}
+	words := make([]uint32, len(b)/4)
+	for i := range words {
+		words[i] = uint32(b[i*4])<<24 | uint32(b[i*4+1])<<16 | uint32(b[i*4+2])<<8 | uint32(b[i*4+3])
+	}
+	return words
 }
 
 // ownedField pairs a field with its declaring type, so an inherited field's type

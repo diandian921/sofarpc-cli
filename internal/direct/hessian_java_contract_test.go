@@ -213,6 +213,22 @@ func TestHessianJavaContractGoEncodedValuesReadableByJava(t *testing.T) {
 			mode: "decode-any",
 			want: "java.time.Instant:2024-01-15T10:30:00Z",
 		},
+		{
+			name: "big-integer write",
+			value: javavalue.Object("java.math.BigInteger", map[string]javavalue.TypedValue{
+				"signum":             javavalue.Scalar("java.lang.Integer", json.Number("1")),
+				"bitCount":           javavalue.Scalar("java.lang.Integer", json.Number("0")),
+				"bitLength":          javavalue.Scalar("java.lang.Integer", json.Number("0")),
+				"lowestSetBit":       javavalue.Scalar("java.lang.Integer", json.Number("0")),
+				"firstNonzeroIntNum": javavalue.Scalar("java.lang.Integer", json.Number("0")),
+				"mag": javavalue.List("[int", []javavalue.TypedValue{
+					javavalue.Scalar("java.lang.Integer", json.Number("2147483647")),
+					javavalue.Scalar("java.lang.Integer", json.Number("-1")),
+				}),
+			}),
+			mode: "decode-any",
+			want: "java.math.BigInteger:9223372036854775807",
+		},
 	}
 
 	for _, tc := range cases {
@@ -543,7 +559,10 @@ func TestHessianJavaContractJavaDateDecodesAsEpochMillis(t *testing.T) {
 	}
 }
 
-func TestHessianJavaContractDocumentsKnownBigIntegerPresentationGap(t *testing.T) {
+// TestHessianBigIntegerDecodesToSignumMagFields documents the raw decode shape:
+// Java serializes BigInteger field-wise, so it decodes to internal signum/mag
+// fields. Presentation reconstructs the number from them (TestHessianGoldenBigIntegerFlattensToNumber).
+func TestHessianBigIntegerDecodesToSignumMagFields(t *testing.T) {
 	contract := requireJavaHessianContract(t)
 	rawHex := contract.run(t, "encode", "big-integer")
 	data, err := hex.DecodeString(rawHex)
@@ -555,21 +574,22 @@ func TestHessianJavaContractDocumentsKnownBigIntegerPresentationGap(t *testing.T
 		t.Fatalf("readValue: %v; data=%s", err, rawHex)
 	}
 	fields := objectFields(t, got, "java.math.BigInteger")
-	if _, ok := fields["value"]; ok {
-		t.Fatalf("BigInteger unexpectedly rendered as value; remove this known-gap test")
-	}
 	if fields["signum"] != int64(1) || fields["mag"] == nil {
 		t.Fatalf("fields = %#v", fields)
 	}
 }
 
-func TestHessianJavaContractDocumentsKnownBigIntegerWriteGap(t *testing.T) {
+// TestHessianWriterRejectsBareBigIntegerScalar documents that the low-level writer
+// has no BigInteger scalar tag: BigInteger is encoded via its serialized signum/mag
+// object form (built by the app coercion; see the "big-integer write" oracle case),
+// so a bare scalar is correctly rejected.
+func TestHessianWriterRejectsBareBigIntegerScalar(t *testing.T) {
 	w := newWriter()
 	err := w.writeValueWithType("java.math.BigInteger", "9223372036854775807")
 	if err == nil {
-		t.Fatalf("BigInteger unexpectedly encoded; remove this known-gap test and add Java round-trip coverage")
+		t.Fatalf("a bare BigInteger scalar must be rejected (encode via the object form)")
 	}
-	if !strings.Contains(err.Error(), "BigInteger encoding is not supported") {
+	if !strings.Contains(err.Error(), "object form") {
 		t.Fatalf("err = %v", err)
 	}
 }
