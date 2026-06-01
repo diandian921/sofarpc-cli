@@ -17,6 +17,20 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Ensure a writable Go module cache. Some environments default GOMODCACHE to a
+# read-only path, which makes `go test` fail while fetching deps (e.g. the BOLT
+# oracle's sofa-bolt-go) with "mkdir ...: read-only file system". Fall back to a
+# stable temp cache so the gate runs rather than failing on infrastructure.
+default_modcache="$(go env GOMODCACHE)"
+if ! { mkdir -p "$default_modcache" 2>/dev/null && [ -w "$default_modcache" ]; }; then
+	fallback="${TMPDIR:-/tmp}/sofarpc-oracle-gocache"
+	export GOPATH="$fallback"
+	export GOMODCACHE="$fallback/pkg/mod"
+	mkdir -p "$GOMODCACHE"
+	echo "note: default Go module cache is not writable; using $GOMODCACHE"
+	echo
+fi
+
 fail=0
 
 run_oracle() {

@@ -24,43 +24,65 @@ type AssertionOutcome struct {
 	Message  string      `json:"message,omitempty"`
 }
 
+// flattenMaxDepth is a final backstop against pathological nesting; the seen-set
+// handles real object cycles precisely, this only catches anything it can't.
+const flattenMaxDepth = 512
+
 func Flatten(v interface{}) interface{} {
+	return flatten(v, map[uintptr]bool{}, 0)
+}
+
+// flatten renders a decoded value for presentation. seen tracks the map nodes on
+// the current path: the reader resolves Hessian back-references into shared maps,
+// so a cyclic object graph would otherwise recurse until the stack overflows.
+// Re-entering a node on the path returns a $circularRef marker instead; depth is
+// a last-resort cap.
+func flatten(v interface{}, seen map[uintptr]bool, depth int) interface{} {
+	if depth > flattenMaxDepth {
+		return map[string]interface{}{"$truncated": "max depth exceeded"}
+	}
 	switch x := v.(type) {
 	case map[string]interface{}:
+		ptr := reflect.ValueOf(x).Pointer()
+		if seen[ptr] {
+			return map[string]interface{}{"$circularRef": true}
+		}
+		seen[ptr] = true
+		defer delete(seen, ptr)
 		if fields, ok := x["fields"].(map[string]interface{}); ok {
 			if class, _ := x["type"].(string); class != "" {
-				if value, ok := flattenJavaValueObject(class, fields); ok {
+				if value, ok := flattenJavaValueObject(class, fields, seen, depth); ok {
 					return value
 				}
 			}
 			out := make(map[string]interface{}, len(fields))
 			for _, key := range fieldOrder(x, fields) {
-				out[key] = Flatten(fields[key])
+				out[key] = flatten(fields[key], seen, depth+1)
 			}
 			return out
 		}
 		if entries, ok := x["entries"].(map[string]interface{}); ok {
 			out := make(map[string]interface{}, len(entries))
 			for k, v := range entries {
-				out[k] = Flatten(v)
+				out[k] = flatten(v, seen, depth+1)
 			}
 			return out
 		}
 		if items, ok := x["items"].([]interface{}); ok {
-			return Flatten(items)
+			return flatten(items, seen, depth+1)
 		}
 		out := make(map[string]interface{}, len(x))
 		for k, v := range x {
 			if k == "fieldNames" {
 				continue
 			}
-			out[k] = Flatten(v)
+			out[k] = flatten(v, seen, depth+1)
 		}
 		return out
 	case []interface{}:
 		out := make([]interface{}, len(x))
 		for i, v := range x {
-			out[i] = Flatten(v)
+			out[i] = flatten(v, seen, depth+1)
 		}
 		return out
 	default:
@@ -68,14 +90,14 @@ func Flatten(v interface{}) interface{} {
 	}
 }
 
-func flattenJavaValueObject(class string, fields map[string]interface{}) (interface{}, bool) {
+func flattenJavaValueObject(class string, fields map[string]interface{}, seen map[uintptr]bool, depth int) (interface{}, bool) {
 	switch class {
 	case "java.math.BigDecimal", "java.math.BigInteger":
 		value, ok := fields["value"]
 		if !ok {
 			return nil, false
 		}
-		return flattenJavaNumber(value), true
+		return flattenJavaNumber(value, seen, depth), true
 	case "java.util.Date", "java.sql.Date", "java.sql.Time", "java.sql.Timestamp":
 		return flattenJavaDate(fields)
 	case "com.caucho.hessian.io.jdk8.LocalDateHandle",
@@ -84,11 +106,11 @@ func flattenJavaValueObject(class string, fields map[string]interface{}) (interf
 		"com.caucho.hessian.io.jdk8.InstantHandle":
 		return flattenJDKTime(class, fields)
 	case "java.util.Optional":
-		return flattenJavaOptional(fields)
+		return flattenJavaOptional(fields, seen, depth)
 	case "java.util.OptionalInt", "java.util.OptionalLong":
-		return flattenJavaOptionalNumber(fields, false)
+		return flattenJavaOptionalNumber(fields, false, seen, depth)
 	case "java.util.OptionalDouble":
-		return flattenJavaOptionalNumber(fields, true)
+		return flattenJavaOptionalNumber(fields, true, seen, depth)
 	default:
 		if looksLikeEnumObject(class, fields) {
 			return fields["name"], true
@@ -193,19 +215,19 @@ func handleFields(v interface{}) (map[string]interface{}, bool) {
 	return f, ok
 }
 
-func flattenJavaOptional(fields map[string]interface{}) (interface{}, bool) {
+func flattenJavaOptional(fields map[string]interface{}, seen map[uintptr]bool, depth int) (interface{}, bool) {
 	if present, ok := boolField(fields, "present"); ok && !present {
 		return nil, true
 	}
 	for _, key := range []string{"value", "val"} {
 		if value, ok := fields[key]; ok {
-			return Flatten(value), true
+			return flatten(value, seen, depth+1), true
 		}
 	}
 	return nil, false
 }
 
-func flattenJavaOptionalNumber(fields map[string]interface{}, floating bool) (interface{}, bool) {
+func flattenJavaOptionalNumber(fields map[string]interface{}, floating bool, seen map[uintptr]bool, depth int) (interface{}, bool) {
 	if present, ok := boolField(fields, "present"); ok && !present {
 		return nil, true
 	}
@@ -221,7 +243,7 @@ func flattenJavaOptionalNumber(fields map[string]interface{}, floating bool) (in
 		} else if n, ok := int64FromValue(value); ok {
 			return n, true
 		}
-		return Flatten(value), true
+		return flatten(value, seen, depth+1), true
 	}
 	return nil, false
 }
@@ -288,7 +310,7 @@ func float64FromValue(v interface{}) (float64, bool) {
 	return 0, false
 }
 
-func flattenJavaNumber(value interface{}) interface{} {
+func flattenJavaNumber(value interface{}, seen map[uintptr]bool, depth int) interface{} {
 	switch x := value.(type) {
 	case json.Number:
 		return x
@@ -298,7 +320,7 @@ func flattenJavaNumber(value interface{}) interface{} {
 		}
 		return x
 	default:
-		return Flatten(x)
+		return flatten(x, seen, depth+1)
 	}
 }
 

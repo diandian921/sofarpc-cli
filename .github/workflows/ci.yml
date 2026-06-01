@@ -20,6 +20,10 @@ jobs:
           cache: true
       - name: Build
         run: go build ./...
+      # The project ships a Windows installer (scripts/install.ps1); keep the
+      # Windows target compiling. Pure-Go, so a cross-compile is enough.
+      - name: Build (windows/amd64)
+        run: GOOS=windows GOARCH=amd64 go build ./...
       - name: Vet
         run: go vet ./...
       # Pure-Go suite. The JVM compatibility oracle (-tags hessian_oracle /

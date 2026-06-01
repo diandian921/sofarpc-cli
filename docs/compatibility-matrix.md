@@ -30,11 +30,13 @@ JSON presentation shape that MCP and CLI return to agents.
 | `byte[]` | Supported | Golden decode + presentation JSON + optional encode oracle | JSON input should be an array of byte numbers in `[-128, 255]`. Response JSON uses base64 for raw byte slices. |
 | DTO object | Supported | Golden decode + presentation JSON + optional encode oracle | Shared object references are not preserved on request encoding. |
 | Nested DTO with list/map/null fields | Supported | Golden decode + presentation JSON + optional encode oracle | Covered as a common DTO response shape, not as full object graph reference preservation. |
-| List with null elements | Supported | Golden decode + presentation JSON + optional encode oracle | Set-specific behavior is not separately covered yet. |
+| List with null elements | Supported | Golden decode + presentation JSON + optional encode oracle | Covered as an ordered list shape. |
+| `Set` (LinkedHashSet) | Supported (decode) | Golden decode + oracle + presentation JSON | Java serializes a Set as a typed list; decodes to the same list shape (e.g. `["x","y","z"]`). |
 | Map | Partial | Golden decode + presentation JSON + optional encode oracle with non-string key | Normal flattened results stringify map keys. Use `rawResult=true` for diagnosis. |
 | Cyclic request values | Rejected | Go unit test via depth guard | Object reference table and cycle preservation are not implemented for request encoding. |
+| Cyclic / shared object responses | Supported (decode) | Golden decode + oracle (self-referential graph) + presentation cycle guard | Reader resolves Hessian back-references into shared objects; presentation cuts the cycle with a `$circularRef` marker instead of overflowing. |
 | Overloaded methods | Supported at planner level | App/MCP tests | Caller must provide `paramTypes` when overloads are ambiguous. |
-| `java.time.*` | Not supported | None | Needs real Java contract samples before claiming support. |
+| `java.time.*` (LocalDate, LocalDateTime, Instant) | Supported (decode) | Golden decode + oracle (alipay `jdk8.*Handle` proxies) + presentation flatten to ISO | Response decode + ISO presentation covered. Encoding java.time as a request argument is not yet implemented. |
 | Enum | Partial | Golden decode + optional encode oracle for schema-known enum parameters and DTO fields | Request encoding needs source schema so enum values are encoded as Java enum objects. Explicit-address calls without schema still cannot infer enum types. Responses decode to objects with a `name` field; presentation does not always collapse them to bare strings. |
 | Remote exception payloads | Not fully contracted | Basic RPC error path tests | Provider-specific exception fields need real SofaRPC samples. |
 | Provider-specific Hessian extensions | Not supported | None | Treat as unsupported until captured in contract tests. |

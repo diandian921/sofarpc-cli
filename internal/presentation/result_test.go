@@ -94,6 +94,30 @@ func TestFlattenJDKTimeTypes(t *testing.T) {
 	}
 }
 
+func TestFlattenCyclicObjectGraphTerminates(t *testing.T) {
+	// a.next = b, b.next = a — the shape the reader produces for a Hessian
+	// back-reference. Flatten must cut the cycle, not overflow the stack.
+	a := map[string]interface{}{"type": "Node", "fields": map[string]interface{}{}, "fieldNames": []interface{}{"name", "next"}}
+	b := map[string]interface{}{"type": "Node", "fields": map[string]interface{}{}, "fieldNames": []interface{}{"name", "next"}}
+	a["fields"].(map[string]interface{})["name"] = "a"
+	a["fields"].(map[string]interface{})["next"] = b
+	b["fields"].(map[string]interface{})["name"] = "b"
+	b["fields"].(map[string]interface{})["next"] = a
+
+	out := Flatten(a).(map[string]interface{})
+	if out["name"] != "a" {
+		t.Fatalf("out = %#v", out)
+	}
+	bOut := out["next"].(map[string]interface{})
+	if bOut["name"] != "b" {
+		t.Fatalf("bOut = %#v", bOut)
+	}
+	cut, ok := bOut["next"].(map[string]interface{})
+	if !ok || cut["$circularRef"] != true {
+		t.Fatalf("cycle not cut at back-edge: %#v", bOut["next"])
+	}
+}
+
 func TestFlattenMapKeysAndBigIntegerKnownGap(t *testing.T) {
 	out := Flatten(map[string]interface{}{
 		"type": "java.util.LinkedHashMap",
