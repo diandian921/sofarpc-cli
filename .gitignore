@@ -1,7 +1,6 @@
 reports/
 .idea/
 cases
-sofarpc-cli-skill-workspace
 /sofarpc
 /sofarpc-mcp
 /sofarpc-cli
