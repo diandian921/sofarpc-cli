@@ -43,65 +43,60 @@ func newResultError(code, message, cause string, details map[string]interface{})
 	}
 }
 
-// recoveryFor spells out the next step in prose, mirroring nextToolFor's mapping.
-// An empty string means no specific guidance.
-func recoveryFor(code string, details map[string]interface{}) string {
+// recoveryAdvice pairs the machine-readable recovery hint (which MCP tool to call
+// next) with that same step spelled out in prose. Holding both on one entry is the
+// point: nextTool and its recovery sentence can no longer drift apart.
+type recoveryAdvice struct {
+	nextTool string
+	recovery string
+}
+
+// adviceByKind refines a failure when a DomainError kind is present. Each kind
+// names the tool that recovers it and the prose step that mirrors that tool.
+var adviceByKind = map[ErrorKind]recoveryAdvice{
+	ErrProjectNotFound:      {"sofarpc_config_list", "Call sofarpc_config_list to see configured projects, or sofarpc_config_save_project to add one."},
+	ErrServerNotFound:       {"sofarpc_config_list", "Call sofarpc_config_list to see configured servers, or sofarpc_config_save_server to add one."},
+	ErrEndpointNotFound:     {"sofarpc_resolve", "More than one server matched. Pass an explicit server, or call sofarpc_resolve to pick one."},
+	ErrServiceNotFound:      {"sofarpc_describe", "Call sofarpc_describe with query=... to find the service interface FQN."},
+	ErrMethodNotFound:       {"sofarpc_describe", "Call sofarpc_describe with the service to list its methods and parameter types."},
+	ErrMethodAmbiguous:      {"sofarpc_describe", "Overloaded method: pass paramTypes to disambiguate (candidates are in error.details.candidates)."},
+	ErrArgumentTypeMismatch: {"sofarpc_describe", "Call sofarpc_describe to check the parameter types, then pass matching paramTypes/arguments."},
+}
+
+// adviceByCode is the fallback when no DomainError kind refines the failure: the
+// stable failure code alone decides the recovery step.
+var adviceByCode = map[string]recoveryAdvice{
+	CodeConnectFailed:               {"sofarpc_probe", "Call sofarpc_probe to check the server address is reachable."},
+	CodeRPCTimeout:                  {"sofarpc_probe", "Call sofarpc_probe to check the server address is reachable."},
+	CodeBadRequest:                  {"sofarpc_describe", "Call sofarpc_describe to confirm the service, method, and argument shape."},
+	CodeInvokeFailed:                {"sofarpc_doctor", "Call sofarpc_doctor to diagnose config, source schema, and connectivity."},
+	CodeInternalError:               {"sofarpc_doctor", "Call sofarpc_doctor to diagnose config, source schema, and connectivity."},
+	appconfig.CodeConfigInvalid:     {"sofarpc_doctor", "Call sofarpc_doctor to inspect the configuration problem."},
+	appconfig.CodeConfigUnsupported: {"sofarpc_doctor", "Call sofarpc_doctor to inspect the configuration problem."},
+}
+
+// adviceFor resolves the recovery advice for a failure: a DomainError kind, when
+// present, refines it; otherwise the stable code decides. The zero value (no
+// nextTool, no recovery) means there is no specific guidance.
+func adviceFor(code string, details map[string]interface{}) recoveryAdvice {
 	if kind, _ := details["kind"].(string); kind != "" {
-		switch ErrorKind(kind) {
-		case ErrProjectNotFound:
-			return "Call sofarpc_config_list to see configured projects, or sofarpc_config_save_project to add one."
-		case ErrServerNotFound:
-			return "Call sofarpc_config_list to see configured servers, or sofarpc_config_save_server to add one."
-		case ErrEndpointNotFound:
-			return "More than one server matched. Pass an explicit server, or call sofarpc_resolve to pick one."
-		case ErrServiceNotFound:
-			return "Call sofarpc_describe with query=... to find the service interface FQN."
-		case ErrMethodNotFound:
-			return "Call sofarpc_describe with the service to list its methods and parameter types."
-		case ErrMethodAmbiguous:
-			return "Overloaded method: pass paramTypes to disambiguate (candidates are in error.details.candidates)."
-		case ErrArgumentTypeMismatch:
-			return "Call sofarpc_describe to check the parameter types, then pass matching paramTypes/arguments."
+		if advice, ok := adviceByKind[ErrorKind(kind)]; ok {
+			return advice
 		}
 	}
-	switch code {
-	case CodeConnectFailed, CodeRPCTimeout:
-		return "Call sofarpc_probe to check the server address is reachable."
-	case CodeBadRequest:
-		return "Call sofarpc_describe to confirm the service, method, and argument shape."
-	case CodeInvokeFailed, CodeInternalError:
-		return "Call sofarpc_doctor to diagnose config, source schema, and connectivity."
-	case appconfig.CodeConfigInvalid, appconfig.CodeConfigUnsupported:
-		return "Call sofarpc_doctor to inspect the configuration problem."
-	}
-	return ""
+	return adviceByCode[code]
 }
 
 // nextToolFor maps a stable failure code (refined by DomainError kind when
-// present) to the MCP tool an agent should call to recover. An empty string
-// means no specific next step.
+// present) to the MCP tool an agent should call to recover. Empty means no step.
 func nextToolFor(code string, details map[string]interface{}) string {
-	if kind, _ := details["kind"].(string); kind != "" {
-		switch ErrorKind(kind) {
-		case ErrProjectNotFound, ErrServerNotFound:
-			return "sofarpc_config_list"
-		case ErrEndpointNotFound:
-			return "sofarpc_resolve"
-		case ErrServiceNotFound, ErrMethodNotFound, ErrMethodAmbiguous, ErrArgumentTypeMismatch:
-			return "sofarpc_describe"
-		}
-	}
-	switch code {
-	case CodeConnectFailed, CodeRPCTimeout:
-		return "sofarpc_probe"
-	case CodeBadRequest:
-		return "sofarpc_describe"
-	case CodeInvokeFailed, CodeInternalError:
-		return "sofarpc_doctor"
-	case appconfig.CodeConfigInvalid, appconfig.CodeConfigUnsupported:
-		return "sofarpc_doctor"
-	}
-	return ""
+	return adviceFor(code, details).nextTool
+}
+
+// recoveryFor spells out the next step in prose, paired with nextToolFor through
+// the same advice entry. Empty means no specific guidance.
+func recoveryFor(code string, details map[string]interface{}) string {
+	return adviceFor(code, details).recovery
 }
 
 // NewRequestID returns a short, unique-ish identifier prefixed with the op.
