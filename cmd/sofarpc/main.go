@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/diandian921/sofarpc-cli/internal/buildversion"
-	"github.com/diandian921/sofarpc-cli/internal/cli"
+	"github.com/diandian921/sofarpc-mcp/internal/buildversion"
+	"github.com/diandian921/sofarpc-mcp/internal/cli"
 )
 
 // BuildVersion is stamped at link time via -ldflags "-X main.BuildVersion=...".

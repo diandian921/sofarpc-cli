@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/diandian921/sofarpc-cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
 // hostExec runs a host CLI command. It is a package var so tests can stub the

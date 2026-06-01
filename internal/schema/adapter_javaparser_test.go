@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/diandian921/sofarpc-cli/internal/javaparser"
+	"github.com/diandian921/sofarpc-mcp/internal/javaparser"
 )
 
 func TestAdaptEmptyReturnsNil(t *testing.T) {

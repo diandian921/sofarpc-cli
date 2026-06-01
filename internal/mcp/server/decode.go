@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 
-	"github.com/diandian921/sofarpc-cli/internal/mcp/proto"
+	"github.com/diandian921/sofarpc-mcp/internal/mcp/proto"
 )
 
 // decodeArgs strictly decodes raw tool arguments into out: unknown fields and

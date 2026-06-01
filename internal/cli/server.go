@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/diandian921/sofarpc-cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
 // runServer manages configured RPC servers in ~/.sofarpc/config.json.

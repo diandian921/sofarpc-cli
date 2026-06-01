@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/diandian921/sofarpc-cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
 // Server is one registry entry.

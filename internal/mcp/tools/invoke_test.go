@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/diandian921/sofarpc-cli/internal/app"
+	"github.com/diandian921/sofarpc-mcp/internal/app"
 )
 
 // TestInvokePlanningFailureCarriesNextTool guards the regression where invoke

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/diandian921/sofarpc-cli/internal/appconfig"
-	"github.com/diandian921/sofarpc-cli/internal/direct"
-	"github.com/diandian921/sofarpc-cli/internal/javavalue"
-	"github.com/diandian921/sofarpc-cli/internal/presentation"
-	"github.com/diandian921/sofarpc-cli/internal/schema"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
+	"github.com/diandian921/sofarpc-mcp/internal/direct"
+	"github.com/diandian921/sofarpc-mcp/internal/javavalue"
+	"github.com/diandian921/sofarpc-mcp/internal/presentation"
+	"github.com/diandian921/sofarpc-mcp/internal/schema"
 )
 
 func (s *Service) PlanInvocation(ctx context.Context, input InvocationInput) (InvocationPlan, error) {

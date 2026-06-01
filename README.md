@@ -24,12 +24,12 @@ Recommended — one line, install and register with your host(s):
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.sh | bash -s -- codex     # or claude / all
+curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.sh | bash -s -- codex     # or claude / all
 ```
 
 ```powershell
 # Windows
-& ([scriptblock]::Create((iwr -useb https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.ps1))) codex
+& ([scriptblock]::Create((iwr -useb https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.ps1))) codex
 ```
 
 Pin a release with `--version vX.Y.Z`. Without a host argument it installs
@@ -41,7 +41,7 @@ the GitHub redirect.
 <summary>Alternative: with Go</summary>
 
 ```bash
-go install github.com/diandian921/sofarpc-cli/cmd/sofarpc@vX.Y.Z
+go install github.com/diandian921/sofarpc-mcp/cmd/sofarpc@vX.Y.Z
 # call the just-installed binary by absolute path (GOBIN, else GOPATH/bin):
 BIN="$(go env GOBIN)"; BIN="${BIN:-$(go env GOPATH)/bin}"
 "$BIN/sofarpc" install codex     # or claude / all
@@ -114,8 +114,6 @@ The four config-write tools are not registered when the server is started with `
 
 `sofarpc_probe` checks the configured transport path. It does not prove the remote interface, method, or business behavior exists.
 
-`sofarpc_config` uses an `action` field for mutations. `--disable-config-write` keeps the tool visible but rejects mutating actions such as `save_project`, `save_server`, `remove_project`, and `remove_server`.
-
 `sofarpc_invoke` supports either exact low-level arguments:
 
 ```json
@@ -144,8 +142,6 @@ or named arguments when local source can resolve the method signature:
 Use `sofarpc_invoke_plan` to inspect the endpoint, parameter types, ordered arguments, and protocol payload without sending a SofaRPC request.
 
 Set `rawResult=true` when debugging serialization or response shape problems. The response then includes both the normal flattened `result` and the decoded Java object shape as `rawResult`.
-
-Use `sofarpc_invoke_plan` to inspect the endpoint, parameter types, and ordered arguments without sending a request (read-only); use `sofarpc_invoke` to actually call the method.
 
 ## Config File
 
@@ -276,10 +272,5 @@ go test ./internal/direct -tags bolt_oracle       # BOLT framing vs official sof
 ## Design Docs
 
 - [Pure-Go runtime](docs/pure-go-runtime.md)
-- [Architecture abstraction review](docs/architecture-abstraction-review.md)
-- [Install and host setup first-principles design](docs/install-and-host-setup-first-principles.md)
-
-Historical notes:
-
-- [Install and host setup first-principles review](docs/install-and-host-setup-first-principles-review.md)
-- [Superseded install and host setup decision](docs/install-and-host-setup.md)
+- [Compatibility matrix](docs/compatibility-matrix.md)
+- [Single-binary install target](docs/single-binary-install-target.md)

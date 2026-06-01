@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/diandian921/sofarpc-cli/internal/mcp/proto"
+	"github.com/diandian921/sofarpc-mcp/internal/mcp/proto"
 )
 
 // SessionRuntime forwards progress and logging to the live proto.Session bound

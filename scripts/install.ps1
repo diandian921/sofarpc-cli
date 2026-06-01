@@ -1,7 +1,7 @@
 # Network bootstrap. Designed to be served and piped to PowerShell:
 #
-#   iwr -useb https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.ps1 | iex
-#   & ([scriptblock]::Create((iwr -useb https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.ps1))) codex
+#   iwr -useb https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.ps1 | iex
+#   & ([scriptblock]::Create((iwr -useb https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.ps1))) codex
 #
 # Acquires the release zip (detect arch, download, verify SHA256, extract)
 # and hands control to .\sofarpc.exe install <host>. Knows nothing about
@@ -11,7 +11,7 @@
 # contains cmd/sofarpc/.
 $ErrorActionPreference = "Stop"
 
-$Repo = "diandian921/sofarpc-cli"
+$Repo = "diandian921/sofarpc-mcp"
 
 function Show-Usage {
 @"

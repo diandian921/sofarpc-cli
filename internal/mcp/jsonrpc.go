@@ -8,8 +8,8 @@ import (
 	"runtime/debug"
 	"sync/atomic"
 
-	"github.com/diandian921/sofarpc-cli/internal/app"
-	"github.com/diandian921/sofarpc-cli/internal/mcp/proto"
+	"github.com/diandian921/sofarpc-mcp/internal/app"
+	"github.com/diandian921/sofarpc-mcp/internal/mcp/proto"
 )
 
 var panicCounter uint64

@@ -7,8 +7,8 @@ package tools
 import (
 	"encoding/json"
 
-	"github.com/diandian921/sofarpc-cli/internal/app"
-	"github.com/diandian921/sofarpc-cli/internal/mcp/server"
+	"github.com/diandian921/sofarpc-mcp/internal/app"
+	"github.com/diandian921/sofarpc-mcp/internal/mcp/server"
 )
 
 // resultOutputSchema describes the unified app.Result envelope every tool emits.

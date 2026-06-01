@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/diandian921/sofarpc-cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
 // executablePath resolves the running binary. Package var so tests can stub it.

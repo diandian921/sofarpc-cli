@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/diandian921/sofarpc-cli/internal/javavalue"
-	"github.com/diandian921/sofarpc-cli/internal/schema"
+	"github.com/diandian921/sofarpc-mcp/internal/javavalue"
+	"github.com/diandian921/sofarpc-mcp/internal/schema"
 )
 
 const maxTypePlanDepth = 128
@@ -200,7 +200,9 @@ func needsSchemaAnnotation(types []string) bool {
 
 // resolveGenericType 把短名 + 泛型字符串解析成 resolved-with-generics 完整 FQN。
 // 例:输入 "List<MaterialItem>" + imports{MaterialItem:"com.x.dto.MaterialItem"}
-//     → "java.util.List<com.x.dto.MaterialItem>"
+//
+//	→ "java.util.List<com.x.dto.MaterialItem>"
+//
 // 嵌套 generic 递归 resolve;无 generic 时退化为 resolveBaseType。
 // 数组维度 "[]" 先剥离再 resolve,再原样追加回去。
 // Wildcard generic("?", "? extends X", "? super X")显式特判,

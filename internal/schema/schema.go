@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/diandian921/sofarpc-cli/internal/javaparser"
+	"github.com/diandian921/sofarpc-mcp/internal/javaparser"
 )
 
 type Project struct {
@@ -80,8 +80,9 @@ type Index struct {
 }
 
 // BuildIndex 走 2 pass:
-//   Pass 1: walk + parse 所有 .java 文件,收集全工程 type FQN 集合
-//   Pass 2: in-memory 调 adapter,wildcard import 用 Pass 1 的集合展开
+//
+//	Pass 1: walk + parse 所有 .java 文件,收集全工程 type FQN 集合
+//	Pass 2: in-memory 调 adapter,wildcard import 用 Pass 1 的集合展开
 //
 // 老的 1-pass parseJavaFile 在 Task 7 cutover 之后从 schema 包内部被 adapter 替换;
 // 这里 BuildIndex 主循环已经走 javaparser + adapter 路径。

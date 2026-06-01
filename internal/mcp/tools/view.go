@@ -1,8 +1,8 @@
 package tools
 
 import (
-	"github.com/diandian921/sofarpc-cli/internal/app"
-	"github.com/diandian921/sofarpc-cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-mcp/internal/app"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
 // redactedValue replaces every attachment value in MCP-facing output. Attachment

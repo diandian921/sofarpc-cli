@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/diandian921/sofarpc-cli/internal/mcp/proto"
+	"github.com/diandian921/sofarpc-mcp/internal/mcp/proto"
 )
 
 // serverInstructions is the server-level guidance returned at initialize.

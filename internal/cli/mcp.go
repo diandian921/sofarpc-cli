@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/diandian921/sofarpc-cli/internal/app"
-	"github.com/diandian921/sofarpc-cli/internal/mcp"
+	"github.com/diandian921/sofarpc-mcp/internal/app"
+	"github.com/diandian921/sofarpc-mcp/internal/mcp"
 )
 
 // runMCP is the stdio MCP server entry point, formerly the standalone

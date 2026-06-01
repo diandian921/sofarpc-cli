@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/diandian921/sofarpc-cli/internal/presentation"
+	"github.com/diandian921/sofarpc-mcp/internal/presentation"
 )
 
 func TestHessianJavaGoldenDecode(t *testing.T) {

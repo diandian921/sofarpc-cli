@@ -46,12 +46,20 @@ Set `rawResult=true` on MCP invoke when the decoded Java object shape is needed 
 
 Agents should prefer MCP:
 
-- `sofarpc_config`
+- `sofarpc_config_list`
+- `sofarpc_config_save_project`
+- `sofarpc_config_save_server`
+- `sofarpc_config_remove_project`
+- `sofarpc_config_remove_server`
 - `sofarpc_resolve`
 - `sofarpc_probe`
 - `sofarpc_describe`
+- `sofarpc_invoke_plan`
 - `sofarpc_invoke`
 - `sofarpc_doctor`
+
+The four config-write tools are omitted from `tools/list` when the server is
+started with `--disable-config-write`.
 
 `sofarpc_resolve` is read-only and explains which configured project, server,
 and endpoint will be used. `sofarpc_probe` is the only reachability check and
@@ -83,4 +91,4 @@ Method invocation is exposed only as the `sofarpc_invoke` MCP tool; there is no 
 
 The MCP server's stdout is the JSON-RPC frame stream; logging must stay on stderr. `sofarpc_probe` accepts explicit diagnostic addresses, so configured servers are the safer default when agent input is not fully trusted.
 
-Stdin JSON-RPC frames are capped at 128 MiB. Oversized frames return a parse error and do not stop the server.
+Stdin JSON-RPC frames are capped at 16 MiB. Oversized frames return an Invalid Request error and do not stop the server.

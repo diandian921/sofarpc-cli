@@ -1,4 +1,4 @@
-module github.com/diandian921/sofarpc-cli
+module github.com/diandian921/sofarpc-mcp
 
 go 1.19
 

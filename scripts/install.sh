@@ -2,8 +2,8 @@
 # Network bootstrap. Designed to be served via raw.githubusercontent.com and
 # piped to bash:
 #
-#   curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.sh | bash -s -- codex
-#   curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.sh | bash -s -- --version v0.1.0-beta.5 all
+#   curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.sh | bash -s -- codex
+#   curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.sh | bash -s -- --version v0.1.0-beta.5 all
 #
 # The script ONLY acquires the release archive (detect OS/arch, download,
 # verify SHA256, extract) and hands control to `./sofarpc install <host>`.
@@ -13,7 +13,7 @@
 # contains cmd/sofarpc/ (e.g. `bash scripts/install.sh codex` during dev).
 set -euo pipefail
 
-REPO="diandian921/sofarpc-cli"
+REPO="diandian921/sofarpc-mcp"
 
 usage() {
     cat <<EOF

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/diandian921/sofarpc-cli/internal/javaparser"
+	"github.com/diandian921/sofarpc-mcp/internal/javaparser"
 )
 
 // adaptCompilationUnit 把 javaparser AST 转成 schema 包的 Method / TypeSchema 表达。
@@ -184,10 +184,10 @@ func typeRefToString(t javaparser.TypeRef) string {
 }
 
 // pickServiceType 找 service candidate(对齐老 serviceTypeKind 全文 regex 行为):
-//   1. 顶层 interface 优先
-//   2. 没顶层 interface 时,**递归 NestedTypes 找第一个 interface**(老 typeKindRE 全文扫
-//      会匹配 nested,test TestNestedInterfaceCanBeServiceCandidate 依赖此行为)
-//   3. 都没 interface,用第一个顶层 class/enum/record
+//  1. 顶层 interface 优先
+//  2. 没顶层 interface 时,**递归 NestedTypes 找第一个 interface**(老 typeKindRE 全文扫
+//     会匹配 nested,test TestNestedInterfaceCanBeServiceCandidate 依赖此行为)
+//  3. 都没 interface,用第一个顶层 class/enum/record
 //
 // Annotation declaration (@interface) 不算 service type(老 parser 同样跳过)。
 func pickServiceType(types []javaparser.TypeDecl) *javaparser.TypeDecl {

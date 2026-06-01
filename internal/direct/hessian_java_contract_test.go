@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/diandian921/sofarpc-cli/internal/javavalue"
+	"github.com/diandian921/sofarpc-mcp/internal/javavalue"
 )
 
 type javaHessianContract struct {

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diandian921/sofarpc-cli/internal/mcp/proto"
+	"github.com/diandian921/sofarpc-mcp/internal/mcp/proto"
 )
 
 type frameWriter struct {

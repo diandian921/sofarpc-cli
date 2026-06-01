@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/diandian921/sofarpc-cli/internal/app"
-	"github.com/diandian921/sofarpc-cli/internal/appconfig"
-	"github.com/diandian921/sofarpc-cli/internal/mcp/proto"
-	mcpserver "github.com/diandian921/sofarpc-cli/internal/mcp/server"
-	"github.com/diandian921/sofarpc-cli/internal/mcp/tools"
-	"github.com/diandian921/sofarpc-cli/internal/schema"
+	"github.com/diandian921/sofarpc-mcp/internal/app"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
+	"github.com/diandian921/sofarpc-mcp/internal/mcp/proto"
+	mcpserver "github.com/diandian921/sofarpc-mcp/internal/mcp/server"
+	"github.com/diandian921/sofarpc-mcp/internal/mcp/tools"
+	"github.com/diandian921/sofarpc-mcp/internal/schema"
 )
 
 // Server is the stdio MCP server facade. It wires the proto session, the typed

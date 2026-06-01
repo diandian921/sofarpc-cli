@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/diandian921/sofarpc-cli/internal/app"
-	"github.com/diandian921/sofarpc-cli/internal/appconfig"
-	"github.com/diandian921/sofarpc-cli/internal/mcp/server"
+	"github.com/diandian921/sofarpc-mcp/internal/app"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
+	"github.com/diandian921/sofarpc-mcp/internal/mcp/server"
 )
 
 const (

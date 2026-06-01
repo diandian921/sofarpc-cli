@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-const modulePath = "github.com/diandian921/sofarpc-cli"
+const modulePath = "github.com/diandian921/sofarpc-mcp"
 
 func TestPackageBoundaries(t *testing.T) {
 	rules := []struct {

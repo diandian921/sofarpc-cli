@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/diandian921/sofarpc-cli/internal/app"
+	"github.com/diandian921/sofarpc-mcp/internal/app"
 )
 
 func runPing(args []string, env Env) int {

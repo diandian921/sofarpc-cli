@@ -34,11 +34,10 @@ The single binary owns both human CLI workflows and MCP serving:
 
 ```text
 sofarpc
-  invoke
   ping
   project add|list|remove
   server add|list|remove
-  config / doctor / version
+  version
   self-install
   setup codex|claude|all
   install codex|claude|all
@@ -53,6 +52,7 @@ sofarpc ping salesfundmp-test
 ```
 
 Method invocation is not a CLI command; it is the `sofarpc_invoke` MCP tool.
+The doctor workflow is also MCP-only (`sofarpc_doctor`).
 
 MCP host usage:
 
@@ -76,25 +76,25 @@ It should not register a separate `sofarpc-mcp` binary.
 macOS and Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.sh | bash -s -- codex
+curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.sh | bash -s -- codex
 ```
 
 Claude:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.sh | bash -s -- claude
+curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.sh | bash -s -- claude
 ```
 
 Both:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.sh | bash -s -- all
+curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.sh | bash -s -- all
 ```
 
 Pinned version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-cli/main/scripts/install.sh | bash -s -- --version v0.1.0-beta.5 codex
+curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.sh | bash -s -- --version v0.1.0-beta.5 codex
 ```
 
 Expected script behavior:
@@ -114,7 +114,7 @@ formats and should not duplicate install logic.
 ### 2. Go Install, Developer Path
 
 ```bash
-go install github.com/diandian921/sofarpc-cli/cmd/sofarpc@v0.1.0-beta.5
+go install github.com/diandian921/sofarpc-mcp/cmd/sofarpc@v0.1.0-beta.5
 sofarpc install codex
 ```
 
@@ -127,8 +127,8 @@ sofarpc install all
 
 This path installs only `sofarpc`. There is no separate:
 
-```bash
-go install .../cmd/sofarpc-mcp
+```text
+second go install for an MCP-only binary
 ```
 
 ### 3. Manual Release Package, Offline Path
@@ -243,13 +243,7 @@ formats directly.
 
 Runs the stdio MCP server.
 
-Self-test moves from:
-
-```bash
-sofarpc-mcp --selftest
-```
-
-to:
+Self-test runs through the subcommand:
 
 ```bash
 sofarpc mcp --selftest

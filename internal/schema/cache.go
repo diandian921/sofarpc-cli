@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/diandian921/sofarpc-cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
 type cacheFile struct {

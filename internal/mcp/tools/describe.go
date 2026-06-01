@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/diandian921/sofarpc-cli/internal/app"
-	"github.com/diandian921/sofarpc-cli/internal/mcp/server"
-	"github.com/diandian921/sofarpc-cli/internal/schema"
+	"github.com/diandian921/sofarpc-mcp/internal/app"
+	"github.com/diandian921/sofarpc-mcp/internal/mcp/server"
+	"github.com/diandian921/sofarpc-mcp/internal/schema"
 )
 
 // DescribeArgs are the arguments for sofarpc_describe.

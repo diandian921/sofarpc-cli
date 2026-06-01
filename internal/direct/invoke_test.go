@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diandian921/sofarpc-cli/internal/javavalue"
+	"github.com/diandian921/sofarpc-mcp/internal/javavalue"
 )
 
 func TestBuildRequestContentWrapsTopLevelDTO(t *testing.T) {
@@ -352,7 +352,6 @@ func writeTestResponse(w io.Writer, id uint32, content []byte) error {
 	_, err := w.Write(content)
 	return err
 }
-
 
 func TestWriteJavaDateRoundTrip(t *testing.T) {
 	// Bug report: 入参 Date 类型报错。 root cause:writeJavaScalar 没 case java.util.Date,

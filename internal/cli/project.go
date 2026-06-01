@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/diandian921/sofarpc-cli/internal/appconfig"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
 func runProject(args []string, env Env) int {
