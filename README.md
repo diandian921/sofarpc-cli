@@ -1,5 +1,7 @@
 # SofaRPC MCP
 
+![SofaRPC MCP overview](docs/readme-hero.svg)
+
 MCP-first SofaRPC testing toolkit for agents.
 
 A single binary `sofarpc` does everything: setup/diagnostic commands (`sofarpc ping`, `sofarpc project`, `sofarpc server`, ...) and the stdio MCP server (`sofarpc mcp`, which is what hosts launch). Invocation runs through a pure-Go direct BOLT/Hessian2 runtime; no Java process or sidecar is required. All invocation is exposed as the `sofarpc_invoke` MCP tool, not a CLI command.

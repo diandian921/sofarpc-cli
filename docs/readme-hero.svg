@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">SofaRPC MCP README overview</title>
+  <desc id="desc">A hand-drawn README overview for SofaRPC MCP, showing what it is, what agents can do with it, how to install it, and how calls flow through the MCP server to the pure Go SofaRPC runtime.</desc>
+  <defs>
+    <filter id="paper" x="-8%" y="-8%" width="116%" height="116%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="8" result="noise"/>
+      <feColorMatrix in="noise" type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncA type="table" tableValues="0 0.035"/>
+      </feComponentTransfer>
+      <feBlend in="SourceGraphic" mode="multiply"/>
+    </filter>
+    <filter id="rough" x="-5%" y="-5%" width="110%" height="110%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="2" seed="5" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.25"/>
+    </filter>
+    <filter id="softShadow" x="-12%" y="-12%" width="124%" height="124%">
+      <feDropShadow dx="3" dy="6" stdDeviation="4" flood-color="#2f2f2f" flood-opacity="0.15"/>
+    </filter>
+    <marker id="arrow" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M1 1 L11 6.5 L1 12 Z" fill="#262626"/>
+    </marker>
+    <style>
+      .paper { fill: #fbf6e8; }
+      .inkStroke { stroke: #262626; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+      .thinStroke { stroke: #262626; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .box { fill: #fffdf7; }
+      .blue { fill: #dff0ff; }
+      .green { fill: #e3f5e7; }
+      .yellow { fill: #fff1b8; }
+      .pink { fill: #f8d8e7; }
+      .gray { fill: #eeeeec; }
+      .ink { fill: #1c1c1c; }
+      .muted { fill: #414141; }
+      .title { font: 700 46px "Comic Sans MS", "Comic Neue", "Marker Felt", "Segoe UI", sans-serif; letter-spacing: 0; }
+      .subtitle { font: 21px "Comic Sans MS", "Comic Neue", "Marker Felt", "Segoe UI", sans-serif; letter-spacing: 0; }
+      .h2 { font: 700 25px "Comic Sans MS", "Comic Neue", "Marker Felt", "Segoe UI", sans-serif; letter-spacing: 0; }
+      .h3 { font: 700 18px "Comic Sans MS", "Comic Neue", "Marker Felt", "Segoe UI", sans-serif; letter-spacing: 0; }
+      .body { font: 17px "Comic Sans MS", "Comic Neue", "Marker Felt", "Segoe UI", sans-serif; letter-spacing: 0; }
+      .small { font: 14px "Comic Sans MS", "Comic Neue", "Marker Felt", "Segoe UI", sans-serif; letter-spacing: 0; }
+      .mono { font: 14px "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; letter-spacing: 0; }
+      .arrow { fill: none; stroke: #262626; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .dash { fill: none; stroke: #5d5d5d; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 8 8; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="paper" width="1280" height="720"/>
+  <rect class="paper" width="1280" height="720" filter="url(#paper)"/>
+
+  <g transform="translate(56 28) rotate(-0.5)" filter="url(#softShadow)">
+    <rect class="yellow inkStroke" x="0" y="0" width="640" height="136" rx="10" filter="url(#rough)"/>
+    <text class="title ink" x="30" y="54">SofaRPC MCP</text>
+    <text class="subtitle muted" x="32" y="94">SofaRPC testing toolkit for agents</text>
+    <text class="small muted" x="32" y="122">MCP-first / single binary / pure-Go direct BOLT + Hessian2</text>
+  </g>
+
+  <g transform="translate(742 32) rotate(1.2)" filter="url(#softShadow)">
+    <rect class="pink inkStroke" x="0" y="0" width="478" height="118" rx="10" filter="url(#rough)"/>
+    <text class="h2 ink" x="26" y="40">What is it?</text>
+    <text class="body muted" x="26" y="72">A local stdio MCP server that lets agents inspect,</text>
+    <text class="body muted" x="26" y="98">plan, diagnose, and invoke SofaRPC services.</text>
+  </g>
+
+  <g transform="translate(56 186) rotate(0.7)" filter="url(#softShadow)">
+    <rect class="box inkStroke" x="0" y="0" width="278" height="406" rx="10" filter="url(#rough)"/>
+    <text class="h2 ink" x="24" y="42">Agent toolbox</text>
+    <text class="small muted" x="26" y="70">Small MCP surface.</text>
+    <text class="small muted" x="26" y="90">Workflow oriented.</text>
+
+    <g transform="translate(26 102)">
+      <rect class="blue thinStroke" x="0" y="0" width="226" height="38" rx="8"/>
+      <text class="h3 ink" x="15" y="25">config list/save/remove</text>
+    </g>
+    <g transform="translate(26 153)">
+      <rect class="green thinStroke" x="0" y="0" width="226" height="38" rx="8"/>
+      <text class="h3 ink" x="15" y="25">resolve endpoint</text>
+    </g>
+    <g transform="translate(26 204)">
+      <rect class="yellow thinStroke" x="0" y="0" width="226" height="38" rx="8"/>
+      <text class="h3 ink" x="15" y="25">probe reachability</text>
+    </g>
+    <g transform="translate(26 255)">
+      <rect class="pink thinStroke" x="0" y="0" width="226" height="38" rx="8"/>
+      <text class="h3 ink" x="15" y="25">describe Java schema</text>
+    </g>
+    <g transform="translate(26 306)">
+      <rect class="gray thinStroke" x="0" y="0" width="226" height="38" rx="8"/>
+      <text class="h3 ink" x="15" y="25">invoke_plan, invoke</text>
+    </g>
+    <text class="small muted" x="28" y="374">doctor gives structured diagnostics</text>
+  </g>
+
+  <g transform="translate(376 182) rotate(-0.4)" filter="url(#softShadow)">
+    <rect class="box inkStroke" x="0" y="0" width="846" height="278" rx="10" filter="url(#rough)"/>
+    <text class="h2 ink" x="28" y="42">Architecture in one picture</text>
+    <text class="small muted" x="30" y="70">Plain JSON goes in; a Java-aware InvocationPlan and direct SofaRPC request come out.</text>
+
+    <g transform="translate(30 114)">
+      <rect class="blue thinStroke" x="0" y="0" width="118" height="76" rx="9"/>
+      <text class="h3 ink" x="20" y="32">Agent</text>
+      <text class="small muted" x="20" y="55">Codex/Claude</text>
+    </g>
+    <path class="arrow" d="M158 152 C181 152 195 152 218 152"/>
+
+    <g transform="translate(230 108)">
+      <rect class="green thinStroke" x="0" y="0" width="150" height="88" rx="9"/>
+      <text class="h3 ink" x="18" y="34">sofarpc mcp</text>
+      <text class="small muted" x="18" y="60">stdio JSON-RPC</text>
+    </g>
+    <path class="arrow" d="M390 152 C414 152 429 152 452 152"/>
+
+    <g transform="translate(464 92)">
+      <rect class="yellow thinStroke" x="0" y="0" width="158" height="120" rx="9"/>
+      <text class="h3 ink" x="18" y="34">InvocationPlan</text>
+      <text class="small muted" x="18" y="60">endpoint</text>
+      <text class="small muted" x="18" y="82">param types</text>
+      <text class="small muted" x="18" y="104">ordered args</text>
+    </g>
+    <path class="arrow" d="M634 152 C657 152 674 152 698 152"/>
+
+    <g transform="translate(710 108)">
+      <rect class="pink thinStroke" x="0" y="0" width="106" height="88" rx="9"/>
+      <text class="h3 ink" x="18" y="32">Provider</text>
+      <text class="small muted" x="18" y="60">BOLT</text>
+    </g>
+  </g>
+
+  <g transform="translate(420 500) rotate(0.6)" filter="url(#softShadow)">
+    <rect class="blue inkStroke" x="0" y="0" width="360" height="112" rx="10" filter="url(#rough)"/>
+    <text class="h2 ink" x="24" y="40">Local source schema</text>
+    <text class="body muted" x="24" y="72">Scans src/main/java only.</text>
+    <text class="small muted" x="24" y="96">No dependency download or class loading.</text>
+  </g>
+  <path class="dash" d="M620 500 C632 464 654 426 740 386"/>
+
+  <g transform="translate(822 502) rotate(-0.8)" filter="url(#softShadow)">
+    <rect class="green inkStroke" x="0" y="0" width="360" height="110" rx="10" filter="url(#rough)"/>
+    <text class="h2 ink" x="24" y="40">Pure-Go runtime</text>
+    <text class="body muted" x="24" y="72">Direct BOLT generic invocation.</text>
+    <text class="small muted" x="24" y="96">Hessian2 encode/decode, no Java process.</text>
+  </g>
+  <path class="dash" d="M1000 502 C1002 466 1022 424 1094 376"/>
+
+  <g transform="translate(54 626) rotate(-0.5)" filter="url(#softShadow)">
+    <rect class="yellow inkStroke" x="0" y="0" width="1168" height="58" rx="10" filter="url(#rough)"/>
+    <text class="h3 ink" x="26" y="36">Install</text>
+    <text class="mono ink" x="94" y="36">curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.sh | bash -s -- &lt;host&gt;</text>
+  </g>
+
+  <text class="small muted" x="62" y="704">host = codex | claude | all. Recommended workflow: sofarpc_resolve -> sofarpc_describe -> sofarpc_invoke_plan -> sofarpc_invoke</text>
+</svg>
