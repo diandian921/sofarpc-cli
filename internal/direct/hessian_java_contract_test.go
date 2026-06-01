@@ -176,6 +176,43 @@ func TestHessianJavaContractGoEncodedValuesReadableByJava(t *testing.T) {
 			mode: "decode-complex-response",
 			want: "ComplexResponse{primary=QueryResponse{success=java.lang.Boolean:true,amount=java.math.BigDecimal:1.23,tags=List[java.lang.String:P]},history=List[QueryResponse{success=java.lang.Boolean:false,amount=java.math.BigDecimal:0.00,tags=List[java.lang.String:H]}],attributes=Map{java.lang.String:mpCode=java.lang.Long:433905635109773312,java.lang.String:nullable=null,java.lang.String:ratio=java.lang.Double:2.0},mixed=List[null,java.lang.String:x,java.lang.Long:9]}",
 		},
+		{
+			name: "local-date write",
+			value: javavalue.Object("com.caucho.hessian.io.jdk8.LocalDateHandle", map[string]javavalue.TypedValue{
+				"year":  javavalue.Scalar("java.lang.Integer", json.Number("2024")),
+				"month": javavalue.Scalar("java.lang.Integer", json.Number("1")),
+				"day":   javavalue.Scalar("java.lang.Integer", json.Number("15")),
+			}),
+			mode: "decode-any",
+			want: "java.time.LocalDate:2024-01-15",
+		},
+		{
+			name: "local-date-time write",
+			value: javavalue.Object("com.caucho.hessian.io.jdk8.LocalDateTimeHandle", map[string]javavalue.TypedValue{
+				"date": javavalue.Object("com.caucho.hessian.io.jdk8.LocalDateHandle", map[string]javavalue.TypedValue{
+					"year":  javavalue.Scalar("java.lang.Integer", json.Number("2024")),
+					"month": javavalue.Scalar("java.lang.Integer", json.Number("1")),
+					"day":   javavalue.Scalar("java.lang.Integer", json.Number("15")),
+				}),
+				"time": javavalue.Object("com.caucho.hessian.io.jdk8.LocalTimeHandle", map[string]javavalue.TypedValue{
+					"hour":   javavalue.Scalar("java.lang.Integer", json.Number("10")),
+					"minute": javavalue.Scalar("java.lang.Integer", json.Number("30")),
+					"second": javavalue.Scalar("java.lang.Integer", json.Number("0")),
+					"nano":   javavalue.Scalar("java.lang.Integer", json.Number("0")),
+				}),
+			}),
+			mode: "decode-any",
+			want: "java.time.LocalDateTime:2024-01-15T10:30",
+		},
+		{
+			name: "instant write",
+			value: javavalue.Object("com.caucho.hessian.io.jdk8.InstantHandle", map[string]javavalue.TypedValue{
+				"seconds": javavalue.Scalar("java.lang.Long", json.Number("1705314600")),
+				"nanos":   javavalue.Scalar("java.lang.Integer", json.Number("0")),
+			}),
+			mode: "decode-any",
+			want: "java.time.Instant:2024-01-15T10:30:00Z",
+		},
 	}
 
 	for _, tc := range cases {

@@ -1,8 +1,11 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/diandian921/sofarpc-cli/internal/javavalue"
 	"github.com/diandian921/sofarpc-cli/internal/schema"
@@ -74,6 +77,9 @@ func typedValueForJavaType(value interface{}, javaType string, types map[string]
 	}
 	if isByteArrayType(javaType) {
 		return javavalue.Scalar(javaType, value)
+	}
+	if tv, ok := javaTimeTypedValue(eraseRPCGeneric(javaType), value); ok {
+		return tv
 	}
 	if typ, ok := types[eraseRPCGeneric(javaType)]; ok && typ.Kind == "enum" {
 		return enumTypedValue(value, typ.Type)
@@ -436,6 +442,74 @@ func eraseRPCGeneric(typ string) string {
 		base = strings.TrimSpace(base[:idx])
 	}
 	return strings.TrimSuffix(base, "[]")
+}
+
+// javaTimeTypedValue encodes a java.time argument supplied as an ISO-8601 string
+// into the alipay Hessian jdk8 *Handle proxy the provider expects (the same wire
+// form Java writes via writeReplace; the provider's readResolve reconstructs the
+// value). Returns false for a non-string or unparseable value so the caller falls
+// back to default handling.
+func javaTimeTypedValue(javaType string, value interface{}) (javavalue.TypedValue, bool) {
+	s, ok := value.(string)
+	if !ok {
+		return javavalue.TypedValue{}, false
+	}
+	switch javaType {
+	case "java.time.LocalDate":
+		if t, err := time.Parse("2006-01-02", s); err == nil {
+			return localDateHandle(t), true
+		}
+	case "java.time.LocalDateTime":
+		for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02T15:04"} {
+			if t, err := time.Parse(layout, s); err == nil {
+				return localDateTimeHandle(t), true
+			}
+		}
+	case "java.time.Instant":
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			return instantHandle(t.UTC()), true
+		}
+	}
+	return javavalue.TypedValue{}, false
+}
+
+func javaIntScalar(n int) javavalue.TypedValue {
+	return javavalue.Scalar("java.lang.Integer", json.Number(strconv.Itoa(n)))
+}
+
+func javaLongScalar(n int64) javavalue.TypedValue {
+	return javavalue.Scalar("java.lang.Long", json.Number(strconv.FormatInt(n, 10)))
+}
+
+func localDateHandle(t time.Time) javavalue.TypedValue {
+	return javavalue.Object("com.caucho.hessian.io.jdk8.LocalDateHandle", map[string]javavalue.TypedValue{
+		"year":  javaIntScalar(t.Year()),
+		"month": javaIntScalar(int(t.Month())),
+		"day":   javaIntScalar(t.Day()),
+	})
+}
+
+func localTimeHandle(t time.Time) javavalue.TypedValue {
+	return javavalue.Object("com.caucho.hessian.io.jdk8.LocalTimeHandle", map[string]javavalue.TypedValue{
+		"hour":   javaIntScalar(t.Hour()),
+		"minute": javaIntScalar(t.Minute()),
+		"second": javaIntScalar(t.Second()),
+		"nano":   javaIntScalar(t.Nanosecond()),
+	})
+}
+
+func localDateTimeHandle(t time.Time) javavalue.TypedValue {
+	return javavalue.Object("com.caucho.hessian.io.jdk8.LocalDateTimeHandle", map[string]javavalue.TypedValue{
+		"date": localDateHandle(t),
+		"time": localTimeHandle(t),
+	})
+}
+
+func instantHandle(t time.Time) javavalue.TypedValue {
+	return javavalue.Object("com.caucho.hessian.io.jdk8.InstantHandle", map[string]javavalue.TypedValue{
+		"seconds": javaLongScalar(t.Unix()),
+		"nanos":   javaIntScalar(t.Nanosecond()),
+	})
 }
 
 // ownedField pairs a field with its declaring type, so an inherited field's type

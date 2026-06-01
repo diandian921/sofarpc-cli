@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -172,6 +173,46 @@ func TestTypedArgumentsSubstitutesGenericInheritedField(t *testing.T) {
 	}
 	if history.Items[0].JavaType != "com.x.base.OrderStatus" {
 		t.Errorf("history element JavaType = %q, want com.x.base.OrderStatus", history.Items[0].JavaType)
+	}
+}
+
+func TestTypedArgumentsEncodesJavaTimeFromISO(t *testing.T) {
+	method := schema.Method{
+		Service: "com.x.facade.TimeFacade",
+		Method:  "byDate",
+		Package: "com.x.facade",
+		Parameters: []schema.Parameter{
+			{Name: "day", Type: "LocalDate"},
+			{Name: "ts", Type: "LocalDateTime"},
+			{Name: "at", Type: "Instant"},
+		},
+		Imports: map[string]string{
+			"LocalDate":     "java.time.LocalDate",
+			"LocalDateTime": "java.time.LocalDateTime",
+			"Instant":       "java.time.Instant",
+		},
+	}
+	desc := schema.Description{Methods: []schema.Method{method}}
+	args := []interface{}{"2024-01-15", "2024-01-15T10:30:00", "2024-01-15T10:30:00Z"}
+
+	got := typedArgumentsForMethod(args, method, desc)
+	if len(got) != 3 {
+		t.Fatalf("want 3 args, got %#v", got)
+	}
+	if got[0].Kind != javavalue.KindObject || got[0].JavaType != "com.caucho.hessian.io.jdk8.LocalDateHandle" {
+		t.Fatalf("LocalDate -> %#v", got[0])
+	}
+	if fmt.Sprint(got[0].Fields["year"].Scalar) != "2024" || fmt.Sprint(got[0].Fields["day"].Scalar) != "15" {
+		t.Fatalf("LocalDate fields = %#v", got[0].Fields)
+	}
+	if got[1].JavaType != "com.caucho.hessian.io.jdk8.LocalDateTimeHandle" {
+		t.Fatalf("LocalDateTime -> %#v", got[1])
+	}
+	if got[2].JavaType != "com.caucho.hessian.io.jdk8.InstantHandle" {
+		t.Fatalf("Instant -> %#v", got[2])
+	}
+	if fmt.Sprint(got[2].Fields["seconds"].Scalar) != "1705314600" {
+		t.Fatalf("Instant seconds = %#v", got[2].Fields["seconds"])
 	}
 }
 
