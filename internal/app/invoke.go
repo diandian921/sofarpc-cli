@@ -113,11 +113,15 @@ func (s *Service) planExplicitAddressInvocation(input InvocationInput, start tim
 			Message: "explicit address invocation has no configured project schema; DTO fields are encoded without field type metadata",
 		})
 	}
+	args := untypedArguments(input.OrderedArguments, input.ParamTypes)
+	if err := validateSpecialArgs(args); err != nil {
+		return InvocationPlan{}, err
+	}
 	return InvocationPlan{
 		Endpoint:  endpoint,
 		Service:   input.Service,
 		Method:    MethodSignature{Name: input.Method, ParamTypes: append([]string(nil), input.ParamTypes...)},
-		Arguments: untypedArguments(input.OrderedArguments, input.ParamTypes),
+		Arguments: args,
 		Timeout:   time.Duration(timeoutMS) * time.Millisecond,
 		TimeoutMS: timeoutMS,
 		RawResult: input.RawResult,
@@ -269,7 +273,11 @@ func (s *Service) planOrderedArguments(ctx context.Context, projectName string, 
 		}
 		return args, paramTypes, warnings, nil
 	}
-	return untypedArguments(input.OrderedArguments, paramTypes), paramTypes, warnings, nil
+	untyped := untypedArguments(input.OrderedArguments, paramTypes)
+	if err := validateSpecialArgs(untyped); err != nil {
+		return nil, nil, warnings, err
+	}
+	return untyped, paramTypes, warnings, nil
 }
 
 func (s *Service) resolveMethodDescription(ctx context.Context, projectName string, project appconfig.Project, service, method string, paramTypes []string) (schema.Method, schema.Description, error) {

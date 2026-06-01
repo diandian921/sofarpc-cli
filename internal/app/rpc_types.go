@@ -565,13 +565,15 @@ func bigIntegerHandle(n *big.Int) javavalue.TypedValue {
 	})
 }
 
-// validateSpecialArgs rejects a schema-coerced argument whose declared java.time
-// or BigInteger type failed to encode: a valid one becomes the expected object
-// form, so a leftover scalar of that type means the input (e.g. a malformed ISO
-// date or non-integer BigInteger) could not be parsed. Catching it at plan time
-// yields a clear ARGUMENT_TYPE_MISMATCH instead of a server-side deserialization
-// error. Only call this on coerced args — untyped args keep special types as
-// scalars by design and would false-positive.
+// validateSpecialArgs rejects an argument whose declared java.time or BigInteger
+// type failed to encode: a valid one is coerced to the expected object form, so a
+// leftover scalar of that type means the input (a malformed ISO date or
+// non-integer BigInteger) could not be parsed. Catching it at plan time yields a
+// clear ARGUMENT_TYPE_MISMATCH instead of a server-side deserialization error.
+// Recurses into DTO fields, list items, and map values. Both the schema-coerced
+// and the paramTypes / explicit-address paths run their args through the same
+// java.time/BigInteger coercion (typedValueForJavaType), so this is correct for
+// all of them.
 func validateSpecialArgs(args []javavalue.TypedValue) error {
 	for i, a := range args {
 		if t := firstMalformedSpecial(a); t != "" {

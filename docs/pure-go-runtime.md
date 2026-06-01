@@ -34,8 +34,10 @@ The direct runtime sends a SofaRPC generic invocation over BOLT:
    use case through `internal/presentation`.
 
 `java.math.BigDecimal` values are normalized to JSON numbers. `byte[]` response
-values use Go's standard JSON base64 representation. `BigInteger` currently has
-limited support; see `compatibility-matrix.md`.
+values use Go's standard JSON base64 representation. `BigInteger` is supported both
+ways: responses are reconstructed from signum/mag into a number string, and a
+string or integer request argument is encoded to the Java signum/mag object form;
+see `compatibility-matrix.md`.
 DTO field type metadata is carried in the internal typed value model rather than
 in user argument maps.
 Set `rawResult=true` on MCP invoke when the decoded Java object shape is needed for troubleshooting.
@@ -73,7 +75,7 @@ Method invocation is exposed only as the `sofarpc_invoke` MCP tool; there is no 
 - Schema discovery uses local Java source only.
 - External jar parents and generated DTO fields are not loaded.
 - Request encoding rejects cyclic values and does not preserve shared object references.
-- Go request encoding for `java.util.Date`, `BigInteger`, enum payloads without source schema, and provider-specific Hessian extensions require more compatibility work before being treated as broadly supported. Schema-known enum parameters and DTO fields are covered by Hessian oracle tests.
+- Go request encoding for `java.util.Date`, enum payloads without source schema, and provider-specific Hessian extensions require more compatibility work before being treated as broadly supported. Schema-known enum parameters and DTO fields are covered by Hessian oracle tests.
 - Flattened map keys are strings; use `rawResult=true` for response-shape diagnosis when key type matters.
 - `sofarpc_probe` is a TCP reachability check; it does not prove service or method existence.
 

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -224,6 +225,35 @@ func TestPlanExplicitPrimitiveArgumentsSkipSchema(t *testing.T) {
 	}
 	if len(plan.Warnings) != 0 {
 		t.Fatalf("warnings = %#v", plan.Warnings)
+	}
+}
+
+func TestPlanExplicitAddressValidatesSpecialArgs(t *testing.T) {
+	service := New(nil)
+	base := InvocationInput{
+		Address:             "127.0.0.1:12200",
+		Service:             "com.example.Facade",
+		Method:              "byDate",
+		ParamTypes:          []string{"java.time.LocalDate"},
+		HasOrderedArguments: true,
+	}
+
+	bad := base
+	bad.OrderedArguments = []interface{}{"2024-13-99"}
+	_, err := service.PlanInvocation(context.Background(), bad)
+	var de *DomainError
+	if !errors.As(err, &de) || de.Kind != ErrArgumentTypeMismatch {
+		t.Fatalf("malformed LocalDate in explicit-address plan must be ARGUMENT_TYPE_MISMATCH, got %v", err)
+	}
+
+	good := base
+	good.OrderedArguments = []interface{}{"2024-01-15"}
+	plan, err := service.PlanInvocation(context.Background(), good)
+	if err != nil {
+		t.Fatalf("valid LocalDate must plan: %v", err)
+	}
+	if len(plan.Arguments) != 1 || plan.Arguments[0].JavaType != "com.caucho.hessian.io.jdk8.LocalDateHandle" {
+		t.Fatalf("arguments = %#v", plan.Arguments)
 	}
 }
 
