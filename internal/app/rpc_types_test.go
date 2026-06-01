@@ -281,6 +281,75 @@ func TestValidateSpecialArgsRejectsMalformed(t *testing.T) {
 	}
 }
 
+func TestTypedArgumentsSubstitutesParameterizedInheritedField(t *testing.T) {
+	method := schema.Method{
+		Service:    "com.x.facade.OrderFacade",
+		Method:     "create",
+		Package:    "com.x.facade",
+		Parameters: []schema.Parameter{{Name: "order", Type: "OrderDTO"}},
+		Imports:    map[string]string{"OrderDTO": "com.x.dto.OrderDTO"},
+	}
+	desc := schema.Description{
+		Methods: []schema.Method{method},
+		Types: map[string]schema.TypeSchema{
+			"com.x.dto.OrderDTO": {
+				Type:    "com.x.dto.OrderDTO",
+				Kind:    "class",
+				Fields:  []schema.Field{{Name: "orderId", Type: "String"}},
+				Extends: []string{"Base<List<OrderStatus>>"},
+				Imports: map[string]string{
+					"Base":        "com.x.base.Base",
+					"List":        "java.util.List",
+					"OrderStatus": "com.x.base.OrderStatus",
+				},
+			},
+			"com.x.base.Base": {
+				Type:       "com.x.base.Base",
+				Kind:       "class",
+				TypeParams: []string{"T"},
+				Fields:     []schema.Field{{Name: "values", Type: "T"}},
+			},
+			"com.x.base.OrderStatus": {
+				Type:       "com.x.base.OrderStatus",
+				Kind:       "enum",
+				EnumValues: []string{"ACTIVE", "INACTIVE"},
+			},
+		},
+	}
+	// inherited `T values` is bound to List<OrderStatus> — a parameterized binding
+	args := []interface{}{
+		map[string]interface{}{"orderId": "o1", "values": []interface{}{"ACTIVE"}},
+	}
+
+	got := typedArgumentsForMethod(args, method, desc)
+	values := got[0].Fields["values"]
+	if values.Kind != javavalue.KindList || len(values.Items) != 1 {
+		t.Fatalf("values not a 1-element list: %#v", values)
+	}
+	if values.Items[0].JavaType != "com.x.base.OrderStatus" {
+		t.Fatalf("inherited list element JavaType = %q, want com.x.base.OrderStatus (parameterized binding erased?)", values.Items[0].JavaType)
+	}
+}
+
+func TestResolveTypeTokensToFQNPreservesGenerics(t *testing.T) {
+	types := map[string]schema.TypeSchema{
+		"com.x.Page":        {Type: "com.x.Page"},
+		"com.x.OrderStatus": {Type: "com.x.OrderStatus"},
+	}
+	owner := schema.TypeSchema{
+		Type:    "com.x.dto.OrderDTO",
+		Imports: map[string]string{"Page": "com.x.Page", "OrderStatus": "com.x.OrderStatus"},
+	}
+	// the whole generic structure is FQN-resolved, not erased to the raw base
+	if got := resolveTypeTokensToFQN("Page<OrderStatus>", owner, types); got != "com.x.Page<com.x.OrderStatus>" {
+		t.Fatalf("got %q, want com.x.Page<com.x.OrderStatus>", got)
+	}
+	// builtins / type variables / unknown tokens are kept as written
+	if got := resolveTypeTokensToFQN("List<T>", owner, types); got != "List<T>" {
+		t.Fatalf("got %q, want List<T> unchanged", got)
+	}
+}
+
 func TestExtractGenericArgs(t *testing.T) {
 	cases := []struct {
 		in   string

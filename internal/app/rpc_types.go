@@ -708,13 +708,42 @@ func parentSubst(baseRef string, parent, child schema.TypeSchema, types map[stri
 	}
 	m := make(map[string]string, len(args))
 	for i, p := range parent.TypeParams {
-		arg := strings.TrimSpace(args[i])
-		if resolved, ok := resolveExtendsType(arg, child, types); ok && resolved.Type != "" {
-			arg = resolved.Type
-		}
-		m[p] = arg
+		m[p] = resolveTypeTokensToFQN(strings.TrimSpace(args[i]), child, types)
 	}
 	return m
+}
+
+// resolveTypeTokensToFQN resolves every bare type name in a (possibly generic or
+// array) type string to its FQN using owner's imports/package, preserving the
+// structure — so `Page<OrderStatus>` becomes `com.x.Page<com.x.OrderStatus>`
+// instead of being erased to the raw base by resolveExtendsType. Builtins,
+// already-qualified names, and unresolved tokens (e.g. type variables) are kept.
+func resolveTypeTokensToFQN(ref string, owner schema.TypeSchema, types map[string]schema.TypeSchema) string {
+	var b, ident strings.Builder
+	flush := func() {
+		if ident.Len() == 0 {
+			return
+		}
+		name := ident.String()
+		ident.Reset()
+		if !strings.Contains(name, ".") {
+			if t, ok := resolveExtendsType(name, owner, types); ok && t.Type != "" {
+				b.WriteString(t.Type)
+				return
+			}
+		}
+		b.WriteString(name)
+	}
+	for _, r := range ref {
+		if isIdentRune(r) {
+			ident.WriteRune(r)
+			continue
+		}
+		flush()
+		b.WriteRune(r)
+	}
+	flush()
+	return b.String()
 }
 
 // substituteTypeVars replaces whole-identifier type variables in a type string
