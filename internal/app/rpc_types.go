@@ -565,6 +565,64 @@ func bigIntegerHandle(n *big.Int) javavalue.TypedValue {
 	})
 }
 
+// validateSpecialArgs rejects a schema-coerced argument whose declared java.time
+// or BigInteger type failed to encode: a valid one becomes the expected object
+// form, so a leftover scalar of that type means the input (e.g. a malformed ISO
+// date or non-integer BigInteger) could not be parsed. Catching it at plan time
+// yields a clear ARGUMENT_TYPE_MISMATCH instead of a server-side deserialization
+// error. Only call this on coerced args — untyped args keep special types as
+// scalars by design and would false-positive.
+func validateSpecialArgs(args []javavalue.TypedValue) error {
+	for i, a := range args {
+		if t := firstMalformedSpecial(a); t != "" {
+			return &DomainError{
+				Kind:    ErrArgumentTypeMismatch,
+				Message: fmt.Sprintf("argument %d is not a valid %s value", i, t),
+				Details: map[string]interface{}{"index": i, "type": t},
+			}
+		}
+	}
+	return nil
+}
+
+// firstMalformedSpecial returns the java type of the first un-coerced special
+// value in v (recursing into DTO fields, list items, and map values), or "".
+func firstMalformedSpecial(v javavalue.TypedValue) string {
+	switch v.Kind {
+	case javavalue.KindScalar:
+		if v.Scalar != nil && isSpecialEncodedType(v.JavaType) {
+			return v.JavaType
+		}
+	case javavalue.KindObject:
+		for _, f := range v.Fields {
+			if t := firstMalformedSpecial(f); t != "" {
+				return t
+			}
+		}
+	case javavalue.KindList:
+		for _, it := range v.Items {
+			if t := firstMalformedSpecial(it); t != "" {
+				return t
+			}
+		}
+	case javavalue.KindMap:
+		for _, e := range v.Entries {
+			if t := firstMalformedSpecial(e.Value); t != "" {
+				return t
+			}
+		}
+	}
+	return ""
+}
+
+func isSpecialEncodedType(javaType string) bool {
+	switch javaType {
+	case "java.time.LocalDate", "java.time.LocalDateTime", "java.time.Instant", "java.math.BigInteger":
+		return true
+	}
+	return false
+}
+
 // magFromBigInt returns the big-endian magnitude of n as unsigned 32-bit words
 // with no leading-zero word — the shape Java BigInteger.mag uses. Empty for zero.
 func magFromBigInt(n *big.Int) []uint32 {

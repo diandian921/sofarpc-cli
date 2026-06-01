@@ -1,10 +1,12 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/diandian921/sofarpc-cli/internal/javavalue"
 	"github.com/diandian921/sofarpc-cli/internal/schema"
@@ -243,6 +245,39 @@ func TestTypedArgumentsEncodesBigIntegerFromString(t *testing.T) {
 	}
 	if fmt.Sprint(mag.Items[0].Scalar) != "2147483647" || fmt.Sprint(mag.Items[1].Scalar) != "-1" {
 		t.Fatalf("mag items = %#v", mag.Items)
+	}
+}
+
+func TestValidateSpecialArgsRejectsMalformed(t *testing.T) {
+	assertArgMismatch := func(name string, args []javavalue.TypedValue) {
+		t.Helper()
+		err := validateSpecialArgs(args)
+		var de *DomainError
+		if !errors.As(err, &de) || de.Kind != ErrArgumentTypeMismatch {
+			t.Fatalf("%s: want ARGUMENT_TYPE_MISMATCH, got %v", name, err)
+		}
+	}
+	// malformed top-level special args fall back to a scalar of the special type
+	assertArgMismatch("bad date", []javavalue.TypedValue{javavalue.Scalar("java.time.LocalDate", "2024-13-99")})
+	assertArgMismatch("bad bigint", []javavalue.TypedValue{javavalue.Scalar("java.math.BigInteger", "not-a-number")})
+	// malformed special value nested inside a DTO field is caught too
+	assertArgMismatch("nested bad instant", []javavalue.TypedValue{
+		javavalue.Object("com.x.Dto", map[string]javavalue.TypedValue{
+			"at": javavalue.Scalar("java.time.Instant", "yesterday"),
+		}),
+	})
+
+	// a valid (coerced to object form) special arg passes
+	if err := validateSpecialArgs([]javavalue.TypedValue{localDateHandle(time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC))}); err != nil {
+		t.Fatalf("valid LocalDate object must pass: %v", err)
+	}
+	// a null special arg is allowed
+	if err := validateSpecialArgs([]javavalue.TypedValue{javavalue.Scalar("java.time.Instant", nil)}); err != nil {
+		t.Fatalf("null special arg must pass: %v", err)
+	}
+	// a normal scalar is untouched
+	if err := validateSpecialArgs([]javavalue.TypedValue{javavalue.Scalar("java.lang.String", "hello")}); err != nil {
+		t.Fatalf("plain scalar must pass: %v", err)
 	}
 }
 

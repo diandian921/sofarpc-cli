@@ -206,7 +206,11 @@ func (s *Service) planArguments(ctx context.Context, projectName string, project
 	if len(methodSchema.Parameters) == 1 {
 		param := methodSchema.Parameters[0]
 		if _, ok := input.NamedArguments[param.Name]; !ok {
-			return []javavalue.TypedValue{typedValueForParam(input.NamedArguments, param.Type, methodSchema, desc)}, []string{rpcParamTypeForMethod(param.Type, methodSchema)}, nil, nil
+			typed := []javavalue.TypedValue{typedValueForParam(input.NamedArguments, param.Type, methodSchema, desc)}
+			if err := validateSpecialArgs(typed); err != nil {
+				return nil, nil, nil, err
+			}
+			return typed, []string{rpcParamTypeForMethod(param.Type, methodSchema)}, nil, nil
 		}
 	}
 	ordered := make([]javavalue.TypedValue, 0, len(methodSchema.Parameters))
@@ -218,6 +222,9 @@ func (s *Service) planArguments(ctx context.Context, projectName string, project
 		}
 		ordered = append(ordered, typedValueForParam(value, param.Type, methodSchema, desc))
 		resolvedTypes = append(resolvedTypes, rpcParamTypeForMethod(param.Type, methodSchema))
+	}
+	if err := validateSpecialArgs(ordered); err != nil {
+		return nil, nil, nil, err
 	}
 	return ordered, resolvedTypes, nil, nil
 }
@@ -256,7 +263,11 @@ func (s *Service) planOrderedArguments(ctx context.Context, projectName string, 
 		return nil, nil, warnings, &DomainError{Kind: ErrArgumentTypeMismatch, Message: fmt.Sprintf("paramTypes length (%d) does not match orderedArguments length (%d)", len(paramTypes), len(input.OrderedArguments)), Details: map[string]interface{}{"paramTypeCount": len(paramTypes), "argumentCount": len(input.OrderedArguments)}}
 	}
 	if hasSchema && len(methodSchema.Parameters) == len(input.OrderedArguments) {
-		return typedArgumentsForMethod(input.OrderedArguments, methodSchema, desc), paramTypes, warnings, nil
+		args := typedArgumentsForMethod(input.OrderedArguments, methodSchema, desc)
+		if err := validateSpecialArgs(args); err != nil {
+			return nil, nil, warnings, err
+		}
+		return args, paramTypes, warnings, nil
 	}
 	return untypedArguments(input.OrderedArguments, paramTypes), paramTypes, warnings, nil
 }
