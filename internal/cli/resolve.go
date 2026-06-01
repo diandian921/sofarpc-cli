@@ -1,16 +1,22 @@
 package cli
 
 import (
-	"github.com/diandian921/sofarpc-mcp/internal/alias"
+	"fmt"
+	"sort"
+	"strings"
+
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
-// resolveAddress turns input into a concrete host:port using the user's
-// config server registry. Raw host:port values pass through untouched. New
-// MCP-first servers are read from ~/.sofarpc/config.json; the legacy
-// ~/.sofarpc/servers.json alias file remains a fallback for old users.
+// resolveAddress turns input into a concrete host:port using the user's config
+// server registry (~/.sofarpc/config.json). A raw host:port passes through
+// untouched; a configured server name resolves to its address. An unknown name
+// returns an error listing the known servers so the agent can correct it.
 func resolveAddress(input string) (string, error) {
-	if alias.IsHostPort(input) {
+	if input == "" {
+		return "", fmt.Errorf("address is empty")
+	}
+	if appconfig.IsHostPort(input) {
 		return input, nil
 	}
 	configPath, err := appconfig.DefaultPath()
@@ -24,13 +30,13 @@ func resolveAddress(input string) (string, error) {
 	if server, ok := cfg.Servers[input]; ok {
 		return server.Address, nil
 	}
-	path, err := alias.DefaultPath()
-	if err != nil {
-		return "", err
+	if len(cfg.Servers) == 0 {
+		return "", fmt.Errorf("server %q not found: no servers configured (use `sofarpc server add`)", input)
 	}
-	reg, err := alias.Load(path)
-	if err != nil {
-		return "", err
+	names := make([]string, 0, len(cfg.Servers))
+	for name := range cfg.Servers {
+		names = append(names, name)
 	}
-	return reg.Resolve(input)
+	sort.Strings(names)
+	return "", fmt.Errorf("server %q not found; known servers: %s", input, strings.Join(names, ", "))
 }

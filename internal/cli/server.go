@@ -41,7 +41,6 @@ func runServerAdd(args []string, env Env) int {
 	overwrite := fs.Bool("overwrite", false, "replace an existing server")
 	var attachments repeatedString
 	fs.Var(&attachments, "attachment", "attachment as key=value; may be repeated")
-	_ = fs.String("desc", "", "legacy alias description; ignored")
 	rest, err := parseMixed(fs, args)
 	if err != nil {
 		return 2

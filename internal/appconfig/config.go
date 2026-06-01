@@ -48,6 +48,14 @@ type Server struct {
 	Attachments map[string]string `json:"attachments"`
 }
 
+// IsHostPort reports whether s is a raw "host:port" endpoint rather than a
+// configured server name. The check is intentionally lax — the direct runtime
+// validates the final address — it only needs to tell a literal endpoint apart
+// from a name to look up in Servers.
+func IsHostPort(s string) bool {
+	return hostPortPattern.MatchString(s)
+}
+
 type ConfigError struct {
 	Code string
 	Path string
