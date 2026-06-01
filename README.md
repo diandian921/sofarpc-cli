@@ -1,5 +1,7 @@
 # SofaRPC MCP
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 ![SofaRPC MCP overview](docs/readme-hero.svg)
 
 MCP-first SofaRPC testing toolkit for agents.
