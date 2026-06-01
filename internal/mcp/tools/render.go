@@ -25,6 +25,7 @@ var resultOutputSchema = json.RawMessage(`{
         "message": {"type": "string"},
         "cause": {"type": "string"},
         "nextTool": {"type": "string"},
+        "recovery": {"type": "string"},
         "details": {"type": "object"}
       }
     },

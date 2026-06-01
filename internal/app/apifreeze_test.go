@@ -36,7 +36,7 @@ func jsonFields(t reflect.Type) []string {
 func TestAppPublicTypesFrozen(t *testing.T) {
 	want := map[string][]string{
 		"Result":              {"code", "data", "error", "meta", "ok", "requestId"},
-		"ResultError":         {"cause", "details", "message", "nextTool"},
+		"ResultError":         {"cause", "details", "message", "nextTool", "recovery"},
 		"Endpoint":            {"address", "appName", "attachments", "project", "protocol", "server", "timeoutMs"},
 		"ProjectRef":          {"info", "name"},
 		"MethodSignature":     {"name", "paramTypes"},

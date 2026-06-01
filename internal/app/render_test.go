@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -90,6 +91,40 @@ func TestRenderFailureSetsNextTool(t *testing.T) {
 	r := RenderFailure(CodeConnectFailed, "boom", nil)
 	if r.Error == nil || r.Error.NextTool != "sofarpc_probe" {
 		t.Fatalf("RenderFailure nextTool = %+v, want sofarpc_probe", r.Error)
+	}
+}
+
+func TestRecoveryForGivesActionableStep(t *testing.T) {
+	cases := []struct {
+		name    string
+		code    string
+		details map[string]interface{}
+		want    string
+	}{
+		{"server-missing", CodeBadRequest, map[string]interface{}{"kind": string(ErrServerNotFound)}, "sofarpc_config_list"},
+		{"ambiguous", CodeBadRequest, map[string]interface{}{"kind": string(ErrMethodAmbiguous)}, "paramTypes"},
+		{"method-missing", CodeBadRequest, map[string]interface{}{"kind": string(ErrMethodNotFound)}, "sofarpc_describe"},
+		{"connect", CodeConnectFailed, nil, "sofarpc_probe"},
+		{"success", CodeSuccess, nil, ""},
+	}
+	for _, c := range cases {
+		got := recoveryFor(c.code, c.details)
+		if c.want == "" {
+			if got != "" {
+				t.Fatalf("%s: recoveryFor=%q, want empty", c.name, got)
+			}
+			continue
+		}
+		if !strings.Contains(got, c.want) {
+			t.Fatalf("%s: recoveryFor(%q,%v)=%q, want it to mention %q", c.name, c.code, c.details, got, c.want)
+		}
+	}
+}
+
+func TestRenderFailureSetsRecovery(t *testing.T) {
+	r := RenderFailure(CodeBadRequest, "no server", map[string]interface{}{"kind": string(ErrServerNotFound)})
+	if r.Error == nil || !strings.Contains(r.Error.Recovery, "sofarpc_config_list") {
+		t.Fatalf("RenderFailure recovery = %+v, want it to mention sofarpc_config_list", r.Error)
 	}
 }
 

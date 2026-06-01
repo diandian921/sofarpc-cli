@@ -19,25 +19,62 @@ type Result struct {
 	Meta      map[string]interface{} `json:"meta,omitempty"`
 }
 
-// ResultError carries diagnostic info on non-SUCCESS results. NextTool is a
-// machine-readable recovery hint: the agent should call that MCP tool next
-// instead of re-deriving the recovery step from the prose message.
+// ResultError carries diagnostic info on non-SUCCESS results. NextTool is the
+// machine-readable recovery hint (which MCP tool to call next); Recovery is the
+// same step spelled out for the agent, so it does not have to infer intent from
+// the prose message.
 type ResultError struct {
 	Message  string                 `json:"message"`
 	Cause    string                 `json:"cause,omitempty"`
 	NextTool string                 `json:"nextTool,omitempty"`
+	Recovery string                 `json:"recovery,omitempty"`
 	Details  map[string]interface{} `json:"details,omitempty"`
 }
 
-// newResultError builds a ResultError with a recovery hint derived from the
-// stable code/kind, so every failure path emits a consistent nextTool.
+// newResultError builds a ResultError with recovery hints derived from the stable
+// code/kind, so every failure path emits a consistent nextTool + recovery step.
 func newResultError(code, message, cause string, details map[string]interface{}) *ResultError {
 	return &ResultError{
 		Message:  message,
 		Cause:    cause,
 		NextTool: nextToolFor(code, details),
+		Recovery: recoveryFor(code, details),
 		Details:  details,
 	}
+}
+
+// recoveryFor spells out the next step in prose, mirroring nextToolFor's mapping.
+// An empty string means no specific guidance.
+func recoveryFor(code string, details map[string]interface{}) string {
+	if kind, _ := details["kind"].(string); kind != "" {
+		switch ErrorKind(kind) {
+		case ErrProjectNotFound:
+			return "Call sofarpc_config_list to see configured projects, or sofarpc_config_save_project to add one."
+		case ErrServerNotFound:
+			return "Call sofarpc_config_list to see configured servers, or sofarpc_config_save_server to add one."
+		case ErrEndpointNotFound:
+			return "More than one server matched. Pass an explicit server, or call sofarpc_resolve to pick one."
+		case ErrServiceNotFound:
+			return "Call sofarpc_describe with query=... to find the service interface FQN."
+		case ErrMethodNotFound:
+			return "Call sofarpc_describe with the service to list its methods and parameter types."
+		case ErrMethodAmbiguous:
+			return "Overloaded method: pass paramTypes to disambiguate (candidates are in error.details.candidates)."
+		case ErrArgumentTypeMismatch:
+			return "Call sofarpc_describe to check the parameter types, then pass matching paramTypes/arguments."
+		}
+	}
+	switch code {
+	case CodeConnectFailed, CodeRPCTimeout:
+		return "Call sofarpc_probe to check the server address is reachable."
+	case CodeBadRequest:
+		return "Call sofarpc_describe to confirm the service, method, and argument shape."
+	case CodeInvokeFailed, CodeInternalError:
+		return "Call sofarpc_doctor to diagnose config, source schema, and connectivity."
+	case appconfig.CodeConfigInvalid, appconfig.CodeConfigUnsupported:
+		return "Call sofarpc_doctor to inspect the configuration problem."
+	}
+	return ""
 }
 
 // nextToolFor maps a stable failure code (refined by DomainError kind when
