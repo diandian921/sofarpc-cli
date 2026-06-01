@@ -1,9 +1,5 @@
-target/
-dependency-reduced-pom.xml
 reports/
-*.jar
 .idea/
-*.iml
 cases
 sofarpc-cli-skill-workspace
 /sofarpc
