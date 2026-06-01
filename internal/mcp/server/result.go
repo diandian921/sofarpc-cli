@@ -1,6 +1,9 @@
 package server
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type contentBlock struct {
 	Type string `json:"type"`
@@ -17,14 +20,27 @@ type CallResult struct {
 }
 
 // wrapResult turns a tool Result into the MCP tools/call payload, stamping
-// elapsedMs into _meta without mutating the tool's own meta map.
+// elapsedMs into _meta without mutating the tool's own meta map. The text block
+// carries the serialized structured payload, not just the summary: the MCP tools
+// spec says a tool returning structuredContent SHOULD also return that JSON in a
+// TextContent block, so a client that does not read structuredContent still sees
+// the full result. The human summary is preserved in _meta.
 func wrapResult(res Result, elapsed time.Duration) CallResult {
 	meta := map[string]interface{}{"elapsedMs": elapsed.Milliseconds()}
 	for k, v := range res.Meta {
 		meta[k] = v
 	}
+	if res.Summary != "" {
+		meta["summary"] = res.Summary
+	}
+	text := res.Summary
+	if res.Structured != nil {
+		if body, err := json.Marshal(res.Structured); err == nil {
+			text = string(body)
+		}
+	}
 	return CallResult{
-		Content:           []contentBlock{{Type: "text", Text: res.Summary}},
+		Content:           []contentBlock{{Type: "text", Text: text}},
 		StructuredContent: res.Structured,
 		Meta:              meta,
 		IsError:           res.IsError,
