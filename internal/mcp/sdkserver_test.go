@@ -74,6 +74,7 @@ func TestSDKProbeWireShape(t *testing.T) {
 		Error     *struct {
 			NextTool string `json:"nextTool"`
 		} `json:"error"`
+		Meta map[string]any `json:"meta"`
 	}
 	structured, _ := json.Marshal(res.StructuredContent)
 	if err := json.Unmarshal(structured, &env); err != nil {
@@ -81,6 +82,20 @@ func TestSDKProbeWireShape(t *testing.T) {
 	}
 	if env.Code == "" || env.RequestID == "" {
 		t.Errorf("envelope missing code/requestId: %s", structured)
+	}
+
+	// app.Result.Meta (runtime/transport) belongs in structuredContent.meta and must
+	// NOT leak into the wire _meta — this matches the legacy wrapResult, which only
+	// copied requestId into _meta. (Guards against a "merge r.Meta into _meta"
+	// regression that would diverge from the old shape.)
+	if env.Meta["transport"] != "tcp-dial" || env.Meta["runtime"] != "go" {
+		t.Errorf("structuredContent.meta should carry runtime/transport, got %v", env.Meta)
+	}
+	if _, leaked := res.Meta["transport"]; leaked {
+		t.Error("wire _meta must not carry transport")
+	}
+	if _, leaked := res.Meta["runtime"]; leaked {
+		t.Error("wire _meta must not carry runtime")
 	}
 
 	if len(res.Content) == 0 {
