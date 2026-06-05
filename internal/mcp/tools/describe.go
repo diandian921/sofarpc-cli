@@ -1,15 +1,6 @@
 package tools
 
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"strings"
-
-	"github.com/diandian921/sofarpc-mcp/internal/app"
-	"github.com/diandian921/sofarpc-mcp/internal/mcp/server"
-	"github.com/diandian921/sofarpc-mcp/internal/schema"
-)
+import "encoding/json"
 
 // DescribeArgs are the arguments for sofarpc_describe.
 type DescribeArgs struct {
@@ -35,63 +26,3 @@ var describeInputSchema = json.RawMessage(`{
     "includeOutOfPrefix": {"type": "boolean", "description": "Include services outside configured servicePrefixes."}
   }
 }`)
-
-// DescribeTool searches local Java source or describes methods and DTO fields.
-// It runs async and reports progress because the first call may build the source
-// index over the whole workspace.
-func DescribeTool(appSvc *app.Service) server.Tool[DescribeArgs] {
-	return server.Tool[DescribeArgs]{
-		Spec: server.ToolSpec{
-			Name:         "sofarpc_describe",
-			Title:        "SofaRPC Describe",
-			Description:  "Search local Java source or describe methods and DTO fields for a service FQN.",
-			Annotations:  server.Annotations{ReadOnlyHint: true, IdempotentHint: true},
-			InputSchema:  describeInputSchema,
-			OutputSchema: resultOutputSchema,
-			Async:        true,
-		},
-		Run: func(ctx context.Context, rt server.Runtime, a DescribeArgs) server.Result {
-			if a.Query == "" && a.Service == "" {
-				return failure(app.CodeBadRequest, "query or service is required", nil)
-			}
-			cfg, err := loadConfig()
-			if err != nil {
-				return failure(app.CodeInternalError, err.Error(), nil)
-			}
-			projectName, project, err := resolveProject(cfg, a.Project, a.Server)
-			if err != nil {
-				return failure(app.CodeBadRequest, err.Error(), nil)
-			}
-			rt.Progress(ctx, "building source index", 0)
-			idx, err := schema.LoadOrBuildIndex(schema.Project{
-				Name:            projectName,
-				WorkspaceRoot:   project.WorkspaceRoot,
-				ServicePrefixes: project.ServicePrefixes,
-			})
-			if err != nil {
-				return failure(app.CodeInternalError, err.Error(), nil)
-			}
-			data := map[string]interface{}{"project": projectName}
-			var summary []string
-			if a.Query != "" {
-				limit := a.Limit
-				if limit <= 0 {
-					limit = 5
-				}
-				results := schema.Search(idx, a.Query, limit, a.IncludeOutOfPrefix)
-				data["query"] = a.Query
-				data["candidates"] = publicMethods(results)
-				summary = append(summary, fmt.Sprintf("%d candidate(s) found", len(results)))
-			}
-			if a.Service != "" {
-				desc, err := schema.Describe(idx, a.Service, a.Method)
-				if err != nil {
-					return failure(app.CodeBadRequest, err.Error(), nil)
-				}
-				data["description"] = publicDescription(desc)
-				summary = append(summary, fmt.Sprintf("%d method(s) described", len(desc.Methods)))
-			}
-			return success(strings.Join(summary, "; ")+".", data)
-		},
-	}
-}

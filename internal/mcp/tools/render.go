@@ -1,15 +1,10 @@
-// Package tools is layer 3 of the MCP server: the SofaRPC business tools. Each
-// tool is a typed server.Tool with a hand-written schema that calls the app /
-// schema / appconfig packages. Tools reach progress and logging through
-// server.Runtime and never import the proto layer.
+// Package tools is the SofaRPC business-tool layer of the MCP server. Each tool is
+// registered on the official go-sdk server (see the *_sdk.go files) with a
+// hand-written schema, decodes its typed arguments, and calls the app / schema /
+// appconfig packages, returning the unified app.Result envelope.
 package tools
 
-import (
-	"encoding/json"
-
-	"github.com/diandian921/sofarpc-mcp/internal/app"
-	"github.com/diandian921/sofarpc-mcp/internal/mcp/server"
-)
+import "encoding/json"
 
 // resultOutputSchema describes the unified app.Result envelope every tool emits.
 var resultOutputSchema = json.RawMessage(`{
@@ -32,31 +27,3 @@ var resultOutputSchema = json.RawMessage(`{
     "meta": {"type": "object"}
   }
 }`)
-
-// rendered wraps a fully-formed app.Result as a tool result, carrying ok / error
-// through to isError and surfacing requestId in _meta.
-func rendered(r app.Result, summary string) server.Result {
-	if summary == "" && r.Error != nil {
-		summary = r.Error.Message
-	}
-	var meta map[string]interface{}
-	if r.RequestID != "" {
-		meta = map[string]interface{}{"requestId": r.RequestID}
-	}
-	return server.Result{Structured: r, Summary: summary, IsError: !r.OK, Meta: meta}
-}
-
-// success builds an OK app.Result whose data is the marshaled business payload,
-// so every successful tool emits the same envelope shape.
-func success(summary string, data interface{}) server.Result {
-	body, err := json.Marshal(data)
-	if err != nil {
-		return rendered(app.RenderFailure(app.CodeInternalError, err.Error(), nil), "")
-	}
-	return rendered(app.Result{OK: true, Code: app.CodeSuccess, Data: body}, summary)
-}
-
-// failure wraps a local failure as a tool result with a recovery hint.
-func failure(code, message string, details map[string]interface{}) server.Result {
-	return rendered(app.RenderFailure(code, message, details), "")
-}

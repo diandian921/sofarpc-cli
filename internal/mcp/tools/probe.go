@@ -1,15 +1,8 @@
 package tools
 
-import (
-	"context"
-	"encoding/json"
+import "encoding/json"
 
-	"github.com/diandian921/sofarpc-mcp/internal/app"
-	"github.com/diandian921/sofarpc-mcp/internal/mcp/server"
-)
-
-// Probe tool display text, shared by the legacy ProbeTool and the SDK-native
-// AddProbe so the two paths cannot drift during the go-sdk migration.
+// Probe tool display text, shared with the SDK-native AddProbe.
 const (
 	probeTitle       = "SofaRPC Probe"
 	probeDescription = "Probe TCP reachability for a configured server or explicit address; this does not prove an interface or method exists."
@@ -36,31 +29,3 @@ var probeInputSchema = json.RawMessage(`{
     "timeoutMs": {"type": "integer", "description": "Optional total timeout in milliseconds."}
   }
 }`)
-
-// ProbeTool probes TCP reachability. Reaching the host does not prove the remote
-// interface or method exists.
-func ProbeTool(appSvc *app.Service) server.Tool[ProbeArgs] {
-	return server.Tool[ProbeArgs]{
-		Spec: server.ToolSpec{
-			Name:         "sofarpc_probe",
-			Title:        probeTitle,
-			Description:  probeDescription,
-			Annotations:  server.Annotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: true},
-			InputSchema:  probeInputSchema,
-			OutputSchema: resultOutputSchema,
-			Async:        true,
-		},
-		Run: func(ctx context.Context, _ server.Runtime, a ProbeArgs) server.Result {
-			probe := appSvc.ProbeEndpoint(ctx, app.ProbeInput{
-				Project:   a.Project,
-				Server:    a.Server,
-				Address:   a.Address,
-				Service:   a.Service,
-				TimeoutMS: a.TimeoutMS,
-			})
-			result := app.RenderProbe(probe)
-			result.RequestID = app.NewRequestID("ping")
-			return rendered(result, probeSummary)
-		},
-	}
-}

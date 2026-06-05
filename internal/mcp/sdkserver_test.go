@@ -13,6 +13,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/diandian921/sofarpc-mcp/internal/app"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
 // syncBuf is a goroutine-safe io.Writer for capturing server output written from
@@ -182,6 +183,53 @@ func TestConfigRoundtripViaSDK(t *testing.T) {
 	body, _ := json.Marshal(list.StructuredContent)
 	if !strings.Contains(string(body), `"demo"`) {
 		t.Errorf("saved project not listed: %s", body)
+	}
+}
+
+// TestNoToolLeaksAttachmentValue is the end-to-end redaction net: drive every tool
+// that can emit a configured server/endpoint and assert none surfaces the sentinel
+// attachment value (ported from the retired tools/view_test.go server-path cases).
+func TestNoToolLeaksAttachmentValue(t *testing.T) {
+	const sentinelKey, sentinelValue = "_sofa_token", "SENTINEL_ATTACHMENT_VALUE_mcp"
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	path, err := appconfig.DefaultPath()
+	if err != nil {
+		t.Fatalf("default path: %v", err)
+	}
+	lock, err := appconfig.DefaultLockPath()
+	if err != nil {
+		t.Fatalf("lock path: %v", err)
+	}
+	if _, err := appconfig.Update(path, lock, func(c *appconfig.Config) error {
+		if _, err := c.AddProject("user", t.TempDir(), nil, false); err != nil {
+			return err
+		}
+		_, err := c.AddServer("user-test", appconfig.Server{
+			Address:     "127.0.0.1:12200",
+			Project:     "user",
+			Attachments: map[string]string{sentinelKey: sentinelValue},
+		}, false)
+		return err
+	}); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	cs := connectSDK(t, true)
+	ctx := context.Background()
+	for _, params := range []*mcpsdk.CallToolParams{
+		{Name: "sofarpc_resolve", Arguments: map[string]any{"server": "user-test"}},
+		{Name: "sofarpc_resolve", Arguments: map[string]any{"project": "user"}},
+		{Name: "sofarpc_config_list"},
+		{Name: "sofarpc_doctor", Arguments: map[string]any{"server": "user-test"}},
+	} {
+		res, err := cs.CallTool(ctx, params)
+		if err != nil {
+			t.Fatalf("%s: %v", params.Name, err)
+		}
+		body, _ := json.Marshal(res.StructuredContent)
+		if strings.Contains(string(body), sentinelValue) {
+			t.Errorf("%s leaked attachment value: %s", params.Name, body)
+		}
 	}
 }
 
