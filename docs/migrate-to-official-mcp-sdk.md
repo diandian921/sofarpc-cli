@@ -1,6 +1,6 @@
 # 迁移 MCP 协议层到官方 modelcontextprotocol/go-sdk(渐进式原生重写)
 
-> 状态:全部 11 个 tool 已迁移到官方 SDK 并测试绿(分支 `feat/migrate-mcp-official-sdk`);**尚未**切换生产 Run/SelfTest、**尚未**删除旧 proto/server 框架 —— 即步骤 7(切换+删除)、步骤 8(文档)待续 · 已过 codex review + challenge 两轮
+> 状态:**迁移完成**(分支 `feat/migrate-mcp-official-sdk`)—— 11 个 tool 全部迁移、生产 Run/SelfTest 已切换到 SDK(IOTransport)、旧 proto/server 框架已删除、文档已更新。全量 `go test ./...` + perf tag 在 Go 1.25 全绿 · 已过 codex review + challenge 多轮
 >
 > 本文是迁移方案文档,记录决策、范围、步骤与风险。
 

@@ -79,8 +79,8 @@ Build release archives for the full platform matrix:
 ```
 
 Each archive contains the `sofarpc` binary and `README.md`; a single
-`SHA256SUMS` file covers all archives. Requirements: Go 1.19+ when building
-from source.
+`SHA256SUMS` file covers all archives. Requirements: Go 1.25+ when building
+from source (the MCP layer uses the official `modelcontextprotocol/go-sdk`).
 
 ## MCP Configuration
 
@@ -221,7 +221,7 @@ Known limits:
 
 `sofarpc mcp` is a local developer tool. Treat stdout as the JSON-RPC protocol stream; diagnostics and future logging must go to stderr. `sofarpc_probe` can dial an explicit address for diagnostics, so prefer configured servers when running against untrusted agent input.
 
-Each JSON-RPC stdin frame is capped at 16 MiB. Oversized frames are rejected with an Invalid Request error (`-32600`) and the server resyncs to the next frame. On a handler panic the client receives only a fixed `internal error` message plus an `errorId`; the detail and stack go to stderr under that id.
+The JSON-RPC protocol layer is the official `modelcontextprotocol/go-sdk` (stdio transport, lifecycle, framing, cancellation). On a handler panic the client receives only a fixed `internal error` message plus an `errorId`; the detail and stack go to stderr under that id.
 
 ## MCP Compliance
 

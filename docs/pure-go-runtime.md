@@ -91,4 +91,4 @@ Method invocation is exposed only as the `sofarpc_invoke` MCP tool; there is no 
 
 The MCP server's stdout is the JSON-RPC frame stream; logging must stay on stderr. `sofarpc_probe` accepts explicit diagnostic addresses, so configured servers are the safer default when agent input is not fully trusted.
 
-Stdin JSON-RPC frames are capped at 16 MiB. Oversized frames return an Invalid Request error and do not stop the server.
+The JSON-RPC protocol layer (stdio transport, framing, lifecycle, cancellation) is the official `modelcontextprotocol/go-sdk`; the pure-Go runtime above is the SofaRPC wire codec, which remains hand-written.

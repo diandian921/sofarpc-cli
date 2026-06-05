@@ -72,7 +72,7 @@ cd sofarpc-vX.Y.Z-windows-amd64
 ./scripts/package.sh
 ```
 
-每个 archive 都包含 `sofarpc` 二进制和 `README.md`；所有 archive 共用一个 `SHA256SUMS` 文件。从源码构建需要 Go 1.19+。
+每个 archive 都包含 `sofarpc` 二进制和 `README.md`；所有 archive 共用一个 `SHA256SUMS` 文件。从源码构建需要 Go 1.25+(MCP 层使用官方 `modelcontextprotocol/go-sdk`)。
 
 ## MCP 配置
 
@@ -206,7 +206,7 @@ Schema cache 存储在 `~/.sofarpc/cache/schema/` 下，并通过源码内容 fi
 
 `sofarpc mcp` 是本地开发工具。把 stdout 视为 JSON-RPC 协议流；诊断和未来日志必须写入 stderr。`sofarpc_probe` 可以为诊断拨打显式地址，因此面对不可信的 agent input 时，优先使用已配置 server。
 
-每个 JSON-RPC stdin frame 上限为 16 MiB。超大 frame 会以 Invalid Request error（`-32600`）拒绝，server 会重新同步到下一个 frame。handler panic 时，client 只会收到固定的 `internal error` 信息和 `errorId`；详细信息和 stack 会以该 id 写入 stderr。
+JSON-RPC 协议层使用官方 `modelcontextprotocol/go-sdk`(stdio 传输、生命周期、分帧、取消)。handler panic 时,client 只会收到固定的 `internal error` 信息和 `errorId`;详细信息和 stack 会以该 id 写入 stderr。
 
 ## MCP 兼容性
 
