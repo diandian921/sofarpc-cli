@@ -8,6 +8,14 @@ import (
 	"github.com/diandian921/sofarpc-mcp/internal/mcp/server"
 )
 
+// Probe tool display text, shared by the legacy ProbeTool and the SDK-native
+// AddProbe so the two paths cannot drift during the go-sdk migration.
+const (
+	probeTitle       = "SofaRPC Probe"
+	probeDescription = "Probe TCP reachability for a configured server or explicit address; this does not prove an interface or method exists."
+	probeSummary     = "Probe completed. Success only means the TCP transport path was reachable; it does not prove the remote interface or method exists."
+)
+
 // ProbeArgs are the arguments for sofarpc_probe.
 type ProbeArgs struct {
 	Server    string `json:"server,omitempty"`
@@ -35,8 +43,8 @@ func ProbeTool(appSvc *app.Service) server.Tool[ProbeArgs] {
 	return server.Tool[ProbeArgs]{
 		Spec: server.ToolSpec{
 			Name:         "sofarpc_probe",
-			Title:        "SofaRPC Probe",
-			Description:  "Probe TCP reachability for a configured server or explicit address; this does not prove an interface or method exists.",
+			Title:        probeTitle,
+			Description:  probeDescription,
 			Annotations:  server.Annotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: true},
 			InputSchema:  probeInputSchema,
 			OutputSchema: resultOutputSchema,
@@ -52,7 +60,7 @@ func ProbeTool(appSvc *app.Service) server.Tool[ProbeArgs] {
 			})
 			result := app.RenderProbe(probe)
 			result.RequestID = app.NewRequestID("ping")
-			return rendered(result, "Probe completed. Success only means the TCP transport path was reachable; it does not prove the remote interface or method exists.")
+			return rendered(result, probeSummary)
 		},
 	}
 }
