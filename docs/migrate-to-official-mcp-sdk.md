@@ -1,6 +1,6 @@
 # 迁移 MCP 协议层到官方 modelcontextprotocol/go-sdk(渐进式原生重写)
 
-> 状态:步骤 1-3 已完成(probe 试点已落地于分支 `feat/migrate-mcp-official-sdk`,生产 Run/SelfTest 未切换);步骤 4-8 待续 · 已过 codex review + challenge 两轮
+> 状态:全部 11 个 tool 已迁移到官方 SDK 并测试绿(分支 `feat/migrate-mcp-official-sdk`);**尚未**切换生产 Run/SelfTest、**尚未**删除旧 proto/server 框架 —— 即步骤 7(切换+删除)、步骤 8(文档)待续 · 已过 codex review + challenge 两轮
 >
 > 本文是迁移方案文档,记录决策、范围、步骤与风险。
 
@@ -93,7 +93,7 @@ mcp.AddTool(srv, &mcp.Tool{
 针对试点 diff 做了对抗审阅。**已在试点修复**:server 身份对齐为 `Name:"sofarpc-mcp"/Title:"SofaRPC Direct Invoker"`(此前误用 `sofarpc`,会改 initialize 响应);补了 wire `_meta` 对等测试。**已核实并驳回**:`finish` 丢 `r.Meta`(#1)——错;`app.Result.Meta`(`runtime`/`transport`)在新旧实现里都进 `structuredContent.meta`,旧 wire `_meta` 只放 `requestId`,已加测试双向锁死(若按其建议把 `r.Meta` 并进 `_meta` 反而会制造回归)。
 
 **迁移剩余 tool 时必须处理(确认为真)**:
-1. **【严重】数字精度**:`InvokeArgs.OrderedArguments []interface{}` / `Arguments map[string]interface{}` 在 SDK 的 `json.Unmarshal`(非 `UseNumber`)下,Java `long`(>2^53)会变 `float64` 丢精度——旧路径用 `decode.go` 的 `UseNumber` 保住了。迁 `invoke`/`invoke_plan` 时,承载参数的字段改用 `json.RawMessage`,在 `toInput()` 里用 `UseNumber` 解。
+1. **【严重】数字精度(已解决)**:`InvokeArgs.OrderedArguments []interface{}` / `Arguments map[string]interface{}` 下,Java `long`(>2^53)会变 `float64` 丢精度。**关键坑**:仅"用 `json.RawMessage` + `UseNumber` 解"不够 —— 泛型 `mcp.AddTool` 在进 handler 前会跑 `applySchema`,它用普通 `json.Unmarshal` 把参数解进 `map[string]any`(float64)再**重新 marshal**,精度在我拿到字节前就没了。**最终解法**:`invoke`/`invoke_plan` 改用**原始 `Server.AddTool`**(不过 `applySchema`,拿到未经改动的 wire bytes),自己 `UseNumber` 解、自己拼 `CallToolResult`。附带好处:恢复了旧的「schema 只展示、校验在 handler」语义,`required`/`types`/`args` 别名都回到 handler 友好处理。有回归测试 `TestDecodeInvokeArgsPreservesLongPrecision`。
 2. **`additionalProperties:false` 拒绝别名**:`invoke` 的 `types`/`args` 别名不在 schema 里,SDK 会在校验阶段拒掉用别名的调用方(旧 `decodeArgs` 接受,因为是结构体字段)。要么把别名补进 schema,要么去掉别名。
 3. **`required` 把友好错误变协议错误**:`invokeInputSchema` 有 `required:["service","method"]`,SDK 在进 handler 前就拒,丢掉 `code`/`nextTool`/`recovery`/`isError`。**决策(建议)**:去掉 schema 的 `required`,让 handler 做业务校验、保留友好恢复提示。
 4. **永不把原始 RPC 结果当顶层 `data`**:`resultOutputSchema` 限定 `data:object`;`invoke` 把远端标量/数组/null 包在 `data.result`(对象)下——迁移时保持此规则,否则 SDK 输出校验会判失败。

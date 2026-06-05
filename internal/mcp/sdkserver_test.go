@@ -14,12 +14,12 @@ import (
 // connectSDK wires an in-memory client to the SDK server and returns the live
 // client session, so tests exercise the real initialize / tools handshake rather
 // than calling handlers directly.
-func connectSDK(t *testing.T) *mcpsdk.ClientSession {
+func connectSDK(t *testing.T, writeEnabled bool) *mcpsdk.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	serverT, clientT := mcpsdk.NewInMemoryTransports()
 
-	srv := newSDKServer(app.New(nil), "test", io.Discard)
+	srv := newSDKServer(app.New(nil), "test", writeEnabled, io.Discard)
 	if _, err := srv.Connect(ctx, serverT, nil); err != nil {
 		t.Fatalf("server connect: %v", err)
 	}
@@ -34,23 +34,60 @@ func connectSDK(t *testing.T) *mcpsdk.ClientSession {
 
 // TestSDKProbeListed checks the piloted tool is advertised with its output schema,
 // preserving the "every tool declares an outputSchema" invariant.
-func TestSDKProbeListed(t *testing.T) {
-	cs := connectSDK(t)
+func TestSDKAllToolsListed(t *testing.T) {
+	cs := connectSDK(t, true)
 	res, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	var probe *mcpsdk.Tool
+	got := map[string]*mcpsdk.Tool{}
 	for _, tool := range res.Tools {
-		if tool.Name == "sofarpc_probe" {
-			probe = tool
+		got[tool.Name] = tool
+	}
+	want := []string{
+		"sofarpc_resolve", "sofarpc_probe", "sofarpc_describe", "sofarpc_doctor",
+		"sofarpc_config_list", "sofarpc_invoke_plan", "sofarpc_invoke",
+		"sofarpc_config_save_project", "sofarpc_config_save_server",
+		"sofarpc_config_remove_project", "sofarpc_config_remove_server",
+	}
+	if len(res.Tools) != len(want) {
+		t.Errorf("expected %d tools, got %d", len(want), len(res.Tools))
+	}
+	for _, name := range want {
+		tool, ok := got[name]
+		if !ok {
+			t.Errorf("missing tool %q", name)
+			continue
+		}
+		// Every tool emits the unified app.Result envelope, so all must advertise it.
+		if tool.OutputSchema == nil {
+			t.Errorf("tool %q missing outputSchema", name)
 		}
 	}
-	if probe == nil {
-		t.Fatal("sofarpc_probe not advertised")
+}
+
+// TestSDKDisableConfigWriteHidesWriteTools pins the DisableConfigWrite gating: the
+// four config-write tools vanish from tools/list, the seven read tools remain.
+func TestSDKDisableConfigWriteHidesWriteTools(t *testing.T) {
+	cs := connectSDK(t, false)
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
 	}
-	if probe.OutputSchema == nil {
-		t.Error("sofarpc_probe missing outputSchema")
+	got := map[string]bool{}
+	for _, tool := range res.Tools {
+		got[tool.Name] = true
+	}
+	for _, name := range []string{
+		"sofarpc_config_save_project", "sofarpc_config_save_server",
+		"sofarpc_config_remove_project", "sofarpc_config_remove_server",
+	} {
+		if got[name] {
+			t.Errorf("write tool %q should be hidden when config-write is disabled", name)
+		}
+	}
+	if !got["sofarpc_config_list"] || !got["sofarpc_probe"] {
+		t.Error("read tools should remain when config-write is disabled")
 	}
 }
 
@@ -58,7 +95,7 @@ func TestSDKProbeListed(t *testing.T) {
 // structured app.Result, a mirrored JSON text block, _meta (elapsedMs / summary),
 // and isError with a recovery nextTool on failure.
 func TestSDKProbeWireShape(t *testing.T) {
-	cs := connectSDK(t)
+	cs := connectSDK(t, true)
 	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
 		Name:      "sofarpc_probe",
 		Arguments: map[string]any{"address": "127.0.0.1:1", "timeoutMs": 200},
