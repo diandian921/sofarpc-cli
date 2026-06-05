@@ -13,11 +13,11 @@ import (
 // replacement for ProbeTool; both reuse the same args, schema, and display text in
 // this package during the migration. The handler body mirrors ProbeTool.Run.
 func AddProbe(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_probe",
 		Title:        probeTitle,
 		Description:  probeDescription,
-		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: boolPtr(true)},
+		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(true)},
 		InputSchema:  probeInputSchema,
 		OutputSchema: resultOutputSchema,
 	}, adaptTool(stderr, func(ctx context.Context, _ *mcpsdk.CallToolRequest, a ProbeArgs) (app.Result, string) {

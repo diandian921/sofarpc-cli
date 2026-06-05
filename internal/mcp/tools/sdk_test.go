@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -21,30 +22,27 @@ func TestAdaptToolSanitizesPanic(t *testing.T) {
 		panic("boom: " + secret)
 	})
 
-	result, out, err := handler(context.Background(), &mcpsdk.CallToolRequest{}, struct{}{})
+	result, err := handler(context.Background(), &mcpsdk.CallToolRequest{Params: &mcpsdk.CallToolParamsRaw{}})
 	if err != nil {
 		t.Fatalf("panic surfaced as protocol error: %v", err)
 	}
-	if out.OK || out.Code != app.CodeInternalError {
-		t.Fatalf("expected sanitized internal error, got ok=%v code=%q", out.OK, out.Code)
-	}
-	if out.Error == nil || out.Error.Message != "internal error" {
-		t.Fatalf("expected fixed %q message, got %+v", "internal error", out.Error)
-	}
 	if result == nil || !result.IsError {
-		t.Fatal("expected IsError result")
+		t.Fatal("expected an IsError result")
 	}
-	if strings.Contains(out.Error.Message, secret) {
-		t.Error("sensitive panic detail leaked into the client-facing message")
+
+	structured, _ := json.Marshal(result.StructuredContent)
+	if !strings.Contains(string(structured), app.CodeInternalError) {
+		t.Errorf("expected sanitized internal error envelope, got %s", structured)
+	}
+	if strings.Contains(string(structured), secret) {
+		t.Error("sensitive panic detail leaked into the client-facing result")
 	}
 	if !strings.Contains(stderr.String(), secret) || !strings.Contains(stderr.String(), "mcp panic") {
 		t.Errorf("panic detail should be logged to stderr, got %q", stderr.String())
 	}
 }
 
-// TestFinishWireShape pins the _meta and isError fields finish() is responsible for;
-// structuredContent and the text block are the SDK's job and are covered by the
-// server-level in-memory test.
+// TestFinishWireShape pins the _meta and isError fields finish() is responsible for.
 func TestFinishWireShape(t *testing.T) {
 	ok := app.Result{OK: true, Code: app.CodeSuccess, RequestID: "ping-1"}
 	res := finish(ok, "done", 0)

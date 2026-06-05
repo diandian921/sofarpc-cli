@@ -16,11 +16,11 @@ import (
 // DoctorTool; writeEnabled reflects the server's config-write flag. Reads local
 // config/source only, so it needs no app.Service. Handler body mirrors DoctorTool.Run.
 func AddDoctor(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_doctor",
 		Title:        "SofaRPC Doctor",
 		Description:  "Run structured diagnostics for config, project source schema, and invocation prerequisites.",
-		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true},
+		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  doctorInputSchema,
 		OutputSchema: resultOutputSchema,
 	}, adaptTool(stderr, func(ctx context.Context, req *mcpsdk.CallToolRequest, a DoctorArgs) (app.Result, string) {

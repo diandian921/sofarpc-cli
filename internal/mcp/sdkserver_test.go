@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -63,6 +64,59 @@ func TestSDKAllToolsListed(t *testing.T) {
 		if tool.OutputSchema == nil {
 			t.Errorf("tool %q missing outputSchema", name)
 		}
+	}
+
+	// Read-only tools must advertise the *bool hints (destructive/openWorld) as an
+	// explicit false: the SDK omits nil pointers and clients default those hints to
+	// true, which would wrongly mark a local read-only tool as open-world.
+	if r := got["sofarpc_resolve"]; r != nil {
+		if r.Annotations == nil || r.Annotations.OpenWorldHint == nil || *r.Annotations.OpenWorldHint {
+			t.Errorf("sofarpc_resolve must advertise openWorldHint:false, got %+v", r.Annotations)
+		}
+		if r.Annotations.DestructiveHint == nil || *r.Annotations.DestructiveHint {
+			t.Errorf("sofarpc_resolve must advertise destructiveHint:false")
+		}
+	}
+}
+
+// TestSDKConfigWriteFriendlyValidation pins finding #2: a config-write tool with a
+// missing required field returns the friendly app.Result envelope (isError +
+// BAD_REQUEST), not a bare SDK protocol error — preserving the legacy contract.
+func TestSDKConfigWriteFriendlyValidation(t *testing.T) {
+	cs := connectSDK(t, true)
+	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "sofarpc_config_save_project",
+		Arguments: map[string]any{"workspaceRoot": "/tmp/x"}, // missing required "name"
+	})
+	if err != nil {
+		t.Fatalf("missing required field must be a friendly result, not a protocol error: %v", err)
+	}
+	if !res.IsError {
+		t.Error("expected isError result for missing name")
+	}
+	structured, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(structured), app.CodeBadRequest) {
+		t.Errorf("expected a BAD_REQUEST envelope, got %s", structured)
+	}
+}
+
+// TestSDKRejectsUnknownArgument pins finding #1: an unknown argument (typo) is
+// rejected, not silently ignored, and surfaces as the friendly envelope.
+func TestSDKRejectsUnknownArgument(t *testing.T) {
+	cs := connectSDK(t, true)
+	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "sofarpc_resolve",
+		Arguments: map[string]any{"projektt": "x"}, // typo of "project"
+	})
+	if err != nil {
+		t.Fatalf("unknown argument must be a friendly result, not a protocol error: %v", err)
+	}
+	if !res.IsError {
+		t.Error("expected isError result for an unknown argument")
+	}
+	structured, _ := json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(structured), "invalid arguments") {
+		t.Errorf("expected an invalid-arguments envelope, got %s", structured)
 	}
 }
 

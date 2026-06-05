@@ -101,3 +101,10 @@ mcp.AddTool(srv, &mcp.Tool{
 6. **panic 契约变化**:新路径 panic→`isError` 的 `tools/call` 结果(非 JSON-RPC `-32603`)。需在切换时确认/记录(MCP 规范其实更推荐 `isError`)。
 7. **`adaptTool` recover 范围**:只包了 body;SDK 的输出校验/内容生成在 handler 返回之后、不在 recover 内。靠第 4 条「`data` 必须是对象 + schema 匹配」保证 `Out` 一定过校验,否则会冒出未脱敏的协议错误。
 8. **切 Run/SelfTest 时要钉死的行为**:取消(不发最终响应)、未知 tool 错误码/文案、协议版本协商、SelfTest 保留 stdio 级集成测试、`schema.CleanupUnused`、`DisableConfigWrite` 省略语义。
+
+## Codex review(第二批迁移后,3 项已修)
+对 10-tool 迁移做了 review,3 个发现对照旧 `server/decode.go`、`registry.go` 全部核实为真并已修:
+1. **统一适配**:11 个 tool 全部改走原始 `Server.AddTool` + 共享泛型 `adaptTool`(按 `In` 类型解码)。解码用 `decodeStrict` = `UseNumber` + `DisallowUnknownFields`,与旧 `decodeArgs` 完全对齐 —— 精度保住、typo/未知字段被拒(不再静默忽略)、`required` 与 `types`/`args` 别名校验回到 handler 出友好 envelope。invoke 不再特殊化,泛型路径也不再用(它的 `applySchema` 才是 float64 元凶)。
+2. **config 写工具缺必填字段**:从「SDK 协议错误」回到「友好 `app.Result`(BAD_REQUEST + nextTool)」,恢复旧契约。
+3. **注解安全位**:`destructiveHint`/`openWorldHint` 是 `*bool`,SDK 省略 nil、客户端把缺省当 `true` —— 给每个 tool 显式回填 false/true 以匹配旧 `tools/list`(否则只读工具会被当成 open-world,影响审批/安全)。
+新增测试:config 友好校验、未知字段拒绝(端到端 + 单测)、注解显式、long 精度。

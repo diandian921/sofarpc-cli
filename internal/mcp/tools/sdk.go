@@ -29,32 +29,39 @@ func boolPtr(b bool) *bool { return &b }
 // app.Result envelope plus an optional human-readable summary.
 type appToolFunc[In any] func(ctx context.Context, req *mcpsdk.CallToolRequest, in In) (app.Result, string)
 
-// adaptTool turns an appToolFunc into the SDK's generic ToolHandlerFor. It is the
-// single place that owns the three concerns every tool shares, so individual tools
-// stay free of protocol plumbing:
-//   - timing: stamps elapsedMs into _meta;
-//   - panic safety: a panic is logged to stderr under a generated errorId and folded
-//     into a fixed, detail-free failure, so nothing sensitive reaches the agent;
-//   - wire shape: the returned Out (app.Result) becomes structuredContent plus a JSON
-//     text block (filled by the SDK), while _meta and isError are set here.
-func adaptTool[In any](stderr io.Writer, run appToolFunc[In]) mcpsdk.ToolHandlerFor[In, app.Result] {
-	return func(ctx context.Context, req *mcpsdk.CallToolRequest, in In) (result *mcpsdk.CallToolResult, out app.Result, err error) {
+// adaptTool turns a typed appToolFunc into a raw SDK ToolHandler installed via
+// Server.AddTool. It deliberately avoids the generic mcp.AddTool path, whose input
+// validation (applySchema) re-marshals arguments through float64 — corrupting Java
+// long values — and turns missing-required / unknown fields into protocol errors
+// instead of the friendly app.Result envelope. This adapter mirrors the legacy
+// framework instead, and is the single place that owns what every tool shares:
+//   - decode arguments with UseNumber + DisallowUnknownFields (precision kept,
+//     typos/unknown fields rejected); all other validation stays in the handler;
+//   - stamp elapsedMs into _meta and fold app.Result into structuredContent + a JSON
+//     text block (manualResult);
+//   - recover a panic into a fixed, detail-free failure (sanitizePanic), so nothing
+//     sensitive reaches the agent.
+func adaptTool[In any](stderr io.Writer, run appToolFunc[In]) mcpsdk.ToolHandler {
+	return func(ctx context.Context, req *mcpsdk.CallToolRequest) (result *mcpsdk.CallToolResult, err error) {
 		start := time.Now()
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				out = sanitizePanic(recovered, stderr)
-				result = finish(out, "", time.Since(start))
+				result = manualResult(sanitizePanic(recovered, stderr), "", time.Since(start))
 			}
 		}()
+		var in In
+		if derr := decodeStrict(req.Params.Arguments, &in); derr != nil {
+			bad := app.RenderFailure(app.CodeBadRequest, "invalid arguments: "+derr.Error(), nil)
+			return manualResult(bad, "", time.Since(start)), nil
+		}
 		out, summary := run(ctx, req, in)
-		return finish(out, summary, time.Since(start)), out, nil
+		return manualResult(out, summary, time.Since(start)), nil
 	}
 }
 
-// finish renders an app.Result into the tools/call envelope. It only sets _meta
-// (elapsedMs / requestId / summary) and isError; structuredContent and the mirrored
-// JSON text block are populated by the SDK from the returned Out value, so the wire
-// shape matches the historical CallResult exactly.
+// finish stamps the _meta (elapsedMs / requestId / summary) and isError fields of a
+// tools/call result from an app.Result. manualResult then adds structuredContent and
+// the mirrored JSON text block, so the wire shape matches the historical CallResult.
 func finish(r app.Result, summary string, elapsed time.Duration) *mcpsdk.CallToolResult {
 	if summary == "" && r.Error != nil {
 		summary = r.Error.Message
@@ -69,31 +76,9 @@ func finish(r app.Result, summary string, elapsed time.Duration) *mcpsdk.CallToo
 	return &mcpsdk.CallToolResult{Meta: meta, IsError: !r.OK}
 }
 
-// rawToolFunc is the app-facing shape of a tool that needs the raw request, e.g.
-// to decode arguments with number-precision control. Like appToolFunc, it returns
-// the unified envelope plus a summary.
-type rawToolFunc func(ctx context.Context, req *mcpsdk.CallToolRequest) (app.Result, string)
-
-// adaptRawTool is adaptTool for the raw Server.AddTool path: same timing and panic
-// sanitization, but it owns structuredContent/content generation (via manualResult)
-// because the raw path does no auto folding. invoke/invoke_plan use it so their
-// arguments bypass the SDK's generic float64 roundtrip and keep Java long precision.
-func adaptRawTool(stderr io.Writer, run rawToolFunc) mcpsdk.ToolHandler {
-	return func(ctx context.Context, req *mcpsdk.CallToolRequest) (result *mcpsdk.CallToolResult, err error) {
-		start := time.Now()
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				result = manualResult(sanitizePanic(recovered, stderr), "", time.Since(start))
-			}
-		}()
-		out, summary := run(ctx, req)
-		return manualResult(out, summary, time.Since(start)), nil
-	}
-}
-
-// manualResult builds a complete CallToolResult for the raw Server.AddTool path,
-// mirroring what generic AddTool produces: structuredContent plus a JSON text block
-// from the app.Result, plus the _meta and isError that finish() stamps.
+// manualResult builds the complete CallToolResult: structuredContent plus a JSON
+// text block from the app.Result, plus the _meta and isError that finish() stamps.
+// (The raw Server.AddTool path does no auto folding, so the adapter does it here.)
 func manualResult(r app.Result, summary string, elapsed time.Duration) *mcpsdk.CallToolResult {
 	body, err := json.Marshal(r)
 	if err != nil {
@@ -133,16 +118,17 @@ func notifyProgress(ctx context.Context, req *mcpsdk.CallToolRequest, message st
 	})
 }
 
-// decodeStrict decodes raw tool arguments with UseNumber, so large Java long
-// values survive as json.Number instead of being rounded through float64. The
-// SDK's generic decoding does not do this, so invoke/invoke_plan take their
-// arguments as json.RawMessage and decode here before Hessian encoding.
+// decodeStrict decodes raw tool arguments exactly like the legacy decodeArgs:
+// UseNumber keeps large Java long values as json.Number (no float64 rounding), and
+// DisallowUnknownFields rejects typos and unsupported keys instead of silently
+// ignoring them. Server-side aliases stay decodable by being declared struct fields.
 func decodeStrict(raw json.RawMessage, out interface{}) error {
-	if len(raw) == 0 {
+	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
+	dec.DisallowUnknownFields()
 	return dec.Decode(out)
 }
 

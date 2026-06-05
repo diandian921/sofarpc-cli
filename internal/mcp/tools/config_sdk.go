@@ -28,11 +28,11 @@ func configFailureResult(err error) app.Result {
 // AddConfigList registers sofarpc_config_list (read-only). SDK-native replacement
 // for ConfigListTool.
 func AddConfigList(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_config_list",
 		Title:        "SofaRPC Config: List",
 		Description:  "List configured projects and servers from ~/.sofarpc/config.json.",
-		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true},
+		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configListInputSchema,
 		OutputSchema: resultOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigListArgs) (app.Result, string) {
@@ -72,11 +72,11 @@ func AddConfigList(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
 // AddConfigSaveProject registers sofarpc_config_save_project. SDK-native
 // replacement for ConfigSaveProjectTool.
 func AddConfigSaveProject(srv *mcpsdk.Server, stderr io.Writer) {
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_config_save_project",
 		Title:        "SofaRPC Config: Save Project",
 		Description:  "Add or replace a local source project in config.json.",
-		Annotations:  &mcpsdk.ToolAnnotations{},
+		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configSaveProjectInputSchema,
 		OutputSchema: resultOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigSaveProjectArgs) (app.Result, string) {
@@ -102,11 +102,11 @@ func AddConfigSaveProject(srv *mcpsdk.Server, stderr io.Writer) {
 // AddConfigSaveServer registers sofarpc_config_save_server. SDK-native replacement
 // for ConfigSaveServerTool.
 func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_config_save_server",
 		Title:        "SofaRPC Config: Save Server",
 		Description:  "Add or replace a configured RPC server in config.json.",
-		Annotations:  &mcpsdk.ToolAnnotations{},
+		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configSaveServerInputSchema,
 		OutputSchema: resultOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigSaveServerArgs) (app.Result, string) {
@@ -140,11 +140,11 @@ func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
 // AddConfigRemoveProject registers sofarpc_config_remove_project (destructive).
 // SDK-native replacement for ConfigRemoveProjectTool.
 func AddConfigRemoveProject(srv *mcpsdk.Server, stderr io.Writer) {
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_config_remove_project",
 		Title:        "SofaRPC Config: Remove Project",
 		Description:  "Remove a project from config.json. Requires confirm=true.",
-		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(true)},
+		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configRemoveProjectInputSchema,
 		OutputSchema: resultOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigRemoveProjectArgs) (app.Result, string) {
@@ -167,11 +167,11 @@ func AddConfigRemoveProject(srv *mcpsdk.Server, stderr io.Writer) {
 // AddConfigRemoveServer registers sofarpc_config_remove_server (destructive).
 // SDK-native replacement for ConfigRemoveServerTool.
 func AddConfigRemoveServer(srv *mcpsdk.Server, stderr io.Writer) {
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_config_remove_server",
 		Title:        "SofaRPC Config: Remove Server",
 		Description:  "Remove a server from config.json. Requires confirm=true.",
-		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(true)},
+		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configRemoveServerInputSchema,
 		OutputSchema: resultOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigRemoveServerArgs) (app.Result, string) {

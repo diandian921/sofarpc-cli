@@ -12,11 +12,11 @@ import (
 // AddResolve registers sofarpc_resolve on the SDK server (read-only, no network).
 // SDK-native replacement for ResolveTool; the handler body mirrors ResolveTool.Run.
 func AddResolve(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_resolve",
 		Title:        "SofaRPC Resolve",
 		Description:  "Resolve the configured project, server, and invocation endpoint without touching the network.",
-		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true},
+		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  resolveInputSchema,
 		OutputSchema: resultOutputSchema,
 	}, adaptTool(stderr, func(ctx context.Context, _ *mcpsdk.CallToolRequest, a ResolveArgs) (app.Result, string) {
