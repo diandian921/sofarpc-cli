@@ -1,16 +1,38 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/diandian921/sofarpc-mcp/internal/app"
 )
+
+// syncBuf is a goroutine-safe io.Writer for capturing server output written from
+// Run's background session while the test reads it.
+type syncBuf struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuf) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuf) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 // connectSDK wires an in-memory client to the SDK server and returns the live
 // client session, so tests exercise the real initialize / tools handshake rather
@@ -76,6 +98,90 @@ func TestSDKAllToolsListed(t *testing.T) {
 		if r.Annotations.DestructiveHint == nil || *r.Annotations.DestructiveHint {
 			t.Errorf("sofarpc_resolve must advertise destructiveHint:false")
 		}
+	}
+}
+
+// TestRunStdioHandshake drives the real Run() path over injected streams (the
+// production transport), exercising a full initialize → tools/list → tools/call
+// handshake and a clean exit 0 on EOF — the stdio-level integration coverage that
+// the in-memory client tests do not give.
+func TestRunStdioHandshake(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	frames := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sofarpc_config_list","arguments":{}}}`,
+		"",
+	}, "\n")
+	inR, inW := io.Pipe()
+	out := &syncBuf{}
+	s := &Server{
+		BuildVersion:       "test",
+		Stdin:              inR,
+		Stdout:             out,
+		Stderr:             io.Discard,
+		DisableConfigWrite: true,
+	}
+	done := make(chan int, 1)
+	go func() { done <- s.Run() }()
+
+	for _, frame := range strings.Split(strings.TrimRight(frames, "\n"), "\n") {
+		if _, err := io.WriteString(inW, frame+"\n"); err != nil {
+			t.Fatalf("write frame: %v", err)
+		}
+	}
+
+	// Wait for the tools/call response before closing stdin, so the async handler is
+	// not raced against EOF.
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(out.String(), `"structuredContent"`) {
+		if time.Now().After(deadline) {
+			_ = inW.Close()
+			t.Fatalf("timed out waiting for tools/call response; got:\n%s", out.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	_ = inW.Close()
+
+	if code := <-done; code != 0 {
+		t.Fatalf("Run exit = %d", code)
+	}
+	got := out.String()
+	if !strings.Contains(got, `"protocolVersion"`) {
+		t.Errorf("missing initialize response: %s", got)
+	}
+	if !strings.Contains(got, `"tools"`) {
+		t.Errorf("missing tools/list response: %s", got)
+	}
+}
+
+// TestConfigRoundtripViaSDK exercises a config write then read end-to-end through the
+// SDK server, replacing the equivalent coverage from the retired server_test.go.
+func TestConfigRoundtripViaSDK(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	cs := connectSDK(t, true)
+	ctx := context.Background()
+
+	save, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name:      "sofarpc_config_save_project",
+		Arguments: map[string]any{"name": "demo", "workspaceRoot": t.TempDir()},
+	})
+	if err != nil {
+		t.Fatalf("save project: %v", err)
+	}
+	if save.IsError {
+		body, _ := json.Marshal(save.StructuredContent)
+		t.Fatalf("save project returned error: %s", body)
+	}
+
+	list, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "sofarpc_config_list"})
+	if err != nil {
+		t.Fatalf("config list: %v", err)
+	}
+	body, _ := json.Marshal(list.StructuredContent)
+	if !strings.Contains(string(body), `"demo"`) {
+		t.Errorf("saved project not listed: %s", body)
 	}
 }
 

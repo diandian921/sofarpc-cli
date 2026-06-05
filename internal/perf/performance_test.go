@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -71,20 +70,13 @@ func TestPerformanceBudgets(t *testing.T) {
 
 func runMCPToolsList(t *testing.T) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
-	out := &bytes.Buffer{}
-	server := &mcp.Server{
-		BuildVersion:       "perf",
-		Stdin:              strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}` + "\n"),
-		Stdout:             out,
-		Stderr:             &bytes.Buffer{},
-		DisableConfigWrite: true,
-	}
-	if code := server.Run(); code != 0 {
-		t.Fatalf("Run exit = %d", code)
-	}
-	if !bytes.Contains(out.Bytes(), []byte(`"tools"`)) {
-		t.Fatalf("tools/list response missing tools: %s", out.String())
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	// SelfTest brings up the SDK server and drives initialize → tools/list →
+	// tools/call over in-memory transports — the same startup path, measured
+	// reliably (a fixed stdio reader would race the SDK's async handlers on EOF).
+	server := &mcp.Server{BuildVersion: "perf", DisableConfigWrite: true}
+	if err := server.SelfTest(); err != nil {
+		t.Fatalf("selftest: %v", err)
 	}
 }
 

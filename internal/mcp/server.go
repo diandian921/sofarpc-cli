@@ -1,26 +1,23 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
 
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/diandian921/sofarpc-mcp/internal/app"
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
-	"github.com/diandian921/sofarpc-mcp/internal/mcp/proto"
-	mcpserver "github.com/diandian921/sofarpc-mcp/internal/mcp/server"
-	"github.com/diandian921/sofarpc-mcp/internal/mcp/tools"
 	"github.com/diandian921/sofarpc-mcp/internal/schema"
 )
 
-// Server is the stdio MCP server facade. It wires the proto session, the typed
-// tool registry, and the app service together; its public surface (fields, Run,
-// SelfTest) is unchanged so cli/mcp.go does not churn.
+// Server is the stdio MCP server facade. Its public surface (fields, Run, SelfTest)
+// is unchanged so cli/mcp.go and callers do not churn; internally it is backed by the
+// official modelcontextprotocol go-sdk (see newSDKServer).
 type Server struct {
 	BuildVersion       string
 	Stdin              io.Reader
@@ -28,15 +25,22 @@ type Server struct {
 	Stderr             io.Writer
 	DisableConfigWrite bool
 	App                *app.Service
-
-	registry *mcpserver.Registry
 }
 
+// Run serves the MCP protocol over the configured streams until the client
+// disconnects. It uses an IOTransport (not StdioTransport) so injected Stdin/Stdout
+// are honored — production passes os streams, tests pass buffers.
+//
+// Only a failure to bring up the session (Connect) is a fatal exit 1. Once serving,
+// the session ending — the host closing stdin, EOF, a peer disconnect — is the
+// normal terminal condition for a stdio server, so it exits 0 (logging any non-EOF
+// reason to stderr for diagnostics).
 func (s *Server) Run() int {
 	_ = schema.CleanupUnused(7 * 24 * time.Hour)
+
 	in := s.Stdin
 	if in == nil {
-		in = bytes.NewReader(nil)
+		in = strings.NewReader("")
 	}
 	out := s.Stdout
 	if out == nil {
@@ -46,38 +50,30 @@ func (s *Server) Run() int {
 	if stderr == nil {
 		stderr = io.Discard
 	}
-	// Fail fast on a non-compliant tool registry rather than serving it. This is
-	// belt-and-suspenders: a tool registered without an outputSchema is already
-	// caught at test time (SelfTest / TestAllToolsAdvertiseOutputSchema), so a
-	// released binary always passes — but a direct `sofarpc mcp` start otherwise
-	// would not validate before the first tools/call.
-	if err := s.toolRegistry().Validate(); err != nil {
-		fmt.Fprintln(stderr, "mcp: tool registry invalid:", err)
+
+	srv := newSDKServer(s.application(), s.BuildVersion, !s.DisableConfigWrite, stderr)
+	transport := &mcpsdk.IOTransport{Reader: io.NopCloser(in), Writer: nopWriteCloser{out}}
+	session, err := srv.Connect(context.Background(), transport, nil)
+	if err != nil {
+		fmt.Fprintln(stderr, "mcp: connect failed:", err)
 		return 1
 	}
-	return s.newSession(in, out, stderr).Run()
+	if err := session.Wait(); err != nil && !errors.Is(err, io.EOF) {
+		fmt.Fprintln(stderr, "mcp: session ended:", err)
+	}
+	return 0
 }
 
-// newSession wires a proto.Session over the given streams with this server's
-// identity, capabilities, and dispatcher. Shared by Run and SelfTest so both go
-// through the real protocol engine.
-func (s *Server) newSession(in io.Reader, out, stderr io.Writer) *proto.Session {
-	return proto.NewSession(proto.Config{
-		In:           in,
-		Out:          out,
-		Stderr:       stderr,
-		Info:         s.serverInfo(),
-		Capabilities: s.serverCapabilities(),
-		Instructions: serverInstructions,
-		Dispatcher:   &dispatcher{server: s, stderr: stderr},
-	})
-}
+// nopWriteCloser adapts an io.Writer to io.WriteCloser for IOTransport; the
+// underlying stream (os.Stdout in production) is owned by the caller, so Close is
+// a no-op.
+type nopWriteCloser struct{ io.Writer }
 
-// SelfTest brings up the server machinery — config path, app service, tool
-// registry (including its invariants) — then drives a real proto.Session through
-// the full lifecycle (initialize → notifications/initialized → tools/list →
-// tools/call) over in-memory streams, so a broken config or handshake fails here
-// instead of at first agent use.
+func (nopWriteCloser) Close() error { return nil }
+
+// SelfTest brings up the server machinery and drives a real initialize → tools/list
+// → tools/call(sofarpc_config_list) handshake over in-memory transports, so a broken
+// config or registration fails here instead of at first agent use.
 func (s *Server) SelfTest() error {
 	if _, err := appconfig.DefaultPath(); err != nil {
 		return fmt.Errorf("config path: %w", err)
@@ -85,138 +81,41 @@ func (s *Server) SelfTest() error {
 	if s.application() == nil {
 		return errors.New("app service is nil")
 	}
-	if len(s.toolDefs()) == 0 {
+	stderr := s.Stderr
+	if stderr == nil {
+		stderr = io.Discard
+	}
+
+	ctx := context.Background()
+	serverTransport, clientTransport := mcpsdk.NewInMemoryTransports()
+	srv := newSDKServer(s.application(), s.BuildVersion, !s.DisableConfigWrite, stderr)
+	if _, err := srv.Connect(ctx, serverTransport, nil); err != nil {
+		return fmt.Errorf("server connect: %w", err)
+	}
+
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "sofarpc-selftest", Version: s.BuildVersion}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		return fmt.Errorf("initialize handshake: %w", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	tools, err := session.ListTools(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("tools/list: %w", err)
+	}
+	if len(tools.Tools) == 0 {
 		return errors.New("no tools registered")
 	}
-	if err := s.toolRegistry().Validate(); err != nil {
-		return fmt.Errorf("tool registry invalid: %w", err)
-	}
-	frames := strings.Join([]string{
-		`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`,
-		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
-		`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"sofarpc_config_list","arguments":{}}}`,
-		"",
-	}, "\n")
-	out := &bytes.Buffer{}
-	if code := s.newSession(strings.NewReader(frames), out, io.Discard).Run(); code != 0 {
-		return fmt.Errorf("self-test session exited with code %d", code)
-	}
-	return verifySelfTest(out.String())
-}
 
-// verifySelfTest checks that each self-test request got a healthy response.
-func verifySelfTest(out string) error {
-	byID := map[string]map[string]interface{}{}
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		var resp map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &resp); err != nil {
-			continue
-		}
-		if resp["id"] != nil {
-			byID[fmt.Sprint(resp["id"])] = resp
-		}
+	res, err := session.CallTool(ctx, &mcpsdk.CallToolParams{Name: "sofarpc_config_list"})
+	if err != nil {
+		return fmt.Errorf("tools/call sofarpc_config_list: %w", err)
 	}
-	initResp := byID["0"]
-	if initResp == nil || initResp["error"] != nil {
-		return fmt.Errorf("initialize failed: %s", out)
-	}
-	if r, _ := initResp["result"].(map[string]interface{}); r == nil || r["protocolVersion"] == nil {
-		return errors.New("initialize response missing protocolVersion")
-	}
-	listResp := byID["1"]
-	if listResp == nil || listResp["error"] != nil {
-		return errors.New("tools/list failed")
-	}
-	if r, _ := listResp["result"].(map[string]interface{}); r == nil || r["tools"] == nil {
-		return errors.New("tools/list missing tools")
-	}
-	callResp := byID["2"]
-	if callResp == nil || callResp["error"] != nil {
-		return fmt.Errorf("tools/call config_list failed: %v", callResp["error"])
-	}
-	r, _ := callResp["result"].(map[string]interface{})
-	if r == nil {
-		return errors.New("tools/call config_list missing result")
-	}
-	if isErr, _ := r["isError"].(bool); isErr {
-		return errors.New("config_list returned an error result")
+	if res.IsError {
+		return errors.New("sofarpc_config_list returned an error result")
 	}
 	return nil
-}
-
-// handle answers tools/list and tools/call for the dispatcher. It is the
-// dispatcher's entry only — never call it from tests or self-test, which must go
-// through a real proto.Session so lifecycle / ping / cancel / transport behavior
-// is exercised.
-func (s *Server) handle(ctx context.Context, req proto.Request) (proto.Response, bool) {
-	base := proto.Response{JSONRPC: "2.0", ID: req.ID}
-	switch req.Method {
-	case "tools/list":
-		base.Result = map[string]interface{}{"tools": s.toolDefs()}
-		return base, true
-	case "tools/call":
-		result, perr := s.dispatchTool(ctx, req.Params)
-		if perr != nil {
-			base.Error = perr
-		} else {
-			base.Result = result
-		}
-		return base, true
-	default:
-		base.Error = &proto.Error{Code: proto.CodeMethodNotFound, Message: "method not found: " + req.Method}
-		return base, true
-	}
-}
-
-// toolRegistry lazily builds the full registry. The four config-write tools are
-// omitted when DisableConfigWrite is set, so they vanish from tools/list rather
-// than failing on call. First invoked from the single-threaded read loop, so the
-// lazy init is race-free.
-func (s *Server) toolRegistry() *mcpserver.Registry {
-	if s.registry == nil {
-		r := mcpserver.NewRegistry()
-		appSvc := s.application()
-		writeEnabled := !s.DisableConfigWrite
-		mcpserver.Register(r, tools.ResolveTool(appSvc))
-		mcpserver.Register(r, tools.ProbeTool(appSvc))
-		mcpserver.Register(r, tools.DescribeTool(appSvc))
-		mcpserver.Register(r, tools.DoctorTool(appSvc, writeEnabled))
-		mcpserver.Register(r, tools.ConfigListTool(writeEnabled))
-		mcpserver.Register(r, tools.InvokePlanTool(appSvc))
-		mcpserver.Register(r, tools.InvokeTool(appSvc))
-		if writeEnabled {
-			mcpserver.Register(r, tools.ConfigSaveProjectTool())
-			mcpserver.Register(r, tools.ConfigSaveServerTool())
-			mcpserver.Register(r, tools.ConfigRemoveProjectTool())
-			mcpserver.Register(r, tools.ConfigRemoveServerTool())
-		}
-		s.registry = r
-	}
-	return s.registry
-}
-
-func (s *Server) toolDefs() []map[string]interface{} {
-	return s.toolRegistry().ToolList()
-}
-
-// dispatchTool routes a tools/call to the typed registry. A malformed params
-// envelope or a strict-decode failure surfaces as a JSON-RPC error.
-func (s *Server) dispatchTool(ctx context.Context, rawParams json.RawMessage) (interface{}, *proto.Error) {
-	var call struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if len(rawParams) > 0 {
-		if err := decodeJSON(rawParams, &call); err != nil {
-			return nil, &proto.Error{Code: proto.CodeInvalidParams, Message: "invalid tools/call params"}
-		}
-	}
-	return s.toolRegistry().Call(ctx, mcpserver.SessionRuntime{}, call.Name, call.Arguments)
 }
 
 func (s *Server) application() *app.Service {

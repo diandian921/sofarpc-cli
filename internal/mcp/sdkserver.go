@@ -9,6 +9,10 @@ import (
 	"github.com/diandian921/sofarpc-mcp/internal/mcp/tools"
 )
 
+// serverInstructions is the server-level guidance returned to the client at
+// initialize.
+const serverInstructions = "Run sofarpc_resolve before sofarpc_invoke. When multiple servers exist, always pass `server`. Use sofarpc_describe with query=... to find a service FQN before invoking, and sofarpc_invoke_plan to validate arguments without sending a request."
+
 // newSDKServer builds the MCP server backed by the official modelcontextprotocol
 // go-sdk: the migration target that replaces the self-written proto / server
 // framework. writeEnabled mirrors the legacy DisableConfigWrite gating — the four
