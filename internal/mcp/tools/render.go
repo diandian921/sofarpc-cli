@@ -127,7 +127,8 @@ var (
   "type": "object",
   "properties": {
     "name": {"type": "string"},
-    "project": {"type": "object"}
+    "project": {"type": "object"},
+    "dryRun": {"type": "boolean"}
   }
 }`)
 
@@ -135,7 +136,8 @@ var (
   "type": "object",
   "properties": {
     "name": {"type": "string"},
-    "server": {"type": "object"}
+    "server": {"type": "object"},
+    "dryRun": {"type": "boolean"}
   }
 }`)
 

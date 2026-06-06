@@ -493,6 +493,78 @@ func TestInvokeWorkflowPromptGet(t *testing.T) {
 	}
 }
 
+// TestCompatibilityResourceListed pins the Sprint 4 read-only resource: the server
+// advertises sofarpc://compatibility (safe context: no config, no secrets).
+func TestCompatibilityResourceListed(t *testing.T) {
+	cs := connectSDK(t, true)
+	res, err := cs.ListResources(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list resources: %v", err)
+	}
+	var found bool
+	for _, r := range res.Resources {
+		if r.URI == "sofarpc://compatibility" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("sofarpc://compatibility not listed: %+v", res.Resources)
+	}
+}
+
+// TestCompatibilityResourceRead pins that reading the resource returns a JSON type
+// support summary covering the documented Java/Hessian features.
+func TestCompatibilityResourceRead(t *testing.T) {
+	cs := connectSDK(t, true)
+	res, err := cs.ReadResource(context.Background(), &mcpsdk.ReadResourceParams{URI: "sofarpc://compatibility"})
+	if err != nil {
+		t.Fatalf("read resource: %v", err)
+	}
+	if len(res.Contents) == 0 {
+		t.Fatalf("resource returned no contents")
+	}
+	c := res.Contents[0]
+	if c.URI != "sofarpc://compatibility" {
+		t.Errorf("content uri = %q, want sofarpc://compatibility", c.URI)
+	}
+	if !json.Valid([]byte(c.Text)) {
+		t.Fatalf("compatibility content is not valid JSON: %s", c.Text)
+	}
+	for _, want := range []string{"BigDecimal", "java.time", "byte[]"} {
+		if !strings.Contains(c.Text, want) {
+			t.Errorf("compatibility summary missing %q", want)
+		}
+	}
+}
+
+// TestConfigSaveDryRunDoesNotWrite pins the Sprint 4 write-safety preview: a config save
+// with dryRun=true validates and echoes what would be written, but does not touch
+// config.json (a later config_list must not show it).
+func TestConfigSaveDryRunDoesNotWrite(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	cs := connectSDK(t, true)
+	ctx := context.Background()
+	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name:      "sofarpc_config_save_project",
+		Arguments: map[string]any{"name": "dryproj", "workspaceRoot": t.TempDir(), "dryRun": true},
+	})
+	if err != nil {
+		t.Fatalf("dry-run save: %v", err)
+	}
+	structured, _ := json.Marshal(res.StructuredContent)
+	if res.IsError || !strings.Contains(string(structured), `"dryRun":true`) {
+		t.Fatalf("dry-run should succeed and report dryRun:true: %s", structured)
+	}
+	list, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "sofarpc_config_list"})
+	if err != nil {
+		t.Fatalf("config list: %v", err)
+	}
+	body, _ := json.Marshal(list.StructuredContent)
+	if strings.Contains(string(body), "dryproj") {
+		t.Errorf("dry-run must not persist the project, but config_list shows it: %s", body)
+	}
+}
+
 // TestRunStdioHandshake drives the real Run() path over injected streams (the
 // production transport), exercising a full initialize → tools/list → tools/call
 // handshake and a clean exit 0 on EOF — the stdio-level integration coverage that

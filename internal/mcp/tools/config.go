@@ -25,6 +25,7 @@ type ConfigSaveProjectArgs struct {
 	WorkspaceRoot   string   `json:"workspaceRoot"`
 	ServicePrefixes []string `json:"servicePrefixes,omitempty"`
 	Overwrite       bool     `json:"overwrite,omitempty"`
+	DryRun          bool     `json:"dryRun,omitempty"`
 }
 
 var configSaveProjectInputSchema = json.RawMessage(`{
@@ -35,7 +36,8 @@ var configSaveProjectInputSchema = json.RawMessage(`{
     "name": {"type": "string", "description": "Project name."},
     "workspaceRoot": {"type": "string", "description": "Absolute or ~-relative local source root."},
     "servicePrefixes": {"type": "array", "items": {"type": "string"}, "description": "Optional Java service package prefixes."},
-    "overwrite": {"type": "boolean", "description": "Allow replacing an existing project."}
+    "overwrite": {"type": "boolean", "description": "Allow replacing an existing project."},
+    "dryRun": {"type": "boolean", "description": "Validate and preview the entry without writing config.json."}
   }
 }`)
 
@@ -51,6 +53,7 @@ type ConfigSaveServerArgs struct {
 	AppName     string            `json:"appName,omitempty"`
 	Attachments map[string]string `json:"attachments,omitempty"`
 	Overwrite   bool              `json:"overwrite,omitempty"`
+	DryRun      bool              `json:"dryRun,omitempty"`
 }
 
 var configSaveServerInputSchema = json.RawMessage(`{
@@ -65,7 +68,8 @@ var configSaveServerInputSchema = json.RawMessage(`{
     "timeoutMs": {"type": "integer", "description": "Default total timeout in milliseconds."},
     "appName": {"type": "string", "description": "SofaRPC consumer app name."},
     "attachments": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional static SofaRPC attachments."},
-    "overwrite": {"type": "boolean", "description": "Allow replacing an existing server."}
+    "overwrite": {"type": "boolean", "description": "Allow replacing an existing server."},
+    "dryRun": {"type": "boolean", "description": "Validate and preview the entry without writing config.json."}
   }
 }`)
 

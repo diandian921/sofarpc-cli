@@ -83,6 +83,10 @@ func AddConfigSaveProject(srv *mcpsdk.Server, stderr io.Writer) {
 		if a.Name == "" || a.WorkspaceRoot == "" {
 			return app.RenderFailure(app.CodeBadRequest, "name and workspaceRoot are required", nil), ""
 		}
+		if a.DryRun {
+			preview := appconfig.Project{WorkspaceRoot: a.WorkspaceRoot, ServicePrefixes: a.ServicePrefixes}
+			return okResult(map[string]interface{}{"dryRun": true, "name": a.Name, "project": preview}), "Dry run; config.json not modified."
+		}
 		path, lock, err := configPaths()
 		if err != nil {
 			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
@@ -120,6 +124,9 @@ func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
 			TimeoutMS:   intOr(a.TimeoutMS, appconfig.DefaultServerTimeoutMS),
 			AppName:     valueOr(a.AppName, appconfig.DefaultServerAppName),
 			Attachments: a.Attachments,
+		}
+		if a.DryRun {
+			return okResult(map[string]interface{}{"dryRun": true, "name": a.Name, "server": publicServer(srv)}), "Dry run; config.json not modified."
 		}
 		path, lock, err := configPaths()
 		if err != nil {

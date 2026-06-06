@@ -46,5 +46,6 @@ func newSDKServer(appSvc *app.Service, version string, writeEnabled bool, stderr
 		tools.AddConfigRemoveServer(srv, stderr)
 	}
 	tools.AddInvokeWorkflowPrompt(srv)
+	tools.AddCompatibilityResource(srv)
 	return srv
 }
