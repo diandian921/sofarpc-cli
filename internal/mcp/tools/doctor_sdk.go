@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -84,19 +85,44 @@ func AddDoctor(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
 // doctorResultSDK mirrors doctorResult but returns the bare app.Result + summary
 // for the SDK adapter (the legacy doctorResult returns a server.Result).
 func doctorResultSDK(checks []map[string]interface{}) (app.Result, string) {
-	ok := true
+	var failed []string
 	for _, c := range checks {
 		if c["status"] == "failed" {
-			ok = false
-			break
+			if name, _ := c["name"].(string); name != "" {
+				failed = append(failed, name)
+			}
 		}
 	}
-	text := "Doctor completed."
-	code := app.CodeSuccess
-	if !ok {
-		text = "Doctor found issues."
-		code = app.CodeInternalError
-	}
 	body, _ := json.Marshal(map[string]interface{}{"checks": checks})
-	return app.Result{OK: ok, Code: code, Data: body}, text
+	if len(failed) == 0 {
+		return app.Result{OK: true, Code: app.CodeSuccess, Data: body}, "Doctor completed."
+	}
+	// A failed check is a real isError result, so honor the universal recovery
+	// contract: keep data.checks and attach an explicit nextTool + recovery. The
+	// code-derived advice for INTERNAL_ERROR would point back at sofarpc_doctor
+	// itself, so the recovery tool is chosen from the first failed check instead.
+	return app.Result{
+		OK:   false,
+		Code: app.CodeInternalError,
+		Data: body,
+		Error: &app.ResultError{
+			Message:  "doctor found failing checks: " + strings.Join(failed, ", "),
+			NextTool: doctorRecoveryTool(failed[0]),
+			Recovery: "Review data.checks; each failed check names the config or source problem to fix.",
+			Details:  map[string]interface{}{"failedChecks": failed},
+		},
+	}, "Doctor found issues."
+}
+
+// doctorRecoveryTool maps the first failed doctor check to the tool that best helps fix
+// it. Most doctor failures are config/source, so it defaults to sofarpc_config_list.
+func doctorRecoveryTool(check string) string {
+	switch check {
+	case "server":
+		return "sofarpc_resolve"
+	case "source_schema", "describe":
+		return "sofarpc_describe"
+	default: // config, project
+		return "sofarpc_config_list"
+	}
 }

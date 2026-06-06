@@ -253,6 +253,44 @@ func TestToolSuccessOutputsMatchTheirSchema(t *testing.T) {
 	}
 }
 
+// TestDoctorFailureCarriesRecoveryEnvelope pins that a doctor run with a failing check
+// is a real isError result that still honors the universal contract: an error envelope
+// with nextTool + recovery, while preserving data.checks (so the new initialize
+// guidance and README's "isError plus a recovery nextTool/recovery" hold for doctor too).
+func TestDoctorFailureCarriesRecoveryEnvelope(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	cs := connectSDK(t, true)
+	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "sofarpc_doctor",
+		Arguments: map[string]any{"server": "does-not-exist"},
+	})
+	if err != nil {
+		t.Fatalf("call doctor: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("doctor with a failing check should be isError")
+	}
+	structured, _ := json.Marshal(res.StructuredContent)
+	var env struct {
+		Error *struct {
+			NextTool string `json:"nextTool"`
+			Recovery string `json:"recovery"`
+		} `json:"error"`
+		Data struct {
+			Checks []map[string]any `json:"checks"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(structured, &env); err != nil {
+		t.Fatalf("structuredContent: %v", err)
+	}
+	if env.Error == nil || env.Error.NextTool == "" || env.Error.Recovery == "" {
+		t.Errorf("doctor failure must carry error.nextTool + recovery: %s", structured)
+	}
+	if len(env.Data.Checks) == 0 {
+		t.Errorf("doctor failure must still carry data.checks: %s", structured)
+	}
+}
+
 // TestRunStdioHandshake drives the real Run() path over injected streams (the
 // production transport), exercising a full initialize → tools/list → tools/call
 // handshake and a clean exit 0 on EOF — the stdio-level integration coverage that

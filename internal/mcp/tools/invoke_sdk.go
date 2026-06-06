@@ -11,8 +11,8 @@ import (
 
 // AddInvoke registers sofarpc_invoke. SDK-native replacement for InvokeTool. The
 // shared adaptTool decodes arguments with UseNumber + DisallowUnknownFields, so Java
-// long values keep full precision and missing service/method plus the types/args
-// aliases are handled by the handler with friendly recovery hints — mirroring the
+// long values keep full precision and a missing service/method (or any unknown
+// argument) is handled by the handler with friendly recovery hints — mirroring the
 // legacy framework rather than the SDK's generic schema validation.
 func AddInvoke(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 	srv.AddTool(&mcpsdk.Tool{

@@ -20,6 +20,8 @@ sofarpc_resolve
 
 注意：**新增 0 个工具不等于 0 风险**。例如后文的 `planId` 方案虽然不增加 tool，但仍引入服务端状态、TTL/LRU、过期语义、脱敏边界和 Java long 精度测试；它的成本主要来自状态管理，而不是工具数量。因此它仍放在后续验证项里。
 
+> **状态（2026-06-06，分支 `feat/agent-first-contract`）**：下表 **P0 三项已落地（Sprint 1）** —— per-tool outputSchema、instructions 失败恢复路径、invoke 别名收敛，并补了结构性 + 语义性（jsonschema-go）+ okResult 不变式 guard 测试。**下面对应的 P0 小节保留为「改动前」的设计记录**（其「当前问题」描述的是 Sprint 1 之前的状态），勿据此重复规划。P1/P2 仍待做。
+
 ## MCP 依据
 
 这些改进遵循 MCP 的现有 primitives，不依赖私有协议：
@@ -46,6 +48,8 @@ sofarpc_resolve
 | P2 | Progress granularity | 让长耗时步骤更可观察 |
 
 ## P0: Per-Tool Output Schema / Guard Tests
+
+> ✅ **已在 Sprint 1 落地**(`render.go` 的 `resultOutputSchemaWithData` + 每工具 data schema)。本节为改动前设计记录:下面「当前问题」里「所有工具共享一份 `resultOutputSchema`」描述的是 Sprint 1 之前的状态。
 
 ### 当前问题
 
@@ -126,6 +130,8 @@ var invokePlanDataSchema = json.RawMessage(`{
 
 ## P0: Server Instructions Failure Path
 
+> ✅ **已在 Sprint 1 落地**(`sdkserver.go` 的 `serverInstructions` 已含 `error.nextTool` / `error.recovery` + doctor/probe)。本节为改动前设计记录。
+
 ### 当前问题
 
 `serverInstructions` 只描述了 happy path：
@@ -161,6 +167,8 @@ Use sofarpc_doctor or sofarpc_probe to diagnose config/connectivity issues.
 - instructions 不包含任何本地路径、配置值或 attachments。
 
 ## P0: Invoke Schema / Contract 收敛
+
+> ✅ **已在 Sprint 1 落地**:`invoke.go` 已删除 `types` / `args` 别名,保留 `required:["service","method"]`。本节为改动前设计记录:下面「当前问题」描述的别名是 Sprint 1 之前的状态。
 
 ### 当前问题
 
