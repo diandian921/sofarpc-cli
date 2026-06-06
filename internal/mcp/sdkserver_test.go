@@ -565,6 +565,82 @@ func TestConfigSaveDryRunDoesNotWrite(t *testing.T) {
 	}
 }
 
+// TestDescribeEmitsStagedProgress pins the Sprint 4 progress granularity: with a
+// progress token, sofarpc_describe reports intermediate stages (index ready 0.5,
+// searching 0.8, done 1.0) so a slow first-index build does not look frozen.
+func TestDescribeEmitsStagedProgress(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	ws := t.TempDir()
+	src := filepath.Join(ws, "src", "main", "java", "com", "example", "user")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	java := "package com.example.user;\n\npublic interface UserFacade {\n    String getUser(String userId);\n}\n"
+	if err := os.WriteFile(filepath.Join(src, "UserFacade.java"), []byte(java), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := appconfig.DefaultPath()
+	lock, _ := appconfig.DefaultLockPath()
+	if _, err := appconfig.Update(path, lock, func(c *appconfig.Config) error {
+		_, err := c.AddProject("user", ws, []string{"com.example."}, false)
+		return err
+	}); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	ctx := context.Background()
+	serverT, clientT := mcpsdk.NewInMemoryTransports()
+	srv := newSDKServer(app.New(nil), "test", true, io.Discard)
+	if _, err := srv.Connect(ctx, serverT, nil); err != nil {
+		t.Fatalf("server connect: %v", err)
+	}
+	var mu sync.Mutex
+	var progresses []float64
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "t", Version: "0"}, &mcpsdk.ClientOptions{
+		ProgressNotificationHandler: func(_ context.Context, req *mcpsdk.ProgressNotificationClientRequest) {
+			mu.Lock()
+			progresses = append(progresses, req.Params.Progress)
+			mu.Unlock()
+		},
+	})
+	cs, err := client.Connect(ctx, clientT, nil)
+	if err != nil {
+		t.Fatalf("client connect: %v", err)
+	}
+	defer cs.Close()
+
+	params := &mcpsdk.CallToolParams{
+		Name:      "sofarpc_describe",
+		Arguments: map[string]any{"project": "user", "query": "get user"},
+		Meta:      mcpsdk.Meta{"progressToken": "p1"},
+	}
+	if _, err := cs.CallTool(ctx, params); err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+
+	has := func(vals []float64, want float64) bool {
+		for _, v := range vals {
+			if v == want {
+				return true
+			}
+		}
+		return false
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		got := append([]float64(nil), progresses...)
+		mu.Unlock()
+		if has(got, 1.0) || time.Now().After(deadline) {
+			if !has(got, 0.5) || !has(got, 0.8) || !has(got, 1.0) {
+				t.Errorf("describe should emit staged progress including 0.5/0.8/1.0, got %v", got)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestRunStdioHandshake drives the real Run() path over injected streams (the
 // production transport), exercising a full initialize → tools/list → tools/call
 // handshake and a clean exit 0 on EOF — the stdio-level integration coverage that

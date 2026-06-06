@@ -28,9 +28,12 @@ func AddInvoke(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 		if err != nil {
 			return app.RenderFailure(app.CodeBadRequest, err.Error(), app.DomainErrorDetails(err)), ""
 		}
+		notifyProgress(ctx, req, "plan resolved", 0.25)
 		notifyProgress(ctx, req, "invoking remote method", 0.5)
 		result := app.RenderExecution(appSvc.ExecuteInvocation(ctx, plan))
 		result.RequestID = app.NewRequestID("invoke")
+		notifyProgress(ctx, req, "response decoded", 0.8)
+		notifyProgress(ctx, req, "done", 1.0)
 		return result, "Invoke completed."
 	}))
 }

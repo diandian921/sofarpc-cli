@@ -45,8 +45,10 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 		if err != nil {
 			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
 		}
+		notifyProgress(ctx, req, "source index ready", 0.5)
 		data := map[string]interface{}{"project": projectName}
 		var summary []string
+		notifyProgress(ctx, req, "searching source", 0.8)
 		if a.Query != "" {
 			limit := a.Limit
 			if limit <= 0 {
@@ -65,6 +67,7 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 			data["description"] = publicDescription(desc)
 			summary = append(summary, fmt.Sprintf("%d method(s) described", len(desc.Methods)))
 		}
+		notifyProgress(ctx, req, "done", 1.0)
 		return okResult(data), strings.Join(summary, "; ") + "."
 	}))
 }
