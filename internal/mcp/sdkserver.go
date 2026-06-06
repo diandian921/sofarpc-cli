@@ -45,5 +45,6 @@ func newSDKServer(appSvc *app.Service, version string, writeEnabled bool, stderr
 		tools.AddConfigRemoveProject(srv, stderr)
 		tools.AddConfigRemoveServer(srv, stderr)
 	}
+	tools.AddInvokeWorkflowPrompt(srv)
 	return srv
 }

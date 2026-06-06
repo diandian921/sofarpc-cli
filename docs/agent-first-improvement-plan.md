@@ -20,7 +20,7 @@ sofarpc_resolve
 
 注意：**新增 0 个工具不等于 0 风险**。例如后文的 `planId` 方案虽然不增加 tool，但仍引入服务端状态、TTL/LRU、过期语义、脱敏边界和 Java long 精度测试；它的成本主要来自状态管理，而不是工具数量。因此它仍放在后续验证项里。
 
-> **状态（2026-06-06，分支 `feat/agent-first-contract`）**：下表 **P0 三项已落地（Sprint 1）** —— per-tool outputSchema、instructions 失败恢复路径、invoke 别名收敛，并补了结构性 + 语义性（jsonschema-go）+ okResult 不变式 guard 测试。**下面对应的 P0 小节保留为「改动前」的设计记录**（其「当前问题」描述的是 Sprint 1 之前的状态），勿据此重复规划。P1/P2 仍待做。
+> **状态（2026-06-06，分支 `feat/agent-first-contract`）**：下表 **P0 三项已落地（Sprint 1）** —— per-tool outputSchema、instructions 失败恢复路径、invoke 别名收敛，并补了结构性 + 语义性（jsonschema-go）+ okResult 不变式 guard 测试。**下面对应的 P0 小节保留为「改动前」的设计记录**（其「当前问题」描述的是 Sprint 1 之前的状态），勿据此重复规划。**Sprint 2(describe/resolve 候选)、Sprint 3(prompt template `sofarpc.invoke_workflow`)也已落地**;剩余 P2(safe resources、大结果 text mirror 降级、progress 细化)与状态型 session/replay 仍待做。
 
 ## MCP 依据
 

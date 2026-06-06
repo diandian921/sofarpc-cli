@@ -438,6 +438,61 @@ func TestAmbiguousServerErrorListsCandidates(t *testing.T) {
 	}
 }
 
+// TestInvokeWorkflowPromptListed pins the Sprint 3 prompt: the server advertises the
+// prompts capability and the sofarpc.invoke_workflow template with a required `intent`.
+func TestInvokeWorkflowPromptListed(t *testing.T) {
+	cs := connectSDK(t, true)
+	res, err := cs.ListPrompts(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list prompts: %v", err)
+	}
+	var found *mcpsdk.Prompt
+	for _, p := range res.Prompts {
+		if p.Name == "sofarpc.invoke_workflow" {
+			found = p
+		}
+	}
+	if found == nil {
+		t.Fatalf("sofarpc.invoke_workflow not listed: %+v", res.Prompts)
+	}
+	var intent *mcpsdk.PromptArgument
+	for _, a := range found.Arguments {
+		if a.Name == "intent" {
+			intent = a
+		}
+	}
+	if intent == nil || !intent.Required {
+		t.Errorf("intent must be a required prompt argument, got %+v", found.Arguments)
+	}
+}
+
+// TestInvokeWorkflowPromptGet pins that prompts/get returns a user-role workflow message
+// templated with the caller's intent and naming the recommended tools + failure path.
+func TestInvokeWorkflowPromptGet(t *testing.T) {
+	cs := connectSDK(t, true)
+	res, err := cs.GetPrompt(context.Background(), &mcpsdk.GetPromptParams{
+		Name:      "sofarpc.invoke_workflow",
+		Arguments: map[string]string{"intent": "look up user u001", "server": "user-test"},
+	})
+	if err != nil {
+		t.Fatalf("get prompt: %v", err)
+	}
+	if len(res.Messages) == 0 {
+		t.Fatalf("prompt returned no messages")
+	}
+	var text string
+	for _, m := range res.Messages {
+		if tc, ok := m.Content.(*mcpsdk.TextContent); ok {
+			text += tc.Text
+		}
+	}
+	for _, want := range []string{"look up user u001", "sofarpc_resolve", "sofarpc_invoke_plan", "nextTool"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("workflow message missing %q; got:\n%s", want, text)
+		}
+	}
+}
+
 // TestRunStdioHandshake drives the real Run() path over injected streams (the
 // production transport), exercising a full initialize → tools/list → tools/call
 // handshake and a clean exit 0 on EOF — the stdio-level integration coverage that

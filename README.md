@@ -227,13 +227,15 @@ The JSON-RPC protocol layer is the official `modelcontextprotocol/go-sdk` (stdio
 
 `sofarpc mcp` negotiates the MCP protocol version at `initialize`, advertising (newest first): `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`. An unknown requested version degrades to the newest supported version. Requests before the `initialize` / `notifications/initialized` handshake are rejected with `-32002`.
 
-Declared capabilities: `tools` (static list) and `logging` (`notifications/message`). The async tools (`sofarpc_invoke`, `sofarpc_invoke_plan`, `sofarpc_probe`, `sofarpc_describe`, `sofarpc_doctor`) honor `notifications/cancelled` (a cancelled request receives no final response). Of these, `sofarpc_invoke`, `sofarpc_doctor`, and `sofarpc_describe` emit `notifications/progress` when the client supplies a `progressToken` (accepted only as a JSON string or integer).
+Declared capabilities: `tools` (static list), `prompts`, and `logging` (`notifications/message`). The async tools (`sofarpc_invoke`, `sofarpc_invoke_plan`, `sofarpc_probe`, `sofarpc_describe`, `sofarpc_doctor`) honor `notifications/cancelled` (a cancelled request receives no final response). Of these, `sofarpc_invoke`, `sofarpc_doctor`, and `sofarpc_describe` emit `notifications/progress` when the client supplies a `progressToken` (accepted only as a JSON string or integer).
 
 Every tool declares a per-tool `outputSchema` that describes the shape of its own `data` (not just the shared envelope), and returns its result both as `structuredContent` and as that same JSON serialized into a `text` content block, so a client that does not read structured content still receives the full result. The one-line human summary is carried in `_meta.summary`, alongside `requestId` and `elapsedMs`.
 
 Input and output schemas are advisory host/LLM hints. Argument and business validation run in the handler and surface as the `app.Result` envelope (`isError` plus a recovery `nextTool` / `recovery`), never as a JSON-RPC protocol error; an unknown argument is rejected as an invalid-arguments envelope. `sofarpc_invoke` accepts only the advertised `paramTypes` / `orderedArguments` names — the former `types` / `args` aliases were removed.
 
-Not supported (intentionally not advertised): `resources`, `prompts`, `roots`, `sampling`, `elicitation`. The config file is not exposed as a resource because it can contain credential-bearing attachments.
+The `prompts` capability advertises one user-selected workflow, `sofarpc.invoke_workflow` (the host surfaces it as a slash command or template; it is never auto-executed). Given an `intent` (and optional `server`/`project`/`service`/`method`/`serviceQuery`), it renders the recommended resolve → describe → invoke_plan → invoke path with the failure-recovery contract.
+
+Not supported (intentionally not advertised): `resources`, `roots`, `sampling`, `elicitation`. The config file is not exposed as a resource because it can contain credential-bearing attachments.
 
 ## Troubleshooting
 
