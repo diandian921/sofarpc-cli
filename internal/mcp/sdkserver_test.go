@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -288,6 +290,81 @@ func TestDoctorFailureCarriesRecoveryEnvelope(t *testing.T) {
 	}
 	if len(env.Data.Checks) == 0 {
 		t.Errorf("doctor failure must still carry data.checks: %s", structured)
+	}
+}
+
+// TestDescribeCandidatesAreFlattenedAndScored pins the Sprint 2 describe enhancement:
+// query-mode candidates carry agent-ready paramTypes / parameterNames (flattened out of
+// the parameters array so they can be copied straight into an invoke) plus the score
+// and a reason, instead of only the raw schema.Method shape.
+func TestDescribeCandidatesAreFlattenedAndScored(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	ws := t.TempDir()
+	src := filepath.Join(ws, "src", "main", "java", "com", "example", "user")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	java := "package com.example.user;\n\npublic interface UserFacade {\n    String getUser(String userId);\n}\n"
+	if err := os.WriteFile(filepath.Join(src, "UserFacade.java"), []byte(java), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path, err := appconfig.DefaultPath()
+	if err != nil {
+		t.Fatalf("default path: %v", err)
+	}
+	lock, err := appconfig.DefaultLockPath()
+	if err != nil {
+		t.Fatalf("lock path: %v", err)
+	}
+	if _, err := appconfig.Update(path, lock, func(c *appconfig.Config) error {
+		_, err := c.AddProject("user", ws, []string{"com.example."}, false)
+		return err
+	}); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	cs := connectSDK(t, true)
+	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "sofarpc_describe",
+		Arguments: map[string]any{"project": "user", "query": "get user"},
+	})
+	if err != nil {
+		t.Fatalf("describe: %v", err)
+	}
+	structured, _ := json.Marshal(res.StructuredContent)
+	var env struct {
+		Data struct {
+			Candidates []struct {
+				Service        string   `json:"service"`
+				Method         string   `json:"method"`
+				ParamTypes     []string `json:"paramTypes"`
+				ParameterNames []string `json:"parameterNames"`
+				Score          int      `json:"score"`
+				Reason         string   `json:"reason"`
+			} `json:"candidates"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(structured, &env); err != nil {
+		t.Fatalf("structuredContent: %v", err)
+	}
+	if len(env.Data.Candidates) == 0 {
+		t.Fatalf("expected a candidate for getUser: %s", structured)
+	}
+	c := env.Data.Candidates[0]
+	if c.Method != "getUser" {
+		t.Errorf("candidate method = %q, want getUser", c.Method)
+	}
+	if len(c.ParameterNames) != 1 || c.ParameterNames[0] != "userId" {
+		t.Errorf("parameterNames = %v, want [userId]", c.ParameterNames)
+	}
+	if len(c.ParamTypes) != 1 {
+		t.Errorf("paramTypes = %v, want one entry", c.ParamTypes)
+	}
+	if c.Score <= 0 {
+		t.Errorf("score = %d, want > 0", c.Score)
+	}
+	if c.Reason == "" {
+		t.Errorf("candidate reason should explain the match: %s", structured)
 	}
 }
 

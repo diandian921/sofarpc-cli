@@ -2,6 +2,7 @@ package tools
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 	"github.com/diandian921/sofarpc-mcp/internal/schema"
@@ -117,6 +118,46 @@ func publicMethods(methods []schema.Method) []schema.Method {
 	copy(out, methods)
 	for i := range out {
 		out[i].Imports = nil
+	}
+	return out
+}
+
+// publicSearchCandidate flattens a scored search hit into an agent-ready candidate:
+// paramTypes / parameterNames are lifted out of the parameters array so a caller can
+// copy them straight into an invoke, the matched-token evidence becomes a single
+// reason string, and internal bookkeeping (imports, package, sourceHash) is dropped.
+func publicSearchCandidate(m schema.Method) map[string]interface{} {
+	paramTypes := make([]string, len(m.Parameters))
+	paramNames := make([]string, len(m.Parameters))
+	for i, p := range m.Parameters {
+		paramTypes[i] = p.Type
+		paramNames[i] = p.Name
+	}
+	candidate := map[string]interface{}{
+		"service":        m.Service,
+		"method":         m.Method,
+		"returnType":     m.ReturnType,
+		"paramTypes":     paramTypes,
+		"parameterNames": paramNames,
+		"score":          m.Score,
+		"reason":         strings.Join(m.Evidence, "; "),
+		"sourceFile":     m.SourceFile,
+	}
+	if m.Summary != "" {
+		candidate["summary"] = m.Summary
+	}
+	if m.OutOfPrefix {
+		candidate["outOfPrefix"] = true
+	}
+	return candidate
+}
+
+// publicSearchCandidates maps a ranked search result list into agent-ready candidates,
+// preserving the score order schema.Search already established.
+func publicSearchCandidates(methods []schema.Method) []map[string]interface{} {
+	out := make([]map[string]interface{}, len(methods))
+	for i, m := range methods {
+		out[i] = publicSearchCandidate(m)
 	}
 	return out
 }

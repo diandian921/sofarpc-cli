@@ -54,7 +54,7 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 			}
 			results := schema.Search(idx, a.Query, limit, a.IncludeOutOfPrefix)
 			data["query"] = a.Query
-			data["candidates"] = publicMethods(results)
+			data["candidates"] = publicSearchCandidates(results)
 			summary = append(summary, fmt.Sprintf("%d candidate(s) found", len(results)))
 		}
 		if a.Service != "" {
