@@ -641,6 +641,34 @@ func TestDescribeEmitsStagedProgress(t *testing.T) {
 	}
 }
 
+// TestConfigSaveDryRunValidates pins the codex follow-up: a dry run must run the same
+// validation as a real save (not just echo inputs), so a duplicate without overwrite is
+// reported as an error during dry run instead of falsely previewing success.
+func TestConfigSaveDryRunValidates(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	cs := connectSDK(t, true)
+	ctx := context.Background()
+	ws := t.TempDir()
+	seed, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name:      "sofarpc_config_save_project",
+		Arguments: map[string]any{"name": "exists", "workspaceRoot": ws},
+	})
+	if err != nil || seed.IsError {
+		t.Fatalf("seed save failed: err=%v", err)
+	}
+	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name:      "sofarpc_config_save_project",
+		Arguments: map[string]any{"name": "exists", "workspaceRoot": ws, "dryRun": true},
+	})
+	if err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if !res.IsError {
+		structured, _ := json.Marshal(res.StructuredContent)
+		t.Errorf("dry-run of a duplicate without overwrite must fail validation, got success: %s", structured)
+	}
+}
+
 // TestRunStdioHandshake drives the real Run() path over injected streams (the
 // production transport), exercising a full initialize → tools/list → tools/call
 // handshake and a clean exit 0 on EOF — the stdio-level integration coverage that

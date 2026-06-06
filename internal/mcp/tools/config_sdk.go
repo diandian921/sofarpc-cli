@@ -84,8 +84,15 @@ func AddConfigSaveProject(srv *mcpsdk.Server, stderr io.Writer) {
 			return app.RenderFailure(app.CodeBadRequest, "name and workspaceRoot are required", nil), ""
 		}
 		if a.DryRun {
-			preview := appconfig.Project{WorkspaceRoot: a.WorkspaceRoot, ServicePrefixes: a.ServicePrefixes}
-			return okResult(map[string]interface{}{"dryRun": true, "name": a.Name, "project": preview}), "Dry run; config.json not modified."
+			cfg, err := loadConfig()
+			if err != nil {
+				return configFailureResult(err), ""
+			}
+			project, err := cfg.AddProject(a.Name, a.WorkspaceRoot, a.ServicePrefixes, a.Overwrite)
+			if err != nil {
+				return configFailureResult(err), ""
+			}
+			return okResult(map[string]interface{}{"dryRun": true, "name": a.Name, "project": project}), "Dry run; config.json not modified."
 		}
 		path, lock, err := configPaths()
 		if err != nil {
@@ -126,7 +133,15 @@ func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
 			Attachments: a.Attachments,
 		}
 		if a.DryRun {
-			return okResult(map[string]interface{}{"dryRun": true, "name": a.Name, "server": publicServer(srv)}), "Dry run; config.json not modified."
+			cfg, err := loadConfig()
+			if err != nil {
+				return configFailureResult(err), ""
+			}
+			saved, err := cfg.AddServer(a.Name, srv, a.Overwrite)
+			if err != nil {
+				return configFailureResult(err), ""
+			}
+			return okResult(map[string]interface{}{"dryRun": true, "name": a.Name, "server": publicServer(saved)}), "Dry run; config.json not modified."
 		}
 		path, lock, err := configPaths()
 		if err != nil {
