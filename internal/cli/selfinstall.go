@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -235,7 +236,17 @@ func fileExists(path string) bool {
 // optional semver prerelease/build metadata). It returns (-1|0|1, true) when
 // both parse, or (0, false) when either is not semver such as "dev" or a git
 // describe string.
+// gitDescribeDev matches a git-describe development version suffix ("-<commits>-g<hash>",
+// optionally "-dirty"), e.g. v0.1.0-beta.9-18-gdd32f79. These do not order cleanly against
+// release tags under semver precedence (semver ranks a numeric prerelease identifier below
+// an alphanumeric one, so beta.10 sorts below beta.9-18-gHASH). Treating them as not
+// comparable keeps the downgrade guard from wrongly refusing a release over a dev build.
+var gitDescribeDev = regexp.MustCompile(`-\d+-g[0-9a-f]+(-dirty)?$`)
+
 func compareSemver(a, b string) (int, bool) {
+	if gitDescribeDev.MatchString(a) || gitDescribeDev.MatchString(b) {
+		return 0, false
+	}
 	pa, oka := parseSemver(a)
 	pb, okb := parseSemver(b)
 	if !oka || !okb {

@@ -281,11 +281,35 @@ func TestCompareSemver(t *testing.T) {
 		{"v1.0.0+build.2", "v1.0.0+build.1", 0, true},
 		{"dev", "v1.0.0", 0, false},
 		{"abc123", "def456", 0, false},
+		// git-describe dev builds ("-<commits>-g<hash>") are not cleanly ordered against
+		// release tags by semver precedence, so they must be reported as not comparable —
+		// otherwise a clean release (beta.10) is wrongly ranked below a dev build of an
+		// earlier tag (beta.9-18-gHASH) and `install` refuses it as a downgrade.
+		{"v0.1.0-beta.10", "v0.1.0-beta.9-18-gdd32f79", 0, false},
+		{"v0.1.0-beta.9-18-gdd32f79", "v0.1.0-beta.9", 0, false},
+		{"v0.1.0-beta.9-18-gabc1234-dirty", "v0.1.0-beta.10", 0, false},
 	}
 	for _, c := range cases {
 		got, usable := compareSemver(c.a, c.b)
 		if usable != c.usable || (usable && got != c.want) {
 			t.Fatalf("compareSemver(%q,%q)=(%d,%v), want (%d,%v)", c.a, c.b, got, usable, c.want, c.usable)
 		}
+	}
+}
+
+// TestDecideInstallAllowsReleaseOverDevBuild guards the install version fix: when the
+// installed binary is a git-describe dev build, installing a clean release tag must
+// proceed instead of being refused as a downgrade.
+func TestDecideInstallAllowsReleaseOverDevBuild(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "sofarpc")
+	if err := os.WriteFile(target, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := binVersion
+	binVersion = func(string, string) (string, error) { return "v0.1.0-beta.9-18-gdd32f79", nil }
+	defer func() { binVersion = orig }()
+	if d := decideInstall("v0.1.0-beta.10", target, false); d != installProceed {
+		t.Errorf("installing release over a dev build = %v, want installProceed", d)
 	}
 }
