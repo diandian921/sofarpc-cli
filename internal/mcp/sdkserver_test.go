@@ -368,6 +368,76 @@ func TestDescribeCandidatesAreFlattenedAndScored(t *testing.T) {
 	}
 }
 
+// TestAmbiguousServerErrorListsCandidates pins the Sprint 2 resolve enhancement: when a
+// server is required but several match, the ENDPOINT_NOT_FOUND error names the candidate
+// servers (server/project/address) so the agent can pick one, instead of only reporting
+// a count. No score is fabricated — there is no query to rank by — and attachments are
+// never included.
+func TestAmbiguousServerErrorListsCandidates(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	path, err := appconfig.DefaultPath()
+	if err != nil {
+		t.Fatalf("default path: %v", err)
+	}
+	lock, err := appconfig.DefaultLockPath()
+	if err != nil {
+		t.Fatalf("lock path: %v", err)
+	}
+	if _, err := appconfig.Update(path, lock, func(c *appconfig.Config) error {
+		if _, err := c.AddProject("user", t.TempDir(), nil, false); err != nil {
+			return err
+		}
+		if _, err := c.AddServer("user-a", appconfig.Server{Address: "127.0.0.1:12200", Project: "user"}, false); err != nil {
+			return err
+		}
+		_, err := c.AddServer("user-b", appconfig.Server{Address: "127.0.0.1:12300", Project: "user"}, false)
+		return err
+	}); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	cs := connectSDK(t, true)
+	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name: "sofarpc_invoke_plan",
+		Arguments: map[string]any{
+			"service": "com.example.S", "method": "m",
+			"paramTypes": []any{"java.lang.String"}, "orderedArguments": []any{"x"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("invoke_plan: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("ambiguous server should be an error result")
+	}
+	structured, _ := json.Marshal(res.StructuredContent)
+	var env struct {
+		Error *struct {
+			Details struct {
+				Kind       string `json:"kind"`
+				Candidates []struct {
+					Server  string `json:"server"`
+					Project string `json:"project"`
+					Address string `json:"address"`
+				} `json:"candidates"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(structured, &env); err != nil {
+		t.Fatalf("structuredContent: %v", err)
+	}
+	if env.Error == nil || env.Error.Details.Kind != "ENDPOINT_NOT_FOUND" {
+		t.Fatalf("expected ENDPOINT_NOT_FOUND: %s", structured)
+	}
+	got := map[string]string{}
+	for _, c := range env.Error.Details.Candidates {
+		got[c.Server] = c.Address
+	}
+	if got["user-a"] != "127.0.0.1:12200" || got["user-b"] != "127.0.0.1:12300" {
+		t.Errorf("error.details.candidates must name both servers with addresses, got %s", structured)
+	}
+}
+
 // TestRunStdioHandshake drives the real Run() path over injected streams (the
 // production transport), exercising a full initialize → tools/list → tools/call
 // handshake and a clean exit 0 on EOF — the stdio-level integration coverage that

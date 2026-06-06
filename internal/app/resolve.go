@@ -97,10 +97,27 @@ func resolveServer(cfg appconfig.Config, project, explicit string, required bool
 	if !required {
 		return "", appconfig.Server{}, false, nil
 	}
+	candidates := serverCandidates(cfg, names)
 	if project != "" {
-		return "", appconfig.Server{}, false, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("server is required because project %q has %d configured servers", project, len(names)), Details: map[string]interface{}{"project": project, "serverCount": len(names)}}
+		return "", appconfig.Server{}, false, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("server is required because project %q has %d configured servers", project, len(names)), Details: map[string]interface{}{"project": project, "serverCount": len(names), "candidates": candidates}}
 	}
-	return "", appconfig.Server{}, false, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("server is required because %d servers are configured", len(names)), Details: map[string]interface{}{"serverCount": len(names)}}
+	return "", appconfig.Server{}, false, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("server is required because %d servers are configured", len(names)), Details: map[string]interface{}{"serverCount": len(names), "candidates": candidates}}
+}
+
+// serverCandidates lists the ambiguous-match servers (name/project/address) so the
+// ENDPOINT_NOT_FOUND recovery can name which servers to choose between. Attachments are
+// deliberately excluded — only the non-secret routing fields are surfaced.
+func serverCandidates(cfg appconfig.Config, names []string) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(names))
+	for _, name := range names {
+		s := cfg.Servers[name]
+		out = append(out, map[string]interface{}{
+			"server":  name,
+			"project": s.Project,
+			"address": s.Address,
+		})
+	}
+	return out
 }
 
 func resolveProject(cfg appconfig.Config, explicit, serverName string) (string, appconfig.Project, error) {
