@@ -44,6 +44,14 @@ func rpcParamTypesForMethod(method schema.Method) []string {
 	return out
 }
 
+// RPCParamTypes returns the normalized RPC identity parameter types for a method — the
+// same wire argTypes the ordered-invocation planner uses. Search/describe candidates
+// advertise these so an agent copying paramTypes into sofarpc_invoke gets
+// "java.lang.String" or the erased FQN, not a raw source token like "String" or "List<Foo>".
+func RPCParamTypes(method schema.Method) []string {
+	return rpcParamTypesForMethod(method)
+}
+
 // resolveGenericType 把短名 + 泛型字符串解析成 resolved-with-generics 完整 FQN。
 // 例:输入 "List<MaterialItem>" + imports{MaterialItem:"com.x.dto.MaterialItem"}
 //

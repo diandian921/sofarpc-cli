@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/diandian921/sofarpc-mcp/internal/app"
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 	"github.com/diandian921/sofarpc-mcp/internal/schema"
 )
@@ -123,14 +124,14 @@ func publicMethods(methods []schema.Method) []schema.Method {
 }
 
 // publicSearchCandidate flattens a scored search hit into an agent-ready candidate:
-// paramTypes / parameterNames are lifted out of the parameters array so a caller can
-// copy them straight into an invoke, the matched-token evidence becomes a single
+// paramTypes are the normalized RPC identity types (app.RPCParamTypes — the same wire
+// argTypes the planner uses, so they are copyable straight into an invoke), parameterNames
+// are lifted out of the parameters array, the matched-token evidence becomes a single
 // reason string, and internal bookkeeping (imports, package, sourceHash) is dropped.
 func publicSearchCandidate(m schema.Method) map[string]interface{} {
-	paramTypes := make([]string, len(m.Parameters))
+	paramTypes := app.RPCParamTypes(m)
 	paramNames := make([]string, len(m.Parameters))
 	for i, p := range m.Parameters {
-		paramTypes[i] = p.Type
 		paramNames[i] = p.Name
 	}
 	candidate := map[string]interface{}{

@@ -357,8 +357,8 @@ func TestDescribeCandidatesAreFlattenedAndScored(t *testing.T) {
 	if len(c.ParameterNames) != 1 || c.ParameterNames[0] != "userId" {
 		t.Errorf("parameterNames = %v, want [userId]", c.ParameterNames)
 	}
-	if len(c.ParamTypes) != 1 {
-		t.Errorf("paramTypes = %v, want one entry", c.ParamTypes)
+	if len(c.ParamTypes) != 1 || c.ParamTypes[0] != "java.lang.String" {
+		t.Errorf("paramTypes = %v, want normalized [java.lang.String] so it is copyable into invoke", c.ParamTypes)
 	}
 	if c.Score <= 0 {
 		t.Errorf("score = %d, want > 0", c.Score)
