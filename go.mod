@@ -3,12 +3,12 @@ module github.com/diandian921/sofarpc-mcp
 go 1.25.0
 
 require (
+	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.2.0
 	github.com/sofastack/sofa-bolt-go v0.0.1
 )
 
 require (
-	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.10 // indirect
 	github.com/lestrrat-go/file-rotatelogs v2.3.0+incompatible // indirect

@@ -18,7 +18,7 @@ func AddResolve(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 		Description:  "Resolve the configured project, server, and invocation endpoint without touching the network.",
 		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  resolveInputSchema,
-		OutputSchema: resultOutputSchema,
+		OutputSchema: resolveOutputSchema,
 	}, adaptTool(stderr, func(ctx context.Context, _ *mcpsdk.CallToolRequest, a ResolveArgs) (app.Result, string) {
 		resolved, err := appSvc.Resolve(ctx, app.ResolveInput{
 			Project:   a.Project,

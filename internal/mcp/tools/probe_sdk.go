@@ -19,7 +19,7 @@ func AddProbe(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 		Description:  probeDescription,
 		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(true)},
 		InputSchema:  probeInputSchema,
-		OutputSchema: resultOutputSchema,
+		OutputSchema: probeOutputSchema,
 	}, adaptTool(stderr, func(ctx context.Context, _ *mcpsdk.CallToolRequest, a ProbeArgs) (app.Result, string) {
 		probe := appSvc.ProbeEndpoint(ctx, app.ProbeInput{
 			Project:   a.Project,

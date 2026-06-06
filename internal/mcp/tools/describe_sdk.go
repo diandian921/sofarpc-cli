@@ -23,7 +23,7 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 		Description:  "Search local Java source or describe methods and DTO fields for a service FQN.",
 		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  describeInputSchema,
-		OutputSchema: resultOutputSchema,
+		OutputSchema: describeOutputSchema,
 	}, adaptTool(stderr, func(ctx context.Context, req *mcpsdk.CallToolRequest, a DescribeArgs) (app.Result, string) {
 		if a.Query == "" && a.Service == "" {
 			return app.RenderFailure(app.CodeBadRequest, "query or service is required", nil), ""

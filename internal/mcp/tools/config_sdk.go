@@ -34,7 +34,7 @@ func AddConfigList(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
 		Description:  "List configured projects and servers from ~/.sofarpc/config.json.",
 		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configListInputSchema,
-		OutputSchema: resultOutputSchema,
+		OutputSchema: configListOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigListArgs) (app.Result, string) {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -78,7 +78,7 @@ func AddConfigSaveProject(srv *mcpsdk.Server, stderr io.Writer) {
 		Description:  "Add or replace a local source project in config.json.",
 		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configSaveProjectInputSchema,
-		OutputSchema: resultOutputSchema,
+		OutputSchema: configSaveProjectOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigSaveProjectArgs) (app.Result, string) {
 		if a.Name == "" || a.WorkspaceRoot == "" {
 			return app.RenderFailure(app.CodeBadRequest, "name and workspaceRoot are required", nil), ""
@@ -108,7 +108,7 @@ func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
 		Description:  "Add or replace a configured RPC server in config.json.",
 		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configSaveServerInputSchema,
-		OutputSchema: resultOutputSchema,
+		OutputSchema: configSaveServerOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigSaveServerArgs) (app.Result, string) {
 		if a.Name == "" || a.Address == "" || a.Project == "" {
 			return app.RenderFailure(app.CodeBadRequest, "name, address and project are required", nil), ""
@@ -146,7 +146,7 @@ func AddConfigRemoveProject(srv *mcpsdk.Server, stderr io.Writer) {
 		Description:  "Remove a project from config.json. Requires confirm=true.",
 		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configRemoveProjectInputSchema,
-		OutputSchema: resultOutputSchema,
+		OutputSchema: configRemoveOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigRemoveProjectArgs) (app.Result, string) {
 		if a.Name == "" {
 			return app.RenderFailure(app.CodeBadRequest, "name is required", nil), ""
@@ -173,7 +173,7 @@ func AddConfigRemoveServer(srv *mcpsdk.Server, stderr io.Writer) {
 		Description:  "Remove a server from config.json. Requires confirm=true.",
 		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configRemoveServerInputSchema,
-		OutputSchema: resultOutputSchema,
+		OutputSchema: configRemoveOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigRemoveServerArgs) (app.Result, string) {
 		if a.Name == "" {
 			return app.RenderFailure(app.CodeBadRequest, "name is required", nil), ""

@@ -7,43 +7,33 @@ import (
 )
 
 // InvokeArgs are the arguments shared by sofarpc_invoke and sofarpc_invoke_plan.
-// paramTypes/orderedArguments are the advertised names; types/args are accepted
-// aliases (declared struct fields, so they decode even though the schema does not
-// list them).
+// Only the schema-advertised names are accepted: the undocumented types/args aliases
+// were removed so the input schema and the handler agree (decodeStrict rejects any
+// other key as an unknown field).
 type InvokeArgs struct {
 	Server           string                 `json:"server,omitempty"`
 	Project          string                 `json:"project,omitempty"`
 	Service          string                 `json:"service"`
 	Method           string                 `json:"method"`
 	ParamTypes       []string               `json:"paramTypes,omitempty"`
-	Types            []string               `json:"types,omitempty"`
 	OrderedArguments []interface{}          `json:"orderedArguments,omitempty"`
-	Args             []interface{}          `json:"args,omitempty"`
 	Arguments        map[string]interface{} `json:"arguments,omitempty"`
 	TimeoutMS        int                    `json:"timeoutMs,omitempty"`
 	RawResult        bool                   `json:"rawResult,omitempty"`
 }
 
 func (a InvokeArgs) toInput() app.InvocationInput {
-	paramTypes := a.ParamTypes
-	if len(paramTypes) == 0 {
-		paramTypes = a.Types
-	}
 	input := app.InvocationInput{
 		Project:    a.Project,
 		Server:     a.Server,
 		Service:    a.Service,
 		Method:     a.Method,
-		ParamTypes: paramTypes,
+		ParamTypes: a.ParamTypes,
 		TimeoutMS:  a.TimeoutMS,
 		RawResult:  a.RawResult,
 	}
-	ordered := a.OrderedArguments
-	if ordered == nil {
-		ordered = a.Args
-	}
-	if ordered != nil {
-		input.OrderedArguments = ordered
+	if a.OrderedArguments != nil {
+		input.OrderedArguments = a.OrderedArguments
 		input.HasOrderedArguments = true
 		return input
 	}

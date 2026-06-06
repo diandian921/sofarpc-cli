@@ -22,7 +22,7 @@ func AddDoctor(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
 		Description:  "Run structured diagnostics for config, project source schema, and invocation prerequisites.",
 		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  doctorInputSchema,
-		OutputSchema: resultOutputSchema,
+		OutputSchema: doctorOutputSchema,
 	}, adaptTool(stderr, func(ctx context.Context, req *mcpsdk.CallToolRequest, a DoctorArgs) (app.Result, string) {
 		var checks []map[string]interface{}
 		addCheck := func(name, status string, details map[string]interface{}) {

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/diandian921/sofarpc-mcp/internal/app"
@@ -98,6 +99,156 @@ func TestSDKAllToolsListed(t *testing.T) {
 		}
 		if r.Annotations.DestructiveHint == nil || *r.Annotations.DestructiveHint {
 			t.Errorf("sofarpc_resolve must advertise destructiveHint:false")
+		}
+	}
+}
+
+// TestServerInstructionsIncludeFailurePath pins the failure-recovery guidance in the
+// initialize instructions: the entry guidance must point agents at the machine-readable
+// recovery fields (error.nextTool / error.recovery) and the diagnostic tools, not just
+// the happy path, so a first failure does not send the agent guessing from prose.
+func TestServerInstructionsIncludeFailurePath(t *testing.T) {
+	cs := connectSDK(t, true)
+	instructions := cs.InitializeResult().Instructions
+	for _, want := range []string{"nextTool", "recovery", "sofarpc_doctor", "sofarpc_probe"} {
+		if !strings.Contains(instructions, want) {
+			t.Errorf("initialize instructions missing %q; got: %s", want, instructions)
+		}
+	}
+}
+
+// TestInvokeRejectsLegacyAliases pins the invoke contract收敛: the undocumented
+// `types` / `args` aliases are removed from InvokeArgs, so passing them is an
+// unknown-field error (the friendly invalid-arguments envelope) instead of a silently
+// accepted hidden contract that tools/list never advertised.
+func TestInvokeRejectsLegacyAliases(t *testing.T) {
+	cs := connectSDK(t, true)
+	for _, alias := range []string{"types", "args"} {
+		res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
+			Name: "sofarpc_invoke_plan",
+			Arguments: map[string]any{
+				"service": "com.example.S", "method": "m", alias: []any{"x"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("%s: unexpected protocol error: %v", alias, err)
+		}
+		structured, _ := json.Marshal(res.StructuredContent)
+		if !res.IsError || !strings.Contains(string(structured), "invalid arguments") {
+			t.Errorf("alias %q must be rejected as an unknown field, got %s", alias, structured)
+		}
+	}
+}
+
+// TestEachToolDataSchemaIsToolSpecific pins the per-tool output contract: every tool
+// must describe its real data.* shape, not the shared bare `data: object`. Without it,
+// tools/list hides what an agent should expect to read back from each tool.
+func TestEachToolDataSchemaIsToolSpecific(t *testing.T) {
+	cs := connectSDK(t, true)
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	for _, tool := range res.Tools {
+		raw, _ := json.Marshal(tool.OutputSchema)
+		var parsed struct {
+			Properties struct {
+				Data struct {
+					Type       string         `json:"type"`
+					Properties map[string]any `json:"properties"`
+				} `json:"data"`
+			} `json:"properties"`
+		}
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			t.Fatalf("%s outputSchema not parseable: %v", tool.Name, err)
+		}
+		if parsed.Properties.Data.Type != "object" {
+			t.Errorf("%s: data schema should be type object, got %q", tool.Name, parsed.Properties.Data.Type)
+		}
+		if len(parsed.Properties.Data.Properties) == 0 {
+			t.Errorf("%s: data still uses the shared bare object schema; declare tool-specific properties", tool.Name)
+		}
+	}
+}
+
+// TestToolSuccessOutputsMatchTheirSchema is the semantic guard behind the structural
+// one: it drives each tool that can succeed without a live RPC to a real result and
+// validates that result against the tool's own advertised OutputSchema, so a wrong or
+// too-strict per-tool schema is caught (raw Server.AddTool does not validate output).
+func TestToolSuccessOutputsMatchTheirSchema(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	path, err := appconfig.DefaultPath()
+	if err != nil {
+		t.Fatalf("default path: %v", err)
+	}
+	lock, err := appconfig.DefaultLockPath()
+	if err != nil {
+		t.Fatalf("lock path: %v", err)
+	}
+	if _, err := appconfig.Update(path, lock, func(c *appconfig.Config) error {
+		if _, err := c.AddProject("user", t.TempDir(), nil, false); err != nil {
+			return err
+		}
+		_, err := c.AddServer("user-test", appconfig.Server{Address: "127.0.0.1:12200", Project: "user"}, false)
+		return err
+	}); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	cs := connectSDK(t, true)
+	ctx := context.Background()
+
+	listed, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	validators := map[string]*jsonschema.Resolved{}
+	for _, tl := range listed.Tools {
+		raw, _ := json.Marshal(tl.OutputSchema)
+		var s jsonschema.Schema
+		if err := json.Unmarshal(raw, &s); err != nil {
+			t.Fatalf("%s outputSchema unmarshal: %v", tl.Name, err)
+		}
+		rs, err := s.Resolve(nil)
+		if err != nil {
+			t.Fatalf("%s outputSchema resolve: %v", tl.Name, err)
+		}
+		validators[tl.Name] = rs
+	}
+
+	cases := []struct {
+		name        string
+		args        map[string]any
+		wantSuccess bool
+	}{
+		{"sofarpc_config_list", nil, true},
+		{"sofarpc_resolve", map[string]any{"server": "user-test"}, true},
+		{"sofarpc_describe", map[string]any{"project": "user", "query": "anything"}, true},
+		{"sofarpc_invoke_plan", map[string]any{
+			"server": "user-test", "service": "com.example.S", "method": "m",
+			"paramTypes": []any{"java.lang.String"}, "orderedArguments": []any{"x"},
+		}, true},
+		{"sofarpc_doctor", map[string]any{"server": "user-test"}, false},
+		{"sofarpc_config_save_project", map[string]any{"name": "p2", "workspaceRoot": t.TempDir()}, true},
+		{"sofarpc_config_save_server", map[string]any{"name": "s2", "address": "127.0.0.1:1", "project": "user"}, true},
+		{"sofarpc_config_remove_server", map[string]any{"name": "s2", "confirm": true}, true},
+		{"sofarpc_config_remove_project", map[string]any{"name": "p2", "confirm": true}, true},
+	}
+	for _, c := range cases {
+		res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: c.name, Arguments: c.args})
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		raw, _ := json.Marshal(res.StructuredContent)
+		if c.wantSuccess && res.IsError {
+			t.Errorf("%s expected success, got error: %s", c.name, raw)
+		}
+		var inst any
+		if err := json.Unmarshal(raw, &inst); err != nil {
+			t.Fatalf("%s structuredContent: %v", c.name, err)
+		}
+		if err := validators[c.name].Validate(inst); err != nil {
+			t.Errorf("%s output violates its advertised schema: %v\n%s", c.name, err, raw)
 		}
 	}
 }

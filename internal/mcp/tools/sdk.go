@@ -100,6 +100,11 @@ func okResult(data interface{}) app.Result {
 	if err != nil {
 		return app.RenderFailure(app.CodeInternalError, err.Error(), nil)
 	}
+	// Every tool's data.* output schema assumes data is a JSON object; refuse a scalar,
+	// array, or null payload rather than emit a result that breaks that contract.
+	if trimmed := bytes.TrimSpace(body); len(trimmed) == 0 || trimmed[0] != '{' {
+		return app.RenderFailure(app.CodeInternalError, "tool data must be a JSON object", nil)
+	}
 	return app.Result{OK: true, Code: app.CodeSuccess, Data: body}
 }
 

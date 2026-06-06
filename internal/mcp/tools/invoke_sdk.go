@@ -21,7 +21,7 @@ func AddInvoke(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 		Description:  "Invoke a SofaRPC method over direct BOLT/Hessian2. Use sofarpc_invoke_plan first to validate arguments without sending a request.",
 		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(true)},
 		InputSchema:  invokeInputSchema,
-		OutputSchema: resultOutputSchema,
+		OutputSchema: invokeOutputSchema,
 	}, adaptTool(stderr, func(ctx context.Context, req *mcpsdk.CallToolRequest, a InvokeArgs) (app.Result, string) {
 		notifyProgress(ctx, req, "resolving plan", 0)
 		plan, err := appSvc.PlanInvocation(ctx, a.toInput())
@@ -45,7 +45,7 @@ func AddInvokePlan(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 		Description:  "Resolve and validate a SofaRPC invocation (endpoint, argument types) without sending a request.",
 		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  invokePlanInputSchema,
-		OutputSchema: resultOutputSchema,
+		OutputSchema: invokePlanOutputSchema,
 	}, adaptTool(stderr, func(ctx context.Context, _ *mcpsdk.CallToolRequest, a InvokeArgs) (app.Result, string) {
 		plan, err := appSvc.PlanInvocation(ctx, a.toInput())
 		if err != nil {
