@@ -108,6 +108,7 @@ var (
   "properties": {
     "result": {},
     "rawResult": {},
+    "resultPathMatched": {"type": "boolean"},
     "assertions": {"type": "array"},
     "warnings": {"type": "array"},
     "diagnostics": {"type": "object"},

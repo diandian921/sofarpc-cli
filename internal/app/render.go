@@ -69,6 +69,7 @@ var adviceByCode = map[string]recoveryAdvice{
 	CodeConnectFailed:               {"sofarpc_probe", "Call sofarpc_probe to check the server address is reachable."},
 	CodeRPCTimeout:                  {"sofarpc_probe", "Call sofarpc_probe to check the server address is reachable."},
 	CodeBadRequest:                  {"sofarpc_describe", "Call sofarpc_describe to confirm the service, method, and argument shape."},
+	CodeAssertionFailed:             {"", "The RPC succeeded but an assertion failed: compare expected vs actual in data.assertions and inspect data.result (set rawResult=true for the full Java object), then adjust the assertions or arguments."},
 	CodeInvokeFailed:                {"sofarpc_doctor", "Call sofarpc_doctor to diagnose config, source schema, and connectivity."},
 	CodeInternalError:               {"sofarpc_doctor", "Call sofarpc_doctor to diagnose config, source schema, and connectivity."},
 	appconfig.CodeConfigInvalid:     {"sofarpc_doctor", "Call sofarpc_doctor to inspect the configuration problem."},

@@ -64,3 +64,34 @@ func TestDecodeStrictRejectsCaseVariant(t *testing.T) {
 		t.Fatalf("exact decode lost data: %+v", ok)
 	}
 }
+
+// TestDecodeStrictParsesAssertionsAndResultPath proves the new assertions/resultPath
+// inputs decode into typed values (path/equals/exists, $.path), and the case-sensitive
+// guard still rejects a capitalized top-level key.
+func TestDecodeStrictParsesAssertionsAndResultPath(t *testing.T) {
+	var a InvokeArgs
+	raw := `{"service":"S","method":"m","resultPath":"$.user.id","assertions":[{"path":"$.status","equals":"ACTIVE"},{"path":"$.name","exists":true}]}`
+	if err := decodeStrict(json.RawMessage(raw), &a); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if a.ResultPath != "$.user.id" {
+		t.Errorf("resultPath = %q", a.ResultPath)
+	}
+	if len(a.Assertions) != 2 {
+		t.Fatalf("expected 2 assertions, got %d", len(a.Assertions))
+	}
+	if a.Assertions[0].Path != "$.status" || a.Assertions[0].Equals != "ACTIVE" {
+		t.Errorf("assertion[0] = %+v", a.Assertions[0])
+	}
+	if a.Assertions[1].Exists == nil || !*a.Assertions[1].Exists {
+		t.Errorf("assertion[1].exists should be true, got %+v", a.Assertions[1])
+	}
+	// An unknown nested key inside an assertion is still rejected.
+	if err := decodeStrict(json.RawMessage(`{"service":"S","method":"m","assertions":[{"path":"$.x","nope":1}]}`), &a); err == nil {
+		t.Error("expected unknown nested assertion field to be rejected")
+	}
+	// The case-sensitive top-level guard still applies to the new field.
+	if err := decodeStrict(json.RawMessage(`{"service":"S","method":"m","ResultPath":"$.x"}`), &a); err == nil {
+		t.Error("expected case-variant ResultPath to be rejected")
+	}
+}

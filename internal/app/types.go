@@ -6,6 +6,7 @@ import (
 
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 	"github.com/diandian921/sofarpc-mcp/internal/javavalue"
+	"github.com/diandian921/sofarpc-mcp/internal/presentation"
 	"github.com/diandian921/sofarpc-mcp/internal/schema"
 )
 
@@ -136,20 +137,24 @@ type InvocationInput struct {
 	NamedArguments      map[string]interface{}
 	TimeoutMS           int
 	RawResult           bool
+	Assertions          []presentation.Assertion
+	ResultPath          string
 }
 
 type InvocationPlan struct {
-	Project     ProjectRef             `json:"project"`
-	Server      string                 `json:"server"`
-	Endpoint    Endpoint               `json:"endpoint"`
-	Service     string                 `json:"service"`
-	Method      MethodSignature        `json:"method"`
-	Arguments   []javavalue.TypedValue `json:"arguments"`
-	Timeout     time.Duration          `json:"-"`
-	TimeoutMS   int                    `json:"timeoutMs"`
-	RawResult   bool                   `json:"rawResult,omitempty"`
-	Warnings    []PlanWarning          `json:"warnings,omitempty"`
-	Diagnostics Diagnostics            `json:"diagnostics,omitempty"`
+	Project     ProjectRef               `json:"project"`
+	Server      string                   `json:"server"`
+	Endpoint    Endpoint                 `json:"endpoint"`
+	Service     string                   `json:"service"`
+	Method      MethodSignature          `json:"method"`
+	Arguments   []javavalue.TypedValue   `json:"arguments"`
+	Timeout     time.Duration            `json:"-"`
+	TimeoutMS   int                      `json:"timeoutMs"`
+	RawResult   bool                     `json:"rawResult,omitempty"`
+	Warnings    []PlanWarning            `json:"warnings,omitempty"`
+	Diagnostics Diagnostics              `json:"diagnostics,omitempty"`
+	Assertions  []presentation.Assertion `json:"-"`
+	ResultPath  string                   `json:"-"`
 }
 
 type InvocationExecution struct {

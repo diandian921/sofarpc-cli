@@ -12,9 +12,9 @@ import (
 )
 
 type Assertion struct {
-	Path   string
-	Equals interface{}
-	Exists *bool
+	Path   string      `json:"path"`
+	Equals interface{} `json:"equals,omitempty"`
+	Exists *bool       `json:"exists,omitempty"`
 }
 
 type AssertionOutcome struct {
@@ -480,6 +480,12 @@ func lookupPath(root interface{}, path string) (interface{}, bool) {
 		}
 	}
 	return current, true
+}
+
+// LookupPath is the exported entry point for $.a.b path extraction, reused by the
+// invoke tool's resultPath to return just a subtree of the flattened result.
+func LookupPath(root interface{}, path string) (interface{}, bool) {
+	return lookupPath(root, path)
 }
 
 func valuesEqual(left, right interface{}) bool {

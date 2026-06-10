@@ -51,16 +51,18 @@ func (s *Service) PlanInvocation(ctx context.Context, input InvocationInput) (In
 	}
 	endpoint := endpointFromServer(serverName, server, timeoutMS)
 	return InvocationPlan{
-		Project:   ProjectRef{Name: projectName, Info: project},
-		Server:    serverName,
-		Endpoint:  endpoint,
-		Service:   input.Service,
-		Method:    MethodSignature{Name: input.Method, ParamTypes: paramTypes},
-		Arguments: args,
-		Timeout:   time.Duration(timeoutMS) * time.Millisecond,
-		TimeoutMS: timeoutMS,
-		RawResult: input.RawResult,
-		Warnings:  warnings,
+		Project:    ProjectRef{Name: projectName, Info: project},
+		Server:     serverName,
+		Endpoint:   endpoint,
+		Service:    input.Service,
+		Method:     MethodSignature{Name: input.Method, ParamTypes: paramTypes},
+		Arguments:  args,
+		Timeout:    time.Duration(timeoutMS) * time.Millisecond,
+		TimeoutMS:  timeoutMS,
+		RawResult:  input.RawResult,
+		Assertions: input.Assertions,
+		ResultPath: input.ResultPath,
+		Warnings:   warnings,
 		Diagnostics: Diagnostics{
 			Timing: map[string]int64{
 				"planMs": time.Since(start).Milliseconds(),
@@ -118,14 +120,16 @@ func (s *Service) planExplicitAddressInvocation(input InvocationInput, start tim
 		return InvocationPlan{}, err
 	}
 	return InvocationPlan{
-		Endpoint:  endpoint,
-		Service:   input.Service,
-		Method:    MethodSignature{Name: input.Method, ParamTypes: append([]string(nil), input.ParamTypes...)},
-		Arguments: args,
-		Timeout:   time.Duration(timeoutMS) * time.Millisecond,
-		TimeoutMS: timeoutMS,
-		RawResult: input.RawResult,
-		Warnings:  warnings,
+		Endpoint:   endpoint,
+		Service:    input.Service,
+		Method:     MethodSignature{Name: input.Method, ParamTypes: append([]string(nil), input.ParamTypes...)},
+		Arguments:  args,
+		Timeout:    time.Duration(timeoutMS) * time.Millisecond,
+		TimeoutMS:  timeoutMS,
+		RawResult:  input.RawResult,
+		Assertions: input.Assertions,
+		ResultPath: input.ResultPath,
+		Warnings:   warnings,
 		Diagnostics: Diagnostics{
 			Timing: map[string]int64{"planMs": time.Since(start).Milliseconds()},
 			Resolution: map[string]interface{}{
@@ -156,13 +160,19 @@ func (s *Service) ExecuteInvocation(ctx context.Context, plan InvocationPlan) In
 			Meta: map[string]interface{}{"runtime": "go"},
 		}
 	}
-	data := map[string]interface{}{
-		"result":      presentation.Flatten(out.AppResponse),
-		"elapsedMs":   out.Elapsed.Milliseconds(),
-		"diagnostics": out.Diagnostics,
-	}
-	if plan.RawResult {
-		data["rawResult"] = out.AppResponse
+	flattened := presentation.Flatten(out.AppResponse)
+	data, failCount := buildInvokeData(flattened, out.AppResponse, plan.RawResult, out.Elapsed.Milliseconds(), out.Diagnostics, plan.Assertions, plan.ResultPath)
+	if failCount > 0 {
+		return InvocationExecution{
+			OK:   false,
+			Code: CodeAssertionFailed,
+			Data: data,
+			Error: &ExecutionError{
+				Message: fmt.Sprintf("%d of %d assertions failed", failCount, len(plan.Assertions)),
+				Details: map[string]interface{}{"service": plan.Service, "method": plan.Method.Name},
+			},
+			Meta: map[string]interface{}{"runtime": "go", "transport": "direct-bolt"},
+		}
 	}
 	return InvocationExecution{
 		OK:   true,
@@ -170,6 +180,38 @@ func (s *Service) ExecuteInvocation(ctx context.Context, plan InvocationPlan) In
 		Data: data,
 		Meta: map[string]interface{}{"runtime": "go", "transport": "direct-bolt"},
 	}
+}
+
+// buildInvokeData assembles a successful invocation's data envelope: the flattened
+// result (optionally narrowed to a resultPath subtree), the optional rawResult tree,
+// any assertion outcomes, plus timing/diagnostics. It returns the failed-assertion
+// count so the caller can flip OK=false while still emitting data.result/data.assertions
+// (the contract RenderExecution documents).
+func buildInvokeData(flattened, raw interface{}, rawResult bool, elapsedMs int64, diagnostics interface{}, assertions []presentation.Assertion, resultPath string) (map[string]interface{}, int) {
+	data := map[string]interface{}{
+		"result":      flattened,
+		"elapsedMs":   elapsedMs,
+		"diagnostics": diagnostics,
+	}
+	failCount := 0
+	if len(assertions) > 0 {
+		outcomes, failed := presentation.EvaluateAssertions(flattened, assertions)
+		data["assertions"] = outcomes
+		failCount = failed
+	}
+	if resultPath != "" {
+		sub, matched := presentation.LookupPath(flattened, resultPath)
+		if matched {
+			data["result"] = sub
+		} else {
+			data["result"] = nil
+		}
+		data["resultPathMatched"] = matched
+	}
+	if rawResult {
+		data["rawResult"] = raw
+	}
+	return data, failCount
 }
 
 func directRequestFromPlan(plan InvocationPlan) direct.Request {
