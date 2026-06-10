@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -130,6 +132,12 @@ func notifyProgress(ctx context.Context, req *mcpsdk.CallToolRequest, message st
 // UseNumber keeps large Java long values as json.Number (no float64 rounding), and
 // DisallowUnknownFields rejects typos and unsupported keys instead of silently
 // ignoring them. Server-side aliases stay decodable by being declared struct fields.
+//
+// encoding/json matches object keys to struct fields case-insensitively, so
+// DisallowUnknownFields alone still accepts {"SERVICE":...} as the `service` field
+// even though every input schema declares only the lowercase key. rejectInexactKeys
+// closes that gap, mirroring the SDK's own move to case-sensitive decoding at the
+// protocol layer (which adaptTool deliberately bypasses to keep UseNumber precision).
 func decodeStrict(raw json.RawMessage, out interface{}) error {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil
@@ -137,7 +145,64 @@ func decodeStrict(raw json.RawMessage, out interface{}) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	dec.DisallowUnknownFields()
-	return dec.Decode(out)
+	if err := dec.Decode(out); err != nil {
+		return err
+	}
+	return rejectInexactKeys(raw, out)
+}
+
+// rejectInexactKeys fails when a top-level JSON key matches a struct field only
+// case-insensitively (or not at all), complementing DisallowUnknownFields, which
+// inherits encoding/json's case-insensitive field matching.
+func rejectInexactKeys(raw json.RawMessage, out interface{}) error {
+	exact := exactJSONFieldNames(reflect.TypeOf(out))
+	if exact == nil {
+		return nil
+	}
+	var present map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &present); err != nil {
+		// Not a JSON object; the typed decode above already enforced the shape.
+		return nil
+	}
+	for key := range present {
+		if !exact[key] {
+			return fmt.Errorf("json: unknown field %q", key)
+		}
+	}
+	return nil
+}
+
+// exactJSONFieldNames returns the exact JSON object keys a struct accepts — each
+// field's json tag name, or the field name when untagged. It returns nil for
+// non-struct targets, leaving their decoding unchanged.
+func exactJSONFieldNames(t reflect.Type) map[string]bool {
+	for t != nil && t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t == nil || t.Kind() != reflect.Struct {
+		return nil
+	}
+	names := make(map[string]bool, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.PkgPath != "" {
+			continue
+		}
+		name := field.Name
+		if tag := field.Tag.Get("json"); tag != "" {
+			if comma := strings.IndexByte(tag, ','); comma >= 0 {
+				tag = tag[:comma]
+			}
+			if tag == "-" {
+				continue
+			}
+			if tag != "" {
+				name = tag
+			}
+		}
+		names[name] = true
+	}
+	return names
 }
 
 // sanitizePanic logs the panic value and stack to stderr under a generated errorId

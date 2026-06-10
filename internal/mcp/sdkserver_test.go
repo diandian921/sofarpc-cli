@@ -142,6 +142,25 @@ func TestInvokeRejectsLegacyAliases(t *testing.T) {
 	}
 }
 
+// TestInvokeRejectsCaseVariantKey pins the case-sensitivity guard at the tool surface:
+// a case-variant of a declared field (e.g. "Service") must return the friendly
+// invalid-arguments envelope rather than silently populate the field, matching the
+// lowercase-only input schema.
+func TestInvokeRejectsCaseVariantKey(t *testing.T) {
+	cs := connectSDK(t, true)
+	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "sofarpc_invoke_plan",
+		Arguments: map[string]any{"Service": "com.example.S", "method": "m"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected protocol error: %v", err)
+	}
+	structured, _ := json.Marshal(res.StructuredContent)
+	if !res.IsError || !strings.Contains(string(structured), "invalid arguments") {
+		t.Errorf("case-variant key must be rejected as invalid arguments, got %s", structured)
+	}
+}
+
 // TestEachToolDataSchemaIsToolSpecific pins the per-tool output contract: every tool
 // must describe its real data.* shape, not the shared bare `data: object`. Without it,
 // tools/list hides what an agent should expect to read back from each tool.

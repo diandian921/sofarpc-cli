@@ -38,3 +38,29 @@ func TestDecodeStrictRejectsUnknownField(t *testing.T) {
 		t.Error("expected unknown field to be rejected, got nil error")
 	}
 }
+
+// TestDecodeStrictRejectsCaseVariant proves a case-variant of a declared field is
+// rejected. encoding/json matches keys case-insensitively, so without the exact-key
+// guard {"SERVICE":...} would silently populate `service` against the lowercase-only
+// input schema (the same class of mismatch the SDK fixed at the protocol layer).
+func TestDecodeStrictRejectsCaseVariant(t *testing.T) {
+	for _, variant := range []string{
+		`{"SERVICE":"S","method":"m"}`,
+		`{"Service":"S","method":"m"}`,
+		`{"service":"S","Method":"m"}`,
+		`{"service":"S","method":"m","TimeoutMs":1}`,
+	} {
+		var a InvokeArgs
+		if err := decodeStrict(json.RawMessage(variant), &a); err == nil {
+			t.Errorf("expected case-variant key to be rejected: %s", variant)
+		}
+	}
+	// The exact lowercase/camelCase contract still decodes cleanly.
+	var ok InvokeArgs
+	if err := decodeStrict(json.RawMessage(`{"service":"S","method":"m","timeoutMs":1}`), &ok); err != nil {
+		t.Fatalf("exact keys must decode: %v", err)
+	}
+	if ok.Service != "S" || ok.Method != "m" || ok.TimeoutMS != 1 {
+		t.Fatalf("exact decode lost data: %+v", ok)
+	}
+}
