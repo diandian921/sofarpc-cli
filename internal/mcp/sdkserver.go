@@ -26,8 +26,9 @@ const serverInstructions = "Run sofarpc_resolve before sofarpc_invoke. When mult
 // are removed.
 func newSDKServer(appSvc *app.Service, version string, writeEnabled bool, stderr io.Writer) *mcpsdk.Server {
 	// Identity must match the legacy serverInfo so the initialize response does not
-	// change: same Name/Title/Version. The SDK Implementation has no Description
-	// field (the old one's lives on in the serverInstructions guidance instead).
+	// change: same Name/Title/Version. The 2025-11-25 spec adds an optional
+	// Implementation.description, but go-sdk v1.6.1 does not expose it yet, so the old
+	// server description lives on in the serverInstructions guidance instead.
 	srv := mcpsdk.NewServer(
 		&mcpsdk.Implementation{Name: "sofarpc-mcp", Title: "SofaRPC Direct Invoker", Version: version},
 		&mcpsdk.ServerOptions{Instructions: serverInstructions},

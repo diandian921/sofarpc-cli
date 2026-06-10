@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/google/jsonschema-go v0.4.3
-	github.com/modelcontextprotocol/go-sdk v1.2.0
+	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/sofastack/sofa-bolt-go v0.0.1
 )
 
@@ -17,6 +17,8 @@ require (
 	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/natefinch/lumberjack v2.0.0+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sofastack/sofa-common-go v0.0.1 // indirect
 	github.com/sofastack/sofa-hessian-go v0.0.1 // indirect
 	github.com/valyala/fastjson v1.5.1 // indirect
@@ -26,5 +28,6 @@ require (
 	go.uber.org/zap v1.15.0 // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
-	golang.org/x/tools v0.41.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
 )

@@ -34,9 +34,11 @@ type appToolFunc[In any] func(ctx context.Context, req *mcpsdk.CallToolRequest, 
 // adaptTool turns a typed appToolFunc into a raw SDK ToolHandler installed via
 // Server.AddTool. It deliberately avoids the generic mcp.AddTool path, whose input
 // validation (applySchema) re-marshals arguments through float64 — corrupting Java
-// long values — and turns missing-required / unknown fields into protocol errors
-// instead of the friendly app.Result envelope. This adapter mirrors the legacy
-// framework instead, and is the single place that owns what every tool shares:
+// long values. (Since go-sdk v1.5.0 that path returns validation failures as tool
+// results rather than protocol errors, per SEP-1303, so the friendly-envelope reason
+// no longer applies; keeping UseNumber long precision is what still warrants this raw
+// path.) This adapter mirrors the legacy framework and is the single place that owns
+// what every tool shares:
 //   - decode arguments with UseNumber + DisallowUnknownFields (precision kept,
 //     typos/unknown fields rejected); all other validation stays in the handler;
 //   - stamp elapsedMs into _meta and fold app.Result into structuredContent + a JSON
