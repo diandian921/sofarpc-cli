@@ -161,6 +161,40 @@ func TestInvokeRejectsCaseVariantKey(t *testing.T) {
 	}
 }
 
+// TestConfigWriteToolsAreDestructive pins the destructive annotation on every
+// config-write tool: save_* can overwrite an existing entry (Overwrite=true) and
+// remove_* deletes, so all four "may perform destructive updates" — destructiveHint
+// MUST be true. destructiveHint=false would claim "only additive updates", which
+// overwrite/delete violate, and could let a client auto-approve a clobbering write.
+func TestConfigWriteToolsAreDestructive(t *testing.T) {
+	cs := connectSDK(t, true) // write tools only register when write is enabled
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	want := map[string]bool{
+		"sofarpc_config_save_project":   true,
+		"sofarpc_config_save_server":    true,
+		"sofarpc_config_remove_project": true,
+		"sofarpc_config_remove_server":  true,
+	}
+	seen := map[string]bool{}
+	for _, tool := range res.Tools {
+		if !want[tool.Name] {
+			continue
+		}
+		seen[tool.Name] = true
+		if tool.Annotations == nil || tool.Annotations.DestructiveHint == nil || !*tool.Annotations.DestructiveHint {
+			t.Errorf("%s must set destructiveHint=true (it overwrites or deletes config)", tool.Name)
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("expected write tool %q in tools/list", name)
+		}
+	}
+}
+
 // TestEachToolDataSchemaIsToolSpecific pins the per-tool output contract: every tool
 // must describe its real data.* shape, not the shared bare `data: object`. Without it,
 // tools/list hides what an agent should expect to read back from each tool.

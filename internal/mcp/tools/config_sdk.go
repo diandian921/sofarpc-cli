@@ -76,7 +76,7 @@ func AddConfigSaveProject(srv *mcpsdk.Server, stderr io.Writer) {
 		Name:         "sofarpc_config_save_project",
 		Title:        "SofaRPC Config: Save Project",
 		Description:  "Add or replace a local source project in config.json.",
-		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
+		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configSaveProjectInputSchema,
 		OutputSchema: configSaveProjectOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigSaveProjectArgs) (app.Result, string) {
@@ -117,7 +117,7 @@ func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
 		Name:         "sofarpc_config_save_server",
 		Title:        "SofaRPC Config: Save Server",
 		Description:  "Add or replace a configured RPC server in config.json.",
-		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
+		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configSaveServerInputSchema,
 		OutputSchema: configSaveServerOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigSaveServerArgs) (app.Result, string) {
