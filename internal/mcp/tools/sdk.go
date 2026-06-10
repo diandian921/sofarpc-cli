@@ -120,6 +120,9 @@ func notifyProgress(ctx context.Context, req *mcpsdk.CallToolRequest, message st
 		ProgressToken: token,
 		Message:       message,
 		Progress:      progress,
+		// Every caller reports progress as a 0..1 fraction, so Total=1 lets the client
+		// render a percentage instead of a bare, scaleless number.
+		Total: 1,
 	})
 }
 

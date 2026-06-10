@@ -36,8 +36,6 @@ type Server struct {
 // normal terminal condition for a stdio server, so it exits 0 (logging any non-EOF
 // reason to stderr for diagnostics).
 func (s *Server) Run() int {
-	_ = schema.CleanupUnused(7 * 24 * time.Hour)
-
 	in := s.Stdin
 	if in == nil {
 		in = strings.NewReader("")
@@ -49,6 +47,9 @@ func (s *Server) Run() int {
 	stderr := s.Stderr
 	if stderr == nil {
 		stderr = io.Discard
+	}
+	if err := schema.CleanupUnused(7 * 24 * time.Hour); err != nil {
+		fmt.Fprintln(stderr, "mcp: schema cache cleanup:", err)
 	}
 
 	srv := newSDKServer(s.application(), s.BuildVersion, !s.DisableConfigWrite, stderr)
