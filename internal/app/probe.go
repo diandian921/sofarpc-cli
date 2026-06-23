@@ -10,6 +10,7 @@ import (
 
 type ProbeInput struct {
 	Project   string
+	Profile   string
 	Server    string
 	Address   string
 	Service   string
@@ -18,6 +19,7 @@ type ProbeInput struct {
 
 type ProbeResult struct {
 	Project     string                 `json:"project,omitempty"`
+	Profile     string                 `json:"profile,omitempty"`
 	Server      string                 `json:"server,omitempty"`
 	Address     string                 `json:"address"`
 	Service     string                 `json:"service,omitempty"`
@@ -34,6 +36,7 @@ func (s *Service) ProbeEndpoint(ctx context.Context, input ProbeInput) ProbeResu
 	address := input.Address
 	serverName := input.Server
 	projectName := input.Project
+	profileName := input.Profile
 	timeoutMS := input.TimeoutMS
 	endpointSource := "explicit-address"
 	if address == "" {
@@ -41,7 +44,7 @@ func (s *Service) ProbeEndpoint(ctx context.Context, input ProbeInput) ProbeResu
 		if err != nil {
 			return probeFailure(input, CodeInternalError, err, timeoutMS, endpointSource)
 		}
-		name, server, hasServer, err := resolveServer(cfg, input.Project, input.Server, true)
+		name, server, hasServer, err := resolveServer(cfg, input.Project, input.Profile, input.Server, true)
 		if err != nil {
 			return probeFailure(input, CodeConnectFailed, err, timeoutMS, "configured-server")
 		}
@@ -50,6 +53,7 @@ func (s *Service) ProbeEndpoint(ctx context.Context, input ProbeInput) ProbeResu
 		}
 		serverName = name
 		projectName = server.Project
+		profileName = server.Profile
 		address = server.Address
 		timeoutMS = input.TimeoutMS
 		if timeoutMS <= 0 {
@@ -69,6 +73,7 @@ func (s *Service) ProbeEndpoint(ctx context.Context, input ProbeInput) ProbeResu
 	elapsed := time.Since(start)
 	result := ProbeResult{
 		Project:   projectName,
+		Profile:   profileName,
 		Server:    serverName,
 		Address:   address,
 		Service:   input.Service,
@@ -79,6 +84,7 @@ func (s *Service) ProbeEndpoint(ctx context.Context, input ProbeInput) ProbeResu
 			Timing: map[string]int64{"dialMs": elapsed.Milliseconds()},
 			Resolution: map[string]interface{}{
 				"project":        projectName,
+				"profile":        profileName,
 				"server":         serverName,
 				"service":        input.Service,
 				"endpointSource": endpointSource,
@@ -113,6 +119,7 @@ func probeFailure(input ProbeInput, code string, err error, timeoutMS int, sourc
 	}
 	return ProbeResult{
 		Project:   input.Project,
+		Profile:   input.Profile,
 		Server:    input.Server,
 		Address:   input.Address,
 		Service:   input.Service,
@@ -120,6 +127,7 @@ func probeFailure(input ProbeInput, code string, err error, timeoutMS int, sourc
 		TimeoutMS: timeoutMS,
 		Diagnostics: Diagnostics{Resolution: map[string]interface{}{
 			"project":        input.Project,
+			"profile":        input.Profile,
 			"server":         input.Server,
 			"service":        input.Service,
 			"endpointSource": source,

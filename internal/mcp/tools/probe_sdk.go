@@ -23,6 +23,7 @@ func AddProbe(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 	}, adaptTool(stderr, func(ctx context.Context, _ *mcpsdk.CallToolRequest, a ProbeArgs) (app.Result, string) {
 		probe := appSvc.ProbeEndpoint(ctx, app.ProbeInput{
 			Project:   a.Project,
+			Profile:   a.Profile,
 			Server:    a.Server,
 			Address:   a.Address,
 			Service:   a.Service,

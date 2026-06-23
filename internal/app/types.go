@@ -82,6 +82,7 @@ type ProjectRef struct {
 type Endpoint struct {
 	Server      string            `json:"server,omitempty"`
 	Project     string            `json:"project,omitempty"`
+	Profile     string            `json:"profile,omitempty"`
 	Address     string            `json:"address"`
 	Protocol    string            `json:"protocol"`
 	TimeoutMS   int               `json:"timeoutMs"`
@@ -108,6 +109,7 @@ type Diagnostics struct {
 
 type ResolveInput struct {
 	Project   string
+	Profile   string
 	Server    string
 	Address   string
 	Service   string
@@ -116,6 +118,7 @@ type ResolveInput struct {
 
 type ResolveResult struct {
 	Project     ProjectRef               `json:"project"`
+	Profile     string                   `json:"profile,omitempty"`
 	Server      string                   `json:"server,omitempty"`
 	Endpoint    *Endpoint                `json:"endpoint,omitempty"`
 	Servers     []map[string]interface{} `json:"servers,omitempty"`
@@ -125,6 +128,7 @@ type ResolveResult struct {
 
 type InvocationInput struct {
 	Project             string
+	Profile             string
 	Server              string
 	Address             string
 	Protocol            string
@@ -143,6 +147,7 @@ type InvocationInput struct {
 
 type InvocationPlan struct {
 	Project     ProjectRef               `json:"project"`
+	Profile     string                   `json:"profile,omitempty"`
 	Server      string                   `json:"server"`
 	Endpoint    Endpoint                 `json:"endpoint"`
 	Service     string                   `json:"service"`
@@ -187,6 +192,7 @@ func (p InvocationPlan) Display() map[string]interface{} {
 	return map[string]interface{}{
 		"server":           p.Server,
 		"project":          p.Project.Name,
+		"profile":          p.Profile,
 		"projectInfo":      p.Project.Info,
 		"endpoint":         p.Endpoint,
 		"service":          p.Service,

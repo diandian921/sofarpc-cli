@@ -143,6 +143,9 @@ func RenderProbe(probe ProbeResult) Result {
 	}
 	body, err := json.Marshal(map[string]interface{}{
 		"address":     probe.Address,
+		"project":     probe.Project,
+		"profile":     probe.Profile,
+		"server":      probe.Server,
 		"service":     probe.Service,
 		"reachable":   probe.Reachable,
 		"elapsedMs":   probe.ElapsedMS,

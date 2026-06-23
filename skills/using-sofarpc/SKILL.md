@@ -1,6 +1,6 @@
 ---
 name: using-sofarpc
-description: Use when invoking any SofaRPC service from this machine — calling any mcp__sofarpc__* tool (sofarpc_invoke / sofarpc_invoke_plan / sofarpc_describe / sofarpc_probe / sofarpc_resolve / sofarpc_doctor), looking up a Java Facade method signature, composing an invoke payload, decoding a SOFA bolt error such as INVOKE_FAILED / CONNECT_FAILED / no provider, or troubleshooting a probe/ping result.
+description: Use when invoking any SofaRPC service from this machine — calling any mcp__sofarpc__* tool (sofarpc_invoke / sofarpc_invoke_plan / sofarpc_describe / sofarpc_probe / sofarpc_resolve / sofarpc_doctor), selecting project/profile/server endpoint config, looking up a Java Facade method signature, composing an invoke payload, decoding a SOFA bolt error such as INVOKE_FAILED / CONNECT_FAILED / no provider, or troubleshooting a probe/ping result.
 ---
 
 # Using SofaRPC
@@ -11,11 +11,22 @@ description: Use when invoking any SofaRPC service from this machine — calling
 2. **probe / ping 通 ≠ service 在那台机器上发布** —— 它只验 bolt 握手
 3. **`ok:true` ≠ 业务成功** —— envelope 层和业务层是两层,要分开判
 
+## Endpoint 选择
+
+配置 v2 使用 Spring profile 风格:每个 project 下有自己的 `profiles` 和
+`activeProfile`。优先用 `project + profile` 指定环境;只给 `project` 时会走
+该项目的 `activeProfile`。旧的 `server` 名仍可用,但它只是兼容入口,通常由
+`<project>-<profile>` 派生,例如 `salesfundmp-test`。
+
+同一次排查里,`resolve`、`probe`、`describe`、`invoke_plan`、`invoke` 要使用同一个
+endpoint 选择方式。不要先 probe `salesfundmp-test`,再 invoke 只传 `project` 而误走
+另一个 `activeProfile`。
+
 ## 标准工作流(陌生 facade 必走这五步)
 
 | 步 | 工具 | 目的 |
 |---|---|---|
-| 1 | `sofarpc_resolve` | 确认 project/server 配好,拿到 endpoint |
+| 1 | `sofarpc_resolve` | 确认 project/profile/server 配好,拿到 endpoint |
 | 2 | `sofarpc_describe --service <FQN>` | 拿 method 列表 + paramTypes + DTO fields |
 | 3 | `sofarpc_probe`(可选) | 确认 IP 可达;但**不能**当作 service 一定能调 |
 | 4 | `sofarpc_invoke_plan` | 渲染 plan,确认 paramTypes / args 没写错(不发请求) |
@@ -84,6 +95,7 @@ jq -e '.ok and (.data.result.success // (.data.result.errorMsg | not))' response
 - ❌ 不 describe 直接 invoke,靠猜方法名
 - ❌ 看 `ok:true` 就上报 "调用成功"
 - ❌ 看 `probe reachable:true` 就断言 service 一定能调
+- ❌ 只凭 `server` 名猜环境,不看 `profile` / `activeProfile`
 - ❌ 复杂 payload 不过 `sofarpc_invoke_plan` 就直接 invoke
 - ❌ describe 报错就改去 grep 源码 —— 先检查 `workspaceRoot` 配置
 - ❌ "service 找不到" → 想去查注册中心 —— 办公网连不上,放弃这条路

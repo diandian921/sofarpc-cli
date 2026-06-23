@@ -30,7 +30,7 @@ func (s *Service) PlanInvocation(ctx context.Context, input InvocationInput) (In
 	if err != nil {
 		return InvocationPlan{}, err
 	}
-	serverName, server, hasServer, err := resolveServer(cfg, input.Project, input.Server, true)
+	serverName, server, hasServer, err := resolveServer(cfg, input.Project, input.Profile, input.Server, true)
 	if err != nil {
 		return InvocationPlan{}, err
 	}
@@ -52,6 +52,7 @@ func (s *Service) PlanInvocation(ctx context.Context, input InvocationInput) (In
 	endpoint := endpointFromServer(serverName, server, timeoutMS)
 	return InvocationPlan{
 		Project:    ProjectRef{Name: projectName, Info: project},
+		Profile:    server.Profile,
 		Server:     serverName,
 		Endpoint:   endpoint,
 		Service:    input.Service,
@@ -69,6 +70,7 @@ func (s *Service) PlanInvocation(ctx context.Context, input InvocationInput) (In
 			},
 			Resolution: map[string]interface{}{
 				"project":        projectName,
+				"profile":        server.Profile,
 				"server":         serverName,
 				"service":        input.Service,
 				"method":         input.Method,

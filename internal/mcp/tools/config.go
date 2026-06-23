@@ -48,6 +48,7 @@ type ConfigSaveServerArgs struct {
 	Name        string            `json:"name"`
 	Address     string            `json:"address"`
 	Project     string            `json:"project"`
+	Profile     string            `json:"profile,omitempty"`
 	Protocol    string            `json:"protocol,omitempty"`
 	TimeoutMS   int               `json:"timeoutMs,omitempty"`
 	AppName     string            `json:"appName,omitempty"`
@@ -64,6 +65,7 @@ var configSaveServerInputSchema = json.RawMessage(`{
     "name": {"type": "string", "description": "Server name."},
     "address": {"type": "string", "description": "host:port."},
     "project": {"type": "string", "description": "Bound project name."},
+    "profile": {"type": "string", "description": "Optional project profile name. When set, the endpoint is saved under project.profiles and server name remains a compatibility alias."},
     "protocol": {"type": "string", "description": "Protocol; default bolt."},
     "timeoutMs": {"type": "integer", "description": "Default total timeout in milliseconds."},
     "appName": {"type": "string", "description": "SofaRPC consumer app name."},

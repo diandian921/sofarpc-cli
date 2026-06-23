@@ -24,7 +24,7 @@ There is no sidecar runtime, local TCP control plane, token file, or managed pro
 
 The direct runtime sends a SofaRPC generic invocation over BOLT:
 
-1. Resolve the configured project, server, endpoint, and method signature.
+1. Resolve the configured project/profile/server endpoint and method signature.
 2. Build an invocation plan with Java-aware typed arguments.
 3. Build a `SofaRequest`.
 4. Encode request and arguments with Hessian2.
@@ -61,15 +61,20 @@ Agents should prefer MCP:
 The four config-write tools are omitted from `tools/list` when the server is
 started with `--disable-config-write`.
 
-`sofarpc_resolve` is read-only and explains which configured project, server,
-and endpoint will be used. `sofarpc_probe` is the only reachability check and
-does not prove service or method existence.
+`sofarpc_resolve` is read-only and explains which configured project, profile,
+compatibility server, and endpoint will be used. Prefer `project + profile` for
+new calls; a project without `profile` uses that project's `activeProfile`.
+Legacy `server` names remain supported as a compatibility view derived from
+`<project>-<profile>`. `sofarpc_probe` is the only reachability check and does
+not prove service or method existence.
 
 `sofarpc_describe` accepts either a `query` for source search or a `service`
 FQN plus optional `method` for schema description.
 
 `sofarpc_invoke` accepts either:
 
+- endpoint selection through `project + profile`, `project` with
+  `activeProfile`, legacy `server`, or an explicit address.
 - `paramTypes + orderedArguments` for exact invocation.
 - `arguments` for schema-guided named arguments when local source can resolve the method.
 

@@ -55,6 +55,7 @@ var (
   "properties": {
     "project": {"type": "string"},
     "projectInfo": {"type": "object"},
+    "profile": {"type": "string"},
     "server": {"type": "string"},
     "endpoint": {"type": "object"},
     "servers": {"type": "array"},
@@ -68,6 +69,9 @@ var (
   "type": "object",
   "properties": {
     "address": {"type": "string"},
+    "project": {"type": "string"},
+    "profile": {"type": "string"},
+    "server": {"type": "string"},
     "service": {"type": "string"},
     "reachable": {"type": "boolean"},
     "elapsedMs": {"type": "number"},

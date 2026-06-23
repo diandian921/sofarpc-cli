@@ -49,7 +49,7 @@ func AddConfigList(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
 			if a.Project != "" && name != a.Project {
 				continue
 			}
-			projects = append(projects, map[string]interface{}{"name": name, "project": cfg.Projects[name]})
+			projects = append(projects, map[string]interface{}{"name": name, "project": publicProject(cfg.Projects[name])})
 		}
 		servers := make([]map[string]interface{}, 0, len(cfg.Servers))
 		for _, name := range cfg.ServerNames() {
@@ -127,6 +127,7 @@ func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
 		srv := appconfig.Server{
 			Address:     a.Address,
 			Project:     a.Project,
+			Profile:     a.Profile,
 			Protocol:    valueOr(a.Protocol, appconfig.DefaultServerProtocol),
 			TimeoutMS:   intOr(a.TimeoutMS, appconfig.DefaultServerTimeoutMS),
 			AppName:     valueOr(a.AppName, appconfig.DefaultServerAppName),

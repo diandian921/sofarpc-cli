@@ -71,4 +71,8 @@ func TestPublicViewsRedactValuesKeepKeys(t *testing.T) {
 	assertRedacted(t, "publicServer", structuredJSON(t, srv))
 	ep := publicEndpoint(app.Endpoint{Address: "a", Attachments: map[string]string{sentinelKey: sentinelValue}})
 	assertRedacted(t, "publicEndpoint", structuredJSON(t, ep))
+	project := publicProject(appconfig.Project{Profiles: map[string]appconfig.Profile{
+		"test": {Address: "127.0.0.1:12200", Attachments: map[string]string{sentinelKey: sentinelValue}},
+	}})
+	assertRedacted(t, "publicProject", structuredJSON(t, project))
 }

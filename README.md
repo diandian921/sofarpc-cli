@@ -150,30 +150,41 @@ Set `rawResult=true` when debugging serialization or response shape problems. Th
 ## Config File
 
 `~/.sofarpc/config.json` is stable and user-editable. The current schema version
-is `1`. Older files without `version` are read as version 1; unsupported future
-versions are rejected with `CONFIG_UNSUPPORTED_VERSION`.
+is `2`. Older v1 files without `version` are still read as version 1; unsupported
+future versions are rejected with `CONFIG_UNSUPPORTED_VERSION`.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
+  "defaults": {
+    "protocol": "bolt",
+    "timeoutMs": 5000,
+    "appName": "sofarpc-agent",
+    "attachments": {}
+  },
   "projects": {
     "user": {
+      "activeProfile": "test",
       "workspaceRoot": "/Users/me/workspace/user-service",
-      "servicePrefixes": ["com.company.user."]
-    }
-  },
-  "servers": {
-    "user-test": {
-      "address": "10.0.0.1:12200",
-      "project": "user",
-      "protocol": "bolt",
-      "timeoutMs": 5000,
-      "appName": "sofarpc-agent",
-      "attachments": {}
+      "servicePrefixes": ["com.company.user."],
+      "profiles": {
+        "local": {
+          "address": "127.0.0.1:12200"
+        },
+        "test": {
+          "address": "10.0.0.1:12200"
+        }
+      }
     }
   }
 }
 ```
+
+Profiles are project-scoped, Spring-style endpoint selections. Calls may pass
+`project` + `profile`; when `profile` is omitted the project's `activeProfile`
+is used. The legacy flat `servers` view is still available in memory, derived as
+`<project>-<profile>` (for example `user-test`), so existing `server` arguments
+continue to work.
 
 ## CLI
 
@@ -181,7 +192,7 @@ Use CLI for setup and diagnostics:
 
 ```bash
 sofarpc project add user /Users/me/workspace/user-service --prefix com.company.user
-sofarpc server add user-test 10.0.0.1:12200 --project user
+sofarpc server add user-test 10.0.0.1:12200 --project user --profile test
 sofarpc server list --json
 ```
 

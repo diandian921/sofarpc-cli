@@ -14,6 +14,7 @@ import (
 type InvokeArgs struct {
 	Server           string                   `json:"server,omitempty"`
 	Project          string                   `json:"project,omitempty"`
+	Profile          string                   `json:"profile,omitempty"`
 	Service          string                   `json:"service"`
 	Method           string                   `json:"method"`
 	ParamTypes       []string                 `json:"paramTypes,omitempty"`
@@ -28,6 +29,7 @@ type InvokeArgs struct {
 func (a InvokeArgs) toInput() app.InvocationInput {
 	input := app.InvocationInput{
 		Project:    a.Project,
+		Profile:    a.Profile,
 		Server:     a.Server,
 		Service:    a.Service,
 		Method:     a.Method,
@@ -55,6 +57,7 @@ var invokeInputSchema = json.RawMessage(`{
   "properties": {
     "server": {"type": "string", "description": "Configured server name. Optional only when exactly one matching server can be inferred."},
     "project": {"type": "string", "description": "Optional project name used to infer a single bound server."},
+    "profile": {"type": "string", "description": "Optional project profile name. Requires project when server is omitted."},
     "service": {"type": "string", "description": "Service interface FQN."},
     "method": {"type": "string", "description": "Method name."},
     "paramTypes": {"type": "array", "items": {"type": "string"}, "description": "Optional Java parameter type FQNs for overload disambiguation."},
@@ -87,6 +90,7 @@ var invokePlanInputSchema = json.RawMessage(`{
   "properties": {
     "server": {"type": "string", "description": "Configured server name. Optional only when exactly one matching server can be inferred."},
     "project": {"type": "string", "description": "Optional project name used to infer a single bound server."},
+    "profile": {"type": "string", "description": "Optional project profile name. Requires project when server is omitted."},
     "service": {"type": "string", "description": "Service interface FQN."},
     "method": {"type": "string", "description": "Method name."},
     "paramTypes": {"type": "array", "items": {"type": "string"}, "description": "Optional Java parameter type FQNs for overload disambiguation."},

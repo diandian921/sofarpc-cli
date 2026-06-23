@@ -28,7 +28,7 @@ func redactAttachments(in map[string]string) map[string]string {
 // redacted. Sole sanctioned exit for a server in structured content — never hand
 // a raw appconfig.Server to success()/structuredContent.
 func publicServer(s appconfig.Server) map[string]interface{} {
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		"address":     s.Address,
 		"project":     s.Project,
 		"protocol":    s.Protocol,
@@ -36,6 +36,42 @@ func publicServer(s appconfig.Server) map[string]interface{} {
 		"appName":     s.AppName,
 		"attachments": redactAttachments(s.Attachments),
 	}
+	if s.Profile != "" {
+		out["profile"] = s.Profile
+	}
+	return out
+}
+
+func publicProject(p appconfig.Project) map[string]interface{} {
+	out := map[string]interface{}{
+		"workspaceRoot":   p.WorkspaceRoot,
+		"servicePrefixes": p.ServicePrefixes,
+		"activeProfile":   p.ActiveProfile,
+		"profiles":        map[string]interface{}{},
+	}
+	profiles := make(map[string]interface{}, len(p.Profiles))
+	for name, profile := range p.Profiles {
+		entry := map[string]interface{}{
+			"address": profile.Address,
+		}
+		if profile.Protocol != "" {
+			entry["protocol"] = profile.Protocol
+		}
+		if profile.TimeoutMS > 0 {
+			entry["timeoutMs"] = profile.TimeoutMS
+		}
+		if profile.AppName != "" {
+			entry["appName"] = profile.AppName
+		}
+		if profile.Attachments != nil {
+			entry["attachments"] = redactAttachments(profile.Attachments)
+		}
+		profiles[name] = entry
+	}
+	if len(profiles) > 0 {
+		out["profiles"] = profiles
+	}
+	return out
 }
 
 // publicEndpoint renders an app.Endpoint for MCP output with attachment values
@@ -54,6 +90,9 @@ func publicEndpoint(e app.Endpoint) map[string]interface{} {
 	}
 	if e.Project != "" {
 		out["project"] = e.Project
+	}
+	if e.Profile != "" {
+		out["profile"] = e.Profile
 	}
 	return out
 }
@@ -88,5 +127,6 @@ func publicServers(servers []map[string]interface{}) []map[string]interface{} {
 func publicPlanDisplay(plan app.InvocationPlan) map[string]interface{} {
 	display := plan.Display()
 	display["endpoint"] = publicEndpoint(plan.Endpoint)
+	display["projectInfo"] = publicProject(plan.Project.Info)
 	return display
 }

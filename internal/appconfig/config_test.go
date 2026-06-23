@@ -1,6 +1,7 @@
 package appconfig
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -31,6 +32,9 @@ func TestLoadIgnoresDeprecatedEngineConfig(t *testing.T) {
 	}
 	if len(cfg.Projects) != 0 || len(cfg.Servers) != 0 {
 		t.Fatalf("expected empty maps: %+v", cfg)
+	}
+	if cfg.Version != LegacyConfigVersion {
+		t.Fatalf("version = %d, want legacy version %d", cfg.Version, LegacyConfigVersion)
 	}
 }
 
@@ -101,6 +105,128 @@ func TestAddServerAppliesDefaultsAndRequiresProject(t *testing.T) {
 	}
 	if server.Attachments == nil {
 		t.Fatalf("attachments should be initialized")
+	}
+}
+
+func TestLoadV2ProfilesDerivesCompatibilityServers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	body := `{
+  "version": 2,
+  "defaults": {
+    "protocol": "bolt",
+    "timeoutMs": 5000,
+    "appName": "sofarpc-agent",
+    "attachments": {}
+  },
+  "projects": {
+    "salesfundmp": {
+      "activeProfile": "test",
+      "workspaceRoot": "/tmp/salesfundmp",
+      "servicePrefixes": ["com.thfund.salesfundmp.facade."],
+      "profiles": {
+        "local": {"address": "127.0.0.1:12300", "timeoutMs": 1000},
+        "test": {"address": "10.74.194.40:12200"}
+      }
+    }
+  }
+}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Version != CurrentConfigVersion {
+		t.Fatalf("version = %d, want %d", cfg.Version, CurrentConfigVersion)
+	}
+	project := cfg.Projects["salesfundmp"]
+	if project.ActiveProfile != "test" {
+		t.Fatalf("activeProfile = %q", project.ActiveProfile)
+	}
+	local := cfg.Servers["salesfundmp-local"]
+	if local.Project != "salesfundmp" || local.Profile != "local" || local.TimeoutMS != 1000 {
+		t.Fatalf("local server = %+v", local)
+	}
+	test := cfg.Servers["salesfundmp-test"]
+	if test.Project != "salesfundmp" || test.Profile != "test" || test.TimeoutMS != DefaultServerTimeoutMS || test.AppName != DefaultServerAppName {
+		t.Fatalf("test server = %+v", test)
+	}
+}
+
+func TestSaveV2ProfilesOmitsDerivedServers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	cfg := DefaultConfig()
+	if _, err := cfg.AddProject("user", dir, []string{"com.example"}, false); err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+	if _, err := cfg.AddProfile("user", "test", Profile{Address: "127.0.0.1:12200"}, false); err != nil {
+		t.Fatalf("AddProfile: %v", err)
+	}
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var disk map[string]interface{}
+	if err := json.Unmarshal(raw, &disk); err != nil {
+		t.Fatalf("unmarshal saved config: %v", err)
+	}
+	if _, exists := disk["servers"]; exists {
+		t.Fatalf("derived servers should not be persisted in v2 config: %s", raw)
+	}
+}
+
+func TestAddServerInfersProfileFromProjectPrefixedName(t *testing.T) {
+	root := t.TempDir()
+	cfg := DefaultConfig()
+	if _, err := cfg.AddProject("user", root, nil, false); err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+	server, err := cfg.AddServer("user-test", Server{Address: "127.0.0.1:12200", Project: "user"}, false)
+	if err != nil {
+		t.Fatalf("AddServer: %v", err)
+	}
+	if server.Profile != "test" {
+		t.Fatalf("server profile = %q", server.Profile)
+	}
+	if _, ok := cfg.Projects["user"].Profiles["test"]; !ok {
+		t.Fatalf("profile not stored on project: %+v", cfg.Projects["user"])
+	}
+	if cfg.Projects["user"].ActiveProfile != "test" {
+		t.Fatalf("activeProfile = %q", cfg.Projects["user"].ActiveProfile)
+	}
+}
+
+func TestRemoveServerProfileKeepsProjectActiveProfileValid(t *testing.T) {
+	root := t.TempDir()
+	cfg := DefaultConfig()
+	if _, err := cfg.AddProject("user", root, nil, false); err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+	if _, err := cfg.AddProfile("user", "local", Profile{Address: "127.0.0.1:12200"}, false); err != nil {
+		t.Fatalf("AddProfile local: %v", err)
+	}
+	if _, err := cfg.AddProfile("user", "test", Profile{Address: "10.0.0.1:12200"}, false); err != nil {
+		t.Fatalf("AddProfile test: %v", err)
+	}
+	project := cfg.Projects["user"]
+	project.ActiveProfile = "local"
+	cfg.Projects["user"] = project
+
+	if err := cfg.RemoveServer("user-local", true); err != nil {
+		t.Fatalf("RemoveServer: %v", err)
+	}
+	if _, ok := cfg.Projects["user"].Profiles["local"]; ok {
+		t.Fatalf("local profile still exists: %+v", cfg.Projects["user"].Profiles)
+	}
+	if got := cfg.Projects["user"].ActiveProfile; got != "test" {
+		t.Fatalf("activeProfile = %q, want test", got)
 	}
 }
 
