@@ -37,16 +37,16 @@ func TestAppPublicTypesFrozen(t *testing.T) {
 	want := map[string][]string{
 		"Result":              {"code", "data", "error", "meta", "ok", "requestId"},
 		"ResultError":         {"cause", "details", "message", "nextTool", "recovery"},
-		"Endpoint":            {"address", "appName", "attachments", "project", "protocol", "server", "timeoutMs"},
+		"Endpoint":            {"address", "appName", "attachments", "profile", "project", "protocol", "server", "timeoutMs"},
 		"ProjectRef":          {"info", "name"},
 		"MethodSignature":     {"name", "paramTypes"},
 		"PlanWarning":         {"code", "details", "message"},
 		"Diagnostics":         {"resolution", "timing", "warnings"},
-		"ResolveResult":       {"diagnostics", "endpoint", "network", "project", "server", "servers"},
-		"InvocationPlan":      {"arguments", "diagnostics", "endpoint", "method", "project", "rawResult", "server", "service", "timeoutMs", "warnings"},
+		"ResolveResult":       {"diagnostics", "endpoint", "network", "profile", "project", "server", "servers"},
+		"InvocationPlan":      {"arguments", "diagnostics", "endpoint", "method", "profile", "project", "rawResult", "server", "service", "timeoutMs", "warnings"},
 		"InvocationExecution": {"code", "data", "error", "meta", "ok"},
 		"ExecutionError":      {"cause", "details", "message"},
-		"ProbeResult":         {"address", "diagnostics", "elapsedMs", "error", "meta", "project", "reachable", "server", "service", "timeoutMs"},
+		"ProbeResult":         {"address", "diagnostics", "elapsedMs", "error", "meta", "profile", "project", "reachable", "server", "service", "timeoutMs"},
 	}
 	got := map[string][]string{
 		"Result":              jsonFields(reflect.TypeOf(Result{})),

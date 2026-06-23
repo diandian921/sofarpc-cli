@@ -56,8 +56,11 @@ func TestResolveAddress(t *testing.T) {
 	// dialed here — resolveAddress only echoes back whatever address is configured.
 	cfg := appconfig.Config{
 		Version: appconfig.CurrentConfigVersion,
+		Projects: map[string]appconfig.Project{
+			"user": {WorkspaceRoot: filepath.Dir(path)},
+		},
 		Servers: map[string]appconfig.Server{
-			"user-test": {Address: "192.0.2.10:12200"},
+			"user-test": {Address: "192.0.2.10:12200", Project: "user"},
 		},
 	}
 	if err := appconfig.Save(path, cfg); err != nil {

@@ -35,6 +35,7 @@ func runServerAdd(args []string, env Env) int {
 	fs := flag.NewFlagSet("server add", flag.ContinueOnError)
 	fs.SetOutput(env.Stderr)
 	project := fs.String("project", "", "bound project name")
+	profile := fs.String("profile", "", "project profile name")
 	protocol := fs.String("protocol", appconfig.DefaultServerProtocol, "rpc protocol")
 	timeoutMS := fs.Int("timeout-ms", appconfig.DefaultServerTimeoutMS, "default total timeout in milliseconds")
 	appName := fs.String("app-name", appconfig.DefaultServerAppName, "SofaRPC consumer app name")
@@ -46,7 +47,7 @@ func runServerAdd(args []string, env Env) int {
 		return 2
 	}
 	if len(rest) != 2 {
-		fmt.Fprintln(env.Stderr, "usage: sofarpc server add <name> <host:port> --project <project> [--timeout-ms <ms>] [--attachment k=v]")
+		fmt.Fprintln(env.Stderr, "usage: sofarpc server add <name> <host:port> --project <project> [--profile <profile>] [--timeout-ms <ms>] [--attachment k=v]")
 		return 2
 	}
 	name, addr := rest[0], rest[1]
@@ -71,6 +72,7 @@ func runServerAdd(args []string, env Env) int {
 		server, addErr = cfg.AddServer(name, appconfig.Server{
 			Address:     addr,
 			Project:     *project,
+			Profile:     *profile,
 			Protocol:    *protocol,
 			TimeoutMS:   *timeoutMS,
 			AppName:     *appName,
@@ -155,6 +157,7 @@ func printServerTable(w io.Writer, cfg appconfig.Config) {
 	}
 	sort.Strings(names)
 	maxName, maxAddr, maxProject := len("SERVER"), len("ADDRESS"), len("PROJECT")
+	maxProfile := len("PROFILE")
 	for _, n := range names {
 		if len(n) > maxName {
 			maxName = len(n)
@@ -166,12 +169,15 @@ func printServerTable(w io.Writer, cfg appconfig.Config) {
 		if len(s.Project) > maxProject {
 			maxProject = len(s.Project)
 		}
+		if len(s.Profile) > maxProfile {
+			maxProfile = len(s.Profile)
+		}
 	}
-	format := fmt.Sprintf("%%-%ds  %%-%ds  %%-%ds  %%s\n", maxName, maxAddr, maxProject)
-	fmt.Fprintf(w, format, "SERVER", "ADDRESS", "PROJECT", "TIMEOUT")
+	format := fmt.Sprintf("%%-%ds  %%-%ds  %%-%ds  %%-%ds  %%s\n", maxName, maxAddr, maxProject, maxProfile)
+	fmt.Fprintf(w, format, "SERVER", "ADDRESS", "PROJECT", "PROFILE", "TIMEOUT")
 	for _, n := range names {
 		s := cfg.Servers[n]
-		fmt.Fprintf(w, format, n, s.Address, s.Project, fmt.Sprintf("%dms", s.TimeoutMS))
+		fmt.Fprintf(w, format, n, s.Address, s.Project, s.Profile, fmt.Sprintf("%dms", s.TimeoutMS))
 	}
 }
 

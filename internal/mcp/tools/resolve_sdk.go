@@ -22,6 +22,7 @@ func AddResolve(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 	}, adaptTool(stderr, func(ctx context.Context, _ *mcpsdk.CallToolRequest, a ResolveArgs) (app.Result, string) {
 		resolved, err := appSvc.Resolve(ctx, app.ResolveInput{
 			Project:   a.Project,
+			Profile:   a.Profile,
 			Server:    a.Server,
 			TimeoutMS: a.TimeoutMS,
 		})
@@ -31,7 +32,8 @@ func AddResolve(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 		if resolved.Endpoint != nil {
 			return okResult(map[string]interface{}{
 				"project":     resolved.Project.Name,
-				"projectInfo": resolved.Project.Info,
+				"profile":     resolved.Profile,
+				"projectInfo": publicProject(resolved.Project.Info),
 				"server":      resolved.Server,
 				"endpoint":    publicEndpoint(*resolved.Endpoint),
 				"network":     resolved.Network,
@@ -40,7 +42,7 @@ func AddResolve(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 		}
 		return okResult(map[string]interface{}{
 			"project":     resolved.Project.Name,
-			"projectInfo": resolved.Project.Info,
+			"projectInfo": publicProject(resolved.Project.Info),
 			"servers":     publicServers(resolved.Servers),
 			"network":     resolved.Network,
 			"diagnostics": resolved.Diagnostics,

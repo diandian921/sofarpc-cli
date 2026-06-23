@@ -43,7 +43,7 @@ func AddDoctor(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
 		addCheck("config", "ok", map[string]interface{}{"configPath": path, "projectCount": len(cfg.Projects), "serverCount": len(cfg.Servers), "writeEnabled": writeEnabled})
 
 		notifyProgress(ctx, req, "checking project source schema", 0)
-		serverName, srv, hasServer, err := resolveServer(cfg, a.Project, a.Server, false)
+		serverName, srv, hasServer, err := resolveServer(cfg, a.Project, a.Profile, a.Server, false)
 		if err != nil {
 			addCheck("server", "failed", map[string]interface{}{"error": err.Error()})
 		} else if hasServer {

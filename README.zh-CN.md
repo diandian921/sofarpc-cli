@@ -136,29 +136,39 @@ MCP 暴露面刻意保持小而面向工作流：
 
 ## 配置文件
 
-`~/.sofarpc/config.json` 是稳定且用户可编辑的。当前 schema version 是 `1`。没有 `version` 的旧文件会按 version 1 读取；不支持的未来版本会以 `CONFIG_UNSUPPORTED_VERSION` 拒绝。
+`~/.sofarpc/config.json` 是稳定且用户可编辑的。当前 schema version 是 `2`。没有 `version` 的 v1 旧文件仍会按 version 1 读取；不支持的未来版本会以 `CONFIG_UNSUPPORTED_VERSION` 拒绝。
 
 ```json
 {
-  "version": 1,
+  "version": 2,
+  "defaults": {
+    "protocol": "bolt",
+    "timeoutMs": 5000,
+    "appName": "sofarpc-agent",
+    "attachments": {}
+  },
   "projects": {
     "user": {
+      "activeProfile": "test",
       "workspaceRoot": "/Users/me/workspace/user-service",
-      "servicePrefixes": ["com.company.user."]
-    }
-  },
-  "servers": {
-    "user-test": {
-      "address": "10.0.0.1:12200",
-      "project": "user",
-      "protocol": "bolt",
-      "timeoutMs": 5000,
-      "appName": "sofarpc-agent",
-      "attachments": {}
+      "servicePrefixes": ["com.company.user."],
+      "profiles": {
+        "local": {
+          "address": "127.0.0.1:12200"
+        },
+        "test": {
+          "address": "10.0.0.1:12200"
+        }
+      }
     }
   }
 }
 ```
+
+`profiles` 是项目内的 Spring profile 风格 endpoint 选择。调用时可以传
+`project` + `profile`；如果省略 `profile`，会使用该项目的
+`activeProfile`。兼容用的 flat `servers` 视图仍会在内存中派生，名称为
+`<project>-<profile>`（例如 `user-test`），所以已有的 `server` 参数仍能继续工作。
 
 ## CLI
 
@@ -166,7 +176,7 @@ CLI 用于 setup 和诊断：
 
 ```bash
 sofarpc project add user /Users/me/workspace/user-service --prefix com.company.user
-sofarpc server add user-test 10.0.0.1:12200 --project user
+sofarpc server add user-test 10.0.0.1:12200 --project user --profile test
 sofarpc server list --json
 ```
 

@@ -69,7 +69,7 @@ func resolveProject(cfg appconfig.Config, explicit, serverName string) (string, 
 
 // resolveServer picks a single server given an explicit name and/or project
 // filter. When required is false an ambiguous match returns hasServer=false.
-func resolveServer(cfg appconfig.Config, project, explicit string, required bool) (string, appconfig.Server, bool, error) {
+func resolveServer(cfg appconfig.Config, project, profile, explicit string, required bool) (string, appconfig.Server, bool, error) {
 	if explicit != "" {
 		server, ok := cfg.Servers[explicit]
 		if !ok {
@@ -78,7 +78,29 @@ func resolveServer(cfg appconfig.Config, project, explicit string, required bool
 		if project != "" && server.Project != project {
 			return "", appconfig.Server{}, false, fmt.Errorf("server %q is bound to project %q, not %q", explicit, server.Project, project)
 		}
+		if profile != "" && server.Profile != profile {
+			return "", appconfig.Server{}, false, fmt.Errorf("server %q is bound to profile %q, not %q", explicit, server.Profile, profile)
+		}
 		return explicit, server, true, nil
+	}
+	if profile != "" {
+		if project == "" {
+			return "", appconfig.Server{}, false, fmt.Errorf("project is required when profile is specified")
+		}
+		name := appconfig.ServerNameForProfile(project, profile)
+		server, ok := cfg.Servers[name]
+		if !ok {
+			return "", appconfig.Server{}, false, fmt.Errorf("profile %q for project %q not found", profile, project)
+		}
+		return name, server, true, nil
+	}
+	if project != "" {
+		if p, ok := cfg.Projects[project]; ok && p.ActiveProfile != "" {
+			name := appconfig.ServerNameForProfile(project, p.ActiveProfile)
+			if server, ok := cfg.Servers[name]; ok {
+				return name, server, true, nil
+			}
+		}
 	}
 	var names []string
 	for _, name := range cfg.ServerNames() {
@@ -104,13 +126,17 @@ func endpointData(server appconfig.Server, timeoutMS int) map[string]interface{}
 	if timeoutMS <= 0 {
 		timeoutMS = server.TimeoutMS
 	}
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		"address":     server.Address,
 		"protocol":    server.Protocol,
 		"timeoutMs":   timeoutMS,
 		"appName":     server.AppName,
 		"attachments": redactAttachments(server.Attachments),
 	}
+	if server.Profile != "" {
+		out["profile"] = server.Profile
+	}
+	return out
 }
 
 // publicMethods strips internal import bookkeeping from search/describe output.

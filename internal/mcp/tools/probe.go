@@ -15,6 +15,7 @@ type ProbeArgs struct {
 	Address   string `json:"address,omitempty"`
 	Service   string `json:"service,omitempty"`
 	Project   string `json:"project,omitempty"`
+	Profile   string `json:"profile,omitempty"`
 	TimeoutMS int    `json:"timeoutMs,omitempty"`
 }
 
@@ -26,6 +27,7 @@ var probeInputSchema = json.RawMessage(`{
     "address": {"type": "string", "description": "Optional explicit host:port. Used when server is omitted."},
     "service": {"type": "string", "description": "Optional service FQN for labeling diagnostics."},
     "project": {"type": "string", "description": "Optional project name used to infer a single bound server when server is omitted."},
+    "profile": {"type": "string", "description": "Optional project profile name. Requires project when server is omitted."},
     "timeoutMs": {"type": "integer", "description": "Optional total timeout in milliseconds."}
   }
 }`)

@@ -34,7 +34,7 @@ func (s *Service) Resolve(ctx context.Context, input ResolveInput) (ResolveResul
 	if err != nil {
 		return ResolveResult{}, err
 	}
-	serverName, server, hasServer, err := resolveServer(cfg, input.Project, input.Server, false)
+	serverName, server, hasServer, err := resolveServer(cfg, input.Project, input.Profile, input.Server, false)
 	if err != nil {
 		return ResolveResult{}, err
 	}
@@ -50,6 +50,7 @@ func (s *Service) Resolve(ctx context.Context, input ResolveInput) (ResolveResul
 		endpoint := endpointFromServer(serverName, server, timeoutMS)
 		return ResolveResult{
 			Project:     ProjectRef{Name: projectName, Info: project},
+			Profile:     server.Profile,
 			Server:      serverName,
 			Endpoint:    &endpoint,
 			Network:     "not_probed",
@@ -66,12 +67,13 @@ func (s *Service) Resolve(ctx context.Context, input ResolveInput) (ResolveResul
 		Network: "not_probed",
 		Diagnostics: Diagnostics{Resolution: map[string]interface{}{
 			"project": projectName,
+			"profile": input.Profile,
 			"server":  "",
 		}},
 	}, nil
 }
 
-func resolveServer(cfg appconfig.Config, project, explicit string, required bool) (string, appconfig.Server, bool, error) {
+func resolveServer(cfg appconfig.Config, project, profile, explicit string, required bool) (string, appconfig.Server, bool, error) {
 	if explicit != "" {
 		server, ok := cfg.Servers[explicit]
 		if !ok {
@@ -80,7 +82,31 @@ func resolveServer(cfg appconfig.Config, project, explicit string, required bool
 		if project != "" && server.Project != project {
 			return "", appconfig.Server{}, false, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q is bound to project %q, not %q", explicit, server.Project, project), Details: map[string]interface{}{"server": explicit, "project": project, "actualProject": server.Project}}
 		}
+		if profile != "" && server.Profile != profile {
+			return "", appconfig.Server{}, false, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q is bound to profile %q, not %q", explicit, server.Profile, profile), Details: map[string]interface{}{"server": explicit, "profile": profile, "actualProfile": server.Profile}}
+		}
 		return explicit, server, true, nil
+	}
+
+	if profile != "" {
+		if project == "" {
+			return "", appconfig.Server{}, false, &DomainError{Kind: ErrProjectNotFound, Message: "project is required when profile is specified", Details: map[string]interface{}{"profile": profile}}
+		}
+		name := appconfig.ServerNameForProfile(project, profile)
+		server, ok := cfg.Servers[name]
+		if !ok {
+			return "", appconfig.Server{}, false, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("profile %q for project %q not found", profile, project), Details: map[string]interface{}{"project": project, "profile": profile, "candidates": serverCandidates(cfg, serverNamesForProject(cfg, project))}}
+		}
+		return name, server, true, nil
+	}
+
+	if project != "" {
+		if p, ok := cfg.Projects[project]; ok && p.ActiveProfile != "" {
+			name := appconfig.ServerNameForProfile(project, p.ActiveProfile)
+			if server, ok := cfg.Servers[name]; ok {
+				return name, server, true, nil
+			}
+		}
 	}
 
 	var names []string
@@ -104,6 +130,17 @@ func resolveServer(cfg appconfig.Config, project, explicit string, required bool
 	return "", appconfig.Server{}, false, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("server is required because %d servers are configured", len(names)), Details: map[string]interface{}{"serverCount": len(names), "candidates": candidates}}
 }
 
+func serverNamesForProject(cfg appconfig.Config, project string) []string {
+	var names []string
+	for _, name := range cfg.ServerNames() {
+		server := cfg.Servers[name]
+		if project == "" || server.Project == project {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // serverCandidates lists the ambiguous-match servers (name/project/address) so the
 // ENDPOINT_NOT_FOUND recovery can name which servers to choose between. Attachments are
 // deliberately excluded — only the non-secret routing fields are surfaced.
@@ -114,6 +151,7 @@ func serverCandidates(cfg appconfig.Config, names []string) []map[string]interfa
 		out = append(out, map[string]interface{}{
 			"server":  name,
 			"project": s.Project,
+			"profile": s.Profile,
 			"address": s.Address,
 		})
 	}
@@ -163,6 +201,7 @@ func endpointFromServer(name string, server appconfig.Server, timeoutMS int) End
 	return Endpoint{
 		Server:      name,
 		Project:     server.Project,
+		Profile:     server.Profile,
 		Address:     server.Address,
 		Protocol:    server.Protocol,
 		TimeoutMS:   timeoutMS,
@@ -186,6 +225,7 @@ func boundServers(cfg appconfig.Config, project string) []map[string]interface{}
 func resolutionDiagnostics(project, server string, endpoint Endpoint) Diagnostics {
 	return Diagnostics{Resolution: map[string]interface{}{
 		"project":        project,
+		"profile":        endpoint.Profile,
 		"server":         server,
 		"endpointSource": "configured-server",
 		"address":        endpoint.Address,
