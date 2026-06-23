@@ -177,6 +177,9 @@ CLI 用于 setup 和诊断：
 ```bash
 sofarpc project add user /Users/me/workspace/user-service --prefix com.company.user
 sofarpc server add user-test 10.0.0.1:12200 --project user --profile test
+sofarpc project list
+sofarpc project list --json
+sofarpc server list
 sofarpc server list --json
 ```
 
