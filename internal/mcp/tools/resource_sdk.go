@@ -34,7 +34,7 @@ var compatibilitySummary = func() json.RawMessage {
 			{"List / Set", "supported", "Set is serialized by Java as a typed list and decodes to an ordered list shape."},
 			{"Map", "partial", "Flattened results stringify keys; set rawResult=true to inspect raw key types."},
 			{"java.time.LocalDate / LocalDateTime / Instant", "supported", "Request args accept ISO strings; these three types only."},
-			{"java.util.Date", "partial", "Decodes as epoch millis; Go request encoding as a Date tag is not yet implemented."},
+			{"java.util.Date", "supported", "Request input is epoch millis as a number; Date strings are rejected during invoke_plan."},
 			{"Enum", "partial", "Needs source schema to encode as a Java enum object; explicit-address calls without schema cannot infer enum types."},
 			{"Overloaded methods", "supported", "Provide paramTypes when overloads are ambiguous."},
 			{"Cyclic request values", "rejected", "Object reference / cycle preservation is not implemented for request encoding."},

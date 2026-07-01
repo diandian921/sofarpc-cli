@@ -99,6 +99,52 @@ func TestDeclaredNumericTypesChooseHessianTags(t *testing.T) {
 	}
 }
 
+func TestDeclaredBoxedScalarNullsEncodeAsHessianNull(t *testing.T) {
+	for _, javaType := range []string{
+		"java.lang.Boolean",
+		"java.lang.Byte",
+		"java.lang.Short",
+		"java.lang.Integer",
+		"java.lang.Long",
+		"java.lang.Float",
+		"java.lang.Double",
+		"java.lang.Character",
+	} {
+		t.Run(javaType, func(t *testing.T) {
+			w := newWriter()
+			if err := w.writeValue(javavalue.Scalar(javaType, nil)); err != nil {
+				t.Fatalf("writeValue: %v", err)
+			}
+			if got := w.bytes(); len(got) != 1 || got[0] != 'N' {
+				t.Fatalf("bytes = %x, want Hessian null tag", got)
+			}
+		})
+	}
+}
+
+func TestBuildRequestContentSendsNullForTypedBoxedScalar(t *testing.T) {
+	content, _, err := buildRequestContent(Request{
+		Service:  "com.example.Facade",
+		Method:   "query",
+		ArgTypes: []string{"java.lang.Integer"},
+		Args:     []interface{}{javavalue.Scalar("java.lang.Integer", nil)},
+	})
+	if err != nil {
+		t.Fatalf("buildRequestContent: %v", err)
+	}
+	r := &reader{data: content}
+	if _, err := r.readValue(); err != nil {
+		t.Fatalf("read SofaRequest: %v", err)
+	}
+	arg, err := r.readValue()
+	if err != nil {
+		t.Fatalf("read arg: %v", err)
+	}
+	if arg != nil {
+		t.Fatalf("arg = %#v, want nil", arg)
+	}
+}
+
 func readSofaRequest(t *testing.T, content []byte) map[string]interface{} {
 	t.Helper()
 	r := &reader{data: content}

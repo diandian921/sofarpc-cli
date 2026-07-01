@@ -228,6 +228,98 @@ func TestPlanExplicitPrimitiveArgumentsSkipSchema(t *testing.T) {
 	}
 }
 
+func TestPlanExplicitBoxedScalarAllowsNull(t *testing.T) {
+	cfg := appconfig.Config{
+		Projects: map[string]appconfig.Project{
+			"user": {WorkspaceRoot: "/path/that/does/not/exist"},
+		},
+		Servers: map[string]appconfig.Server{
+			"user-test": {
+				Address:   "127.0.0.1:12200",
+				Project:   "user",
+				Protocol:  "bolt",
+				TimeoutMS: 5000,
+				AppName:   "test",
+			},
+		},
+	}
+	service := New(fakeStore{cfg: cfg})
+	plan, err := service.PlanInvocation(context.Background(), InvocationInput{
+		Server:              "user-test",
+		Service:             "com.example.UserService",
+		Method:              "query",
+		ParamTypes:          []string{"java.lang.Integer"},
+		OrderedArguments:    []interface{}{nil},
+		HasOrderedArguments: true,
+	})
+	if err != nil {
+		t.Fatalf("PlanInvocation: %v", err)
+	}
+	if len(plan.Arguments) != 1 || plan.Arguments[0].JavaType != "java.lang.Integer" || plan.Arguments[0].Scalar != nil {
+		t.Fatalf("arguments = %#v", plan.Arguments)
+	}
+	req := directRequestFromPlan(plan)
+	if len(req.Args) != 1 {
+		t.Fatalf("direct args = %#v", req.Args)
+	}
+	tv, ok := req.Args[0].(javavalue.TypedValue)
+	if !ok || tv.JavaType != "java.lang.Integer" || tv.Scalar != nil {
+		t.Fatalf("direct arg = %#v", req.Args[0])
+	}
+}
+
+func TestPlanRejectsJavaUtilDateStringBeforeInvoke(t *testing.T) {
+	cfg := appconfig.Config{
+		Projects: map[string]appconfig.Project{
+			"user": {WorkspaceRoot: "/unused"},
+		},
+		Servers: map[string]appconfig.Server{
+			"user-test": {
+				Address:   "127.0.0.1:12200",
+				Project:   "user",
+				Protocol:  "bolt",
+				TimeoutMS: 5000,
+				AppName:   "test",
+			},
+		},
+	}
+	desc := schema.Description{
+		Methods: []schema.Method{{
+			Package: "com.example.api",
+			Imports: map[string]string{
+				"AcHotspotBgRequest": "com.example.dto.AcHotspotBgRequest",
+			},
+			Method:     "save",
+			Parameters: []schema.Parameter{{Name: "request", Type: "AcHotspotBgRequest"}},
+		}},
+		Types: map[string]schema.TypeSchema{
+			"com.example.dto.AcHotspotBgRequest": {
+				Type: "com.example.dto.AcHotspotBgRequest",
+				Kind: "class",
+				Fields: []schema.Field{
+					{Name: "validStartTime", Type: "Date"},
+				},
+				Imports: map[string]string{"Date": "java.util.Date"},
+			},
+		},
+	}
+	service := New(fakeStore{cfg: cfg})
+	service.Source = fakeSource{desc: desc}
+
+	_, err := service.PlanInvocation(context.Background(), InvocationInput{
+		Server:  "user-test",
+		Service: "com.example.api.AcHotspotBgFacade",
+		Method:  "save",
+		NamedArguments: map[string]interface{}{
+			"validStartTime": "2026-07-01 00:00:00",
+		},
+	})
+	var de *DomainError
+	if !errors.As(err, &de) || de.Kind != ErrArgumentTypeMismatch || !strings.Contains(de.Message, "java.util.Date") {
+		t.Fatalf("PlanInvocation must reject Date strings before invoke, got %v", err)
+	}
+}
+
 func TestPlanExplicitAddressValidatesSpecialArgs(t *testing.T) {
 	service := New(nil)
 	base := InvocationInput{

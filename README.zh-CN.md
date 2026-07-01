@@ -212,7 +212,8 @@ Schema cache 存储在 `~/.sofarpc/cache/schema/` 下，并通过源码内容 fi
 已知限制：
 
 - 请求编码尚未实现 object reference preservation；循环 request value 会被拒绝。
-- `java.util.Date`、缺少 source schema 的 enum payload，以及 provider-specific Hessian extensions 的 Go 请求编码，在广泛依赖前还需要更多兼容性工作。Schema 已知的 enum 参数和 DTO field 已覆盖 Hessian oracle tests。
+- `java.util.Date` 请求值必须是 epoch millis 数字；日期/时间字符串会在 plan 阶段被拒绝，避免时区歧义。
+- 缺少 source schema 的 enum payload，以及 provider-specific Hessian extensions 的 Go 请求编码，在广泛依赖前还需要更多兼容性工作。Schema 已知的 enum 参数和 DTO field 已覆盖 Hessian oracle tests。
 - 常规 `result` 中 map keys 会扁平化为字符串；诊断时如果 key 类型很重要，请使用 `rawResult=true`。
 
 ## 安全边界
