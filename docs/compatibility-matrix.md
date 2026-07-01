@@ -26,7 +26,7 @@ JSON presentation shape that MCP and CLI return to agents.
 | `String` | Supported | Golden decode + optional encode oracle, including non-BMP characters | Hessian strings use UTF-16 code unit length and Java-compatible CESU-8 bytes. |
 | `BigDecimal` | Supported | Golden decode + optional encode oracle | Flattened result is a JSON number. |
 | `BigInteger` | Supported | Golden decode + presentation reconstructs the number from signum/mag, and Go->Java encode oracle from string/integer arguments | Encoded as BigInteger's serialized signum/mag object form (not a scalar); request input is a string or integer JSON number. |
-| `java.util.Date` | Partial | Golden decode | Java wire date decodes as epoch millis. Go request encoding for Date is not yet implemented as a Date tag. |
+| `java.util.Date` | Supported | Golden decode + unit encode round-trip | Java wire date decodes as epoch millis. Request input is epoch millis as a number; Date strings such as `2026-07-01 00:00:00` are rejected during invoke planning because they carry no timezone. |
 | `byte[]` | Supported | Golden decode + presentation JSON + optional encode oracle | JSON input should be an array of byte numbers in `[-128, 255]`. Response JSON uses base64 for raw byte slices. |
 | DTO object | Supported | Golden decode + presentation JSON + optional encode oracle | Shared object references are not preserved on request encoding. |
 | Nested DTO with list/map/null fields | Supported | Golden decode + presentation JSON + optional encode oracle | Covered as a common DTO response shape, not as full object graph reference preservation. |

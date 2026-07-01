@@ -161,6 +161,10 @@ func (w *writer) writeTypedValue(value javavalue.TypedValue) error {
 		}
 		return w.writeTypedMap(class, value.Entries)
 	default:
+		if value.Scalar == nil {
+			w.buf = append(w.buf, 'N')
+			return nil
+		}
 		if handled, err := w.writeJavaScalar(value.JavaType, value.Scalar); handled || err != nil {
 			return err
 		}

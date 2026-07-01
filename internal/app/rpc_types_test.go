@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -260,16 +261,25 @@ func TestValidateSpecialArgsRejectsMalformed(t *testing.T) {
 	// malformed top-level special args fall back to a scalar of the special type
 	assertArgMismatch("bad date", []javavalue.TypedValue{javavalue.Scalar("java.time.LocalDate", "2024-13-99")})
 	assertArgMismatch("bad bigint", []javavalue.TypedValue{javavalue.Scalar("java.math.BigInteger", "not-a-number")})
+	assertArgMismatch("bad util date", []javavalue.TypedValue{javavalue.Scalar("java.util.Date", "2026-07-01 00:00:00")})
 	// malformed special value nested inside a DTO field is caught too
 	assertArgMismatch("nested bad instant", []javavalue.TypedValue{
 		javavalue.Object("com.x.Dto", map[string]javavalue.TypedValue{
 			"at": javavalue.Scalar("java.time.Instant", "yesterday"),
 		}),
 	})
+	assertArgMismatch("nested bad util date", []javavalue.TypedValue{
+		javavalue.Object("com.x.Dto", map[string]javavalue.TypedValue{
+			"validStartTime": javavalue.Scalar("java.util.Date", "2026-07-01 00:00:00"),
+		}),
+	})
 
 	// a valid (coerced to object form) special arg passes
 	if err := validateSpecialArgs([]javavalue.TypedValue{localDateHandle(time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC))}); err != nil {
 		t.Fatalf("valid LocalDate object must pass: %v", err)
+	}
+	if err := validateSpecialArgs([]javavalue.TypedValue{javavalue.Scalar("java.util.Date", json.Number("1782844800000"))}); err != nil {
+		t.Fatalf("epoch-millis java.util.Date must pass: %v", err)
 	}
 	// a null special arg is allowed
 	if err := validateSpecialArgs([]javavalue.TypedValue{javavalue.Scalar("java.time.Instant", nil)}); err != nil {

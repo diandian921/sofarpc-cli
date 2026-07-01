@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -155,7 +156,13 @@ func validateSpecialArgs(args []javavalue.TypedValue) error {
 func firstMalformedSpecial(v javavalue.TypedValue) string {
 	switch v.Kind {
 	case javavalue.KindScalar:
-		if v.Scalar != nil && isSpecialEncodedType(v.JavaType) {
+		if v.Scalar == nil {
+			return ""
+		}
+		if isSpecialEncodedType(v.JavaType) {
+			return v.JavaType
+		}
+		if v.JavaType == "java.util.Date" && !isEpochMillisScalar(v.Scalar) {
 			return v.JavaType
 		}
 	case javavalue.KindObject:
@@ -184,6 +191,35 @@ func isSpecialEncodedType(javaType string) bool {
 	switch javaType {
 	case "java.time.LocalDate", "java.time.LocalDateTime", "java.time.Instant", "java.math.BigInteger":
 		return true
+	}
+	return false
+}
+
+func isEpochMillisScalar(value interface{}) bool {
+	switch x := value.(type) {
+	case json.Number:
+		if _, err := x.Int64(); err == nil {
+			return true
+		}
+		if f, err := x.Float64(); err == nil {
+			return math.Trunc(f) == f && f >= math.MinInt64 && f <= math.MaxInt64
+		}
+	case int, int8, int16, int32, int64:
+		return true
+	case uint:
+		return uint64(x) <= math.MaxInt64
+	case uint8, uint16, uint32:
+		return true
+	case uint64:
+		return x <= math.MaxInt64
+	case float32:
+		f := float64(x)
+		return math.Trunc(f) == f && f >= math.MinInt64 && f <= math.MaxInt64
+	case float64:
+		return math.Trunc(x) == x && x >= math.MinInt64 && x <= math.MaxInt64
+	case string:
+		_, err := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+		return err == nil
 	}
 	return false
 }

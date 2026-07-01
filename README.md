@@ -228,7 +228,8 @@ The pure-Go runtime covers direct BOLT generic invocation and the common Hessian
 Known limits:
 
 - object reference preservation is not implemented for request encoding; cyclic request values are rejected.
-- Go request encoding for `java.util.Date`, enum payloads without source schema, and provider-specific Hessian extensions need more compatibility work before relying on them broadly. Schema-known enum parameters and DTO fields are covered by Hessian oracle tests.
+- `java.util.Date` request values must be epoch millis numbers; date/time strings are rejected during planning to avoid timezone ambiguity.
+- Go request encoding for enum payloads without source schema and provider-specific Hessian extensions needs more compatibility work before relying on them broadly. Schema-known enum parameters and DTO fields are covered by Hessian oracle tests.
 - map keys are flattened to strings in the normal `result`; use `rawResult=true` when key type matters during diagnosis.
 
 ## Security Boundaries
