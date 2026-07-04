@@ -113,7 +113,10 @@ MCP 暴露面刻意保持小而面向工作流：
   "service": "com.example.UserService",
   "method": "getUser",
   "paramTypes": ["java.lang.String"],
-  "orderedArguments": ["u001"]
+  "orderedArguments": ["u001"],
+  "attachments": {
+    "traceId": "trace-001"
+  }
 }
 ```
 
@@ -170,9 +173,11 @@ MCP 暴露面刻意保持小而面向工作流：
 `activeProfile`。兼容用的 flat `servers` 视图仍会在内存中派生，名称为
 `<project>-<profile>`（例如 `user-test`），所以已有的 `server` 参数仍能继续工作。
 
-`attachments` 会作为 SOFARPC request baggage（`rpc_req_baggage`）发送。服务端
-可通过 `RpcInvokeContext.getContext().getRequestBaggage(key)` 读取。值会明文保存
-在本地配置里，请按凭据对待。
+配置里的 `attachments` 是默认 SOFARPC request baggage（`rpc_req_baggage`）。
+`sofarpc_invoke` / `sofarpc_invoke_plan` 的调用级 `attachments` 会叠加到默认值上，
+且调用级同名 key 覆盖配置默认值。服务端可通过
+`RpcInvokeContext.getContext().getRequestBaggage(key)` 读取。配置文件里的值会明文保存，
+请按凭据对待。
 
 ## CLI
 

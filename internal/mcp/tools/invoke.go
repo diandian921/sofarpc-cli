@@ -20,6 +20,7 @@ type InvokeArgs struct {
 	ParamTypes       []string                 `json:"paramTypes,omitempty"`
 	OrderedArguments []interface{}            `json:"orderedArguments,omitempty"`
 	Arguments        map[string]interface{}   `json:"arguments,omitempty"`
+	Attachments      map[string]string        `json:"attachments,omitempty"`
 	TimeoutMS        int                      `json:"timeoutMs,omitempty"`
 	RawResult        bool                     `json:"rawResult,omitempty"`
 	Assertions       []presentation.Assertion `json:"assertions,omitempty"`
@@ -28,16 +29,17 @@ type InvokeArgs struct {
 
 func (a InvokeArgs) toInput() app.InvocationInput {
 	input := app.InvocationInput{
-		Project:    a.Project,
-		Profile:    a.Profile,
-		Server:     a.Server,
-		Service:    a.Service,
-		Method:     a.Method,
-		ParamTypes: a.ParamTypes,
-		TimeoutMS:  a.TimeoutMS,
-		RawResult:  a.RawResult,
-		Assertions: a.Assertions,
-		ResultPath: a.ResultPath,
+		Project:     a.Project,
+		Profile:     a.Profile,
+		Server:      a.Server,
+		Service:     a.Service,
+		Method:      a.Method,
+		ParamTypes:  a.ParamTypes,
+		Attachments: a.Attachments,
+		TimeoutMS:   a.TimeoutMS,
+		RawResult:   a.RawResult,
+		Assertions:  a.Assertions,
+		ResultPath:  a.ResultPath,
 	}
 	if a.OrderedArguments != nil {
 		input.OrderedArguments = a.OrderedArguments
@@ -63,6 +65,7 @@ var invokeInputSchema = json.RawMessage(`{
     "paramTypes": {"type": "array", "items": {"type": "string"}, "description": "Optional Java parameter type FQNs for overload disambiguation."},
     "orderedArguments": {"type": "array", "description": "Arguments in method parameter order."},
     "arguments": {"type": "object", "additionalProperties": true, "description": "Named arguments keyed by Java parameter name, or a single DTO object when the method has one parameter."},
+    "attachments": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional per-call SofaRPC request baggage. Merged with configured server/profile attachments; per-call values override configured defaults."},
     "timeoutMs": {"type": "integer", "description": "Optional total timeout in milliseconds."},
     "rawResult": {"type": "boolean", "description": "When true, include the decoded Java object shape alongside the flattened result."},
     "assertions": {
@@ -96,6 +99,7 @@ var invokePlanInputSchema = json.RawMessage(`{
     "paramTypes": {"type": "array", "items": {"type": "string"}, "description": "Optional Java parameter type FQNs for overload disambiguation."},
     "orderedArguments": {"type": "array", "description": "Arguments in method parameter order."},
     "arguments": {"type": "object", "additionalProperties": true, "description": "Named arguments keyed by Java parameter name, or a single DTO object when the method has one parameter."},
+    "attachments": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional per-call SofaRPC request baggage. Merged with configured server/profile attachments; per-call values override configured defaults."},
     "timeoutMs": {"type": "integer", "description": "Optional total timeout in milliseconds."}
   }
 }`)

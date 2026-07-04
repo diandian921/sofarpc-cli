@@ -95,3 +95,24 @@ func TestDecodeStrictParsesAssertionsAndResultPath(t *testing.T) {
 		t.Error("expected case-variant ResultPath to be rejected")
 	}
 }
+
+func TestDecodeStrictParsesInvocationAttachments(t *testing.T) {
+	var a InvokeArgs
+	raw := `{"service":"S","method":"m","attachments":{"tenant":"blue","traceId":"trace-001"}}`
+	if err := decodeStrict(json.RawMessage(raw), &a); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if a.Attachments["tenant"] != "blue" || a.Attachments["traceId"] != "trace-001" {
+		t.Fatalf("attachments = %#v", a.Attachments)
+	}
+	input := a.toInput()
+	if input.Attachments["tenant"] != "blue" || input.Attachments["traceId"] != "trace-001" {
+		t.Fatalf("input attachments = %#v", input.Attachments)
+	}
+	if err := decodeStrict(json.RawMessage(`{"service":"S","method":"m","attachments":{"tenant":1}}`), &a); err == nil {
+		t.Error("expected non-string attachment value to be rejected")
+	}
+	if err := decodeStrict(json.RawMessage(`{"service":"S","method":"m","Attachments":{"tenant":"blue"}}`), &a); err == nil {
+		t.Error("expected case-variant Attachments to be rejected")
+	}
+}
