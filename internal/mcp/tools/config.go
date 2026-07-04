@@ -69,7 +69,7 @@ var configSaveServerInputSchema = json.RawMessage(`{
     "protocol": {"type": "string", "description": "Protocol; default bolt."},
     "timeoutMs": {"type": "integer", "description": "Default total timeout in milliseconds."},
     "appName": {"type": "string", "description": "SofaRPC consumer app name."},
-    "attachments": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional static SofaRPC attachments."},
+    "attachments": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional static SofaRPC request baggage."},
     "overwrite": {"type": "boolean", "description": "Allow replacing an existing server."},
     "dryRun": {"type": "boolean", "description": "Validate and preview the entry without writing config.json."}
   }

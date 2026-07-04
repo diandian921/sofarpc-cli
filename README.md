@@ -186,6 +186,10 @@ is used. The legacy flat `servers` view is still available in memory, derived as
 `<project>-<profile>` (for example `user-test`), so existing `server` arguments
 continue to work.
 
+`attachments` are sent as SOFARPC request baggage (`rpc_req_baggage`). Provider
+code can read them with `RpcInvokeContext.getContext().getRequestBaggage(key)`.
+Treat values as credentials when stored in local config.
+
 ## CLI
 
 Use CLI for setup and diagnostics:

@@ -30,6 +30,8 @@ const (
 	requestHeaderLen  = 22
 	responseHeaderLen = 20
 	maxResponseBytes  = 16 << 20
+
+	requestBaggageProp = "rpc_req_baggage"
 )
 
 var requestID atomic.Uint32
@@ -184,13 +186,17 @@ func buildRequestContent(req Request) ([]byte, string, error) {
 }
 
 func requestProps(attachments map[string]string) map[string]interface{} {
-	props := make(map[string]interface{}, len(attachments)+3)
+	props := make(map[string]interface{}, 4)
+	baggage := make(map[string]string, len(attachments))
 	for k, v := range attachments {
 		key := strings.TrimSpace(k)
 		if key == "" {
 			continue
 		}
-		props[key] = v
+		baggage[key] = v
+	}
+	if len(baggage) > 0 {
+		props[requestBaggageProp] = baggage
 	}
 	props["sofa_head_generic_type"] = genericType
 	props["type"] = invokeTypeSync

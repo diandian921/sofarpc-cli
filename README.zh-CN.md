@@ -170,6 +170,10 @@ MCP 暴露面刻意保持小而面向工作流：
 `activeProfile`。兼容用的 flat `servers` 视图仍会在内存中派生，名称为
 `<project>-<profile>`（例如 `user-test`），所以已有的 `server` 参数仍能继续工作。
 
+`attachments` 会作为 SOFARPC request baggage（`rpc_req_baggage`）发送。服务端
+可通过 `RpcInvokeContext.getContext().getRequestBaggage(key)` 读取。值会明文保存
+在本地配置里，请按凭据对待。
+
 ## CLI
 
 CLI 用于 setup 和诊断：
