@@ -48,7 +48,7 @@ func TestBuildRequestContentWrapsTopLevelDTO(t *testing.T) {
 	}
 }
 
-func TestBuildRequestContentIncludesAttachmentsInRequestProps(t *testing.T) {
+func TestBuildRequestContentIncludesAttachmentsAsRequestBaggage(t *testing.T) {
 	content, _, err := buildRequestContent(Request{
 		Service:  "com.example.Facade",
 		Method:   "query",
@@ -65,8 +65,15 @@ func TestBuildRequestContentIncludesAttachmentsInRequestProps(t *testing.T) {
 	}
 	req := readSofaRequest(t, content)
 	props := req["requestProps"].(map[string]interface{})
-	if props["tenant"] != "blue" || props["trace-context"] != "abc" {
-		t.Fatalf("attachments missing from requestProps: %#v", props)
+	baggage, ok := props[requestBaggageProp].(map[string]interface{})
+	if !ok {
+		t.Fatalf("request baggage missing from requestProps: %#v", props)
+	}
+	if baggage["tenant"] != "blue" || baggage["trace-context"] != "abc" || baggage["generic.revise"] != "false" {
+		t.Fatalf("attachments missing from request baggage: %#v", baggage)
+	}
+	if _, exists := props["tenant"]; exists {
+		t.Fatalf("attachment leaked as top-level requestProp: %#v", props)
 	}
 	if props["generic.revise"] != "true" || props["sofa_head_generic_type"] != genericType || props["type"] != invokeTypeSync {
 		t.Fatalf("runtime requestProps were not preserved: %#v", props)
