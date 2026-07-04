@@ -193,6 +193,73 @@ func TestPlanNamedArgumentsUsesSourceIndexPort(t *testing.T) {
 	}
 }
 
+func TestPlanInvocationMergesCallAttachmentsOverEndpointDefaults(t *testing.T) {
+	cfg := appconfig.Config{
+		Projects: map[string]appconfig.Project{
+			"user": {WorkspaceRoot: "/path/that/does/not/exist"},
+		},
+		Servers: map[string]appconfig.Server{
+			"user-test": {
+				Address:   "127.0.0.1:12200",
+				Project:   "user",
+				Protocol:  "bolt",
+				TimeoutMS: 5000,
+				AppName:   "test",
+				Attachments: map[string]string{
+					"tenant": "blue",
+					"source": "config",
+				},
+			},
+		},
+	}
+	service := New(fakeStore{cfg: cfg})
+	callAttachments := map[string]string{
+		"tenant":  "green",
+		"traceId": "trace-001",
+	}
+	plan, err := service.PlanInvocation(context.Background(), InvocationInput{
+		Server:              "user-test",
+		Service:             "com.example.UserService",
+		Method:              "getUser",
+		ParamTypes:          []string{"java.lang.String"},
+		OrderedArguments:    []interface{}{"u001"},
+		HasOrderedArguments: true,
+		Attachments:         callAttachments,
+	})
+	if err != nil {
+		t.Fatalf("PlanInvocation: %v", err)
+	}
+	got := plan.Endpoint.Attachments
+	if got["tenant"] != "green" || got["source"] != "config" || got["traceId"] != "trace-001" {
+		t.Fatalf("merged attachments = %#v", got)
+	}
+	callAttachments["traceId"] = "mutated"
+	server := cfg.Servers["user-test"]
+	server.Attachments["source"] = "mutated"
+	if got["traceId"] != "trace-001" || got["source"] != "config" {
+		t.Fatalf("merged attachments should be copied, got %#v", got)
+	}
+}
+
+func TestPlanExplicitAddressUsesCallAttachments(t *testing.T) {
+	service := New(nil)
+	plan, err := service.PlanInvocation(context.Background(), InvocationInput{
+		Address:             "127.0.0.1:12200",
+		Service:             "com.example.UserService",
+		Method:              "getUser",
+		ParamTypes:          []string{"java.lang.String"},
+		OrderedArguments:    []interface{}{"u001"},
+		HasOrderedArguments: true,
+		Attachments:         map[string]string{"traceId": "trace-001"},
+	})
+	if err != nil {
+		t.Fatalf("PlanInvocation: %v", err)
+	}
+	if got := plan.Endpoint.Attachments; got["traceId"] != "trace-001" {
+		t.Fatalf("explicit address attachments = %#v", got)
+	}
+}
+
 func TestPlanExplicitPrimitiveArgumentsSkipSchema(t *testing.T) {
 	cfg := appconfig.Config{
 		Projects: map[string]appconfig.Project{

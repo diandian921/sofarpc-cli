@@ -139,6 +139,7 @@ type InvocationInput struct {
 	OrderedArguments    []interface{}
 	HasOrderedArguments bool
 	NamedArguments      map[string]interface{}
+	Attachments         map[string]string
 	TimeoutMS           int
 	RawResult           bool
 	Assertions          []presentation.Assertion

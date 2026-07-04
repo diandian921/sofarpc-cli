@@ -126,7 +126,10 @@ The four config-write tools are not registered when the server is started with `
   "service": "com.example.UserService",
   "method": "getUser",
   "paramTypes": ["java.lang.String"],
-  "orderedArguments": ["u001"]
+  "orderedArguments": ["u001"],
+  "attachments": {
+    "traceId": "trace-001"
+  }
 }
 ```
 
@@ -186,9 +189,11 @@ is used. The legacy flat `servers` view is still available in memory, derived as
 `<project>-<profile>` (for example `user-test`), so existing `server` arguments
 continue to work.
 
-`attachments` are sent as SOFARPC request baggage (`rpc_req_baggage`). Provider
-code can read them with `RpcInvokeContext.getContext().getRequestBaggage(key)`.
-Treat values as credentials when stored in local config.
+Configured `attachments` are default SOFARPC request baggage (`rpc_req_baggage`).
+Per-call `sofarpc_invoke` / `sofarpc_invoke_plan` `attachments` are merged on top
+and override configured defaults. Provider code can read them with
+`RpcInvokeContext.getContext().getRequestBaggage(key)`. Treat values stored in
+local config as credentials.
 
 ## CLI
 

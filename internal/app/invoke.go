@@ -50,6 +50,7 @@ func (s *Service) PlanInvocation(ctx context.Context, input InvocationInput) (In
 		timeoutMS = server.TimeoutMS
 	}
 	endpoint := endpointFromServer(serverName, server, timeoutMS)
+	endpoint.Attachments = mergeStringMaps(endpoint.Attachments, input.Attachments)
 	return InvocationPlan{
 		Project:    ProjectRef{Name: projectName, Info: project},
 		Profile:    server.Profile,
@@ -108,7 +109,7 @@ func (s *Service) planExplicitAddressInvocation(input InvocationInput, start tim
 		Protocol:    protocol,
 		TimeoutMS:   timeoutMS,
 		AppName:     appName,
-		Attachments: map[string]string{},
+		Attachments: copyStringMap(input.Attachments),
 	}
 	warnings := []PlanWarning(nil)
 	if needsSchemaAnnotation(input.ParamTypes) {
@@ -235,6 +236,20 @@ func copyStringMap(in map[string]string) map[string]string {
 	}
 	out := make(map[string]string, len(in))
 	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func mergeStringMaps(base, override map[string]string) map[string]string {
+	out := copyStringMap(base)
+	if len(override) == 0 {
+		return out
+	}
+	if out == nil {
+		out = make(map[string]string, len(override))
+	}
+	for k, v := range override {
 		out[k] = v
 	}
 	return out

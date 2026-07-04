@@ -90,6 +90,33 @@ jq -e '.ok and (.data.result.success // (.data.result.errorMsg | not))' response
 
 复杂 / 嵌套 payload 先用 `sofarpc_invoke_plan` 跑一遍,确认 plan 里 paramTypes、orderedArguments、Java 类型都对,再 `sofarpc_invoke` 真打。 别靠猜类型硬拼。
 
+## 请求上下文 / attachments
+
+`attachments` 是 SOFARPC request baggage,服务端用
+`RpcInvokeContext.getContext().getRequestBaggage(key)` 读取。值必须是字符串。
+
+- **本次请求上下文**(traceId、requestId、临时灰度、临时租户)放在
+  `sofarpc_invoke_plan` / `sofarpc_invoke` 入参的 `attachments`。
+- **稳定默认值**(固定租户、环境标识、调用来源)才放到 server/profile 配置里的
+  `attachments`。
+- 最终发送时会合并:配置默认 attachments + 调用级 attachments;同名 key 由调用级覆盖。
+
+调用示例:
+
+```json
+{
+  "server": "user-test",
+  "service": "com.example.UserService",
+  "method": "getUser",
+  "paramTypes": ["java.lang.String"],
+  "orderedArguments": ["u001"],
+  "attachments": {
+    "traceId": "trace-001",
+    "tenant": "blue"
+  }
+}
+```
+
 ## 反 pattern(看到立刻 stop)
 
 - ❌ 不 describe 直接 invoke,靠猜方法名
@@ -97,6 +124,7 @@ jq -e '.ok and (.data.result.success // (.data.result.errorMsg | not))' response
 - ❌ 看 `probe reachable:true` 就断言 service 一定能调
 - ❌ 只凭 `server` 名猜环境,不看 `profile` / `activeProfile`
 - ❌ 复杂 payload 不过 `sofarpc_invoke_plan` 就直接 invoke
+- ❌ 把 traceId / requestId 这类一次性上下文写进 config attachments
 - ❌ describe 报错就改去 grep 源码 —— 先检查 `workspaceRoot` 配置
 - ❌ "service 找不到" → 想去查注册中心 —— 办公网连不上,放弃这条路
 
