@@ -14,7 +14,7 @@ import (
 
 func runProject(args []string, env Env) int {
 	if len(args) == 0 {
-		fmt.Fprintln(env.Stderr, "project: subcommand required (add|list|remove)")
+		fmt.Fprintln(env.Stderr, "project: subcommand required (add|list|use|remove)")
 		return 2
 	}
 	switch args[0] {
@@ -22,12 +22,46 @@ func runProject(args []string, env Env) int {
 		return runProjectAdd(args[1:], env)
 	case "list", "ls":
 		return runProjectList(args[1:], env)
+	case "use":
+		return runProjectUse(args[1:], env)
 	case "remove", "rm":
 		return runProjectRemove(args[1:], env)
 	default:
 		fmt.Fprintf(env.Stderr, "project: unknown subcommand %q\n", args[0])
 		return 2
 	}
+}
+
+// runProjectUse switches a project's activeProfile — the explicit counterpart
+// to the implicit "first saved profile becomes active" default.
+func runProjectUse(args []string, env Env) int {
+	fs := flag.NewFlagSet("project use", flag.ContinueOnError)
+	fs.SetOutput(env.Stderr)
+	rest, err := parseMixed(fs, args)
+	if err != nil {
+		return 2
+	}
+	if len(rest) != 2 {
+		fmt.Fprintln(env.Stderr, "usage: sofarpc project use <name> <profile>")
+		return 2
+	}
+	path, lock, err := configPaths()
+	if err != nil {
+		return emitResult(env, "config", app.RenderFailure(app.CodeInternalError, err.Error(), nil))
+	}
+	var project appconfig.Project
+	_, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
+		var setErr error
+		project, setErr = cfg.SetActiveProfile(rest[0], rest[1])
+		return setErr
+	})
+	if err != nil {
+		return emitResult(env, "config", app.RenderConfigFailure(err))
+	}
+	return emitResult(env, "config", app.RenderSuccess(map[string]interface{}{
+		"name":          rest[0],
+		"activeProfile": project.ActiveProfile,
+	}))
 }
 
 func runProjectAdd(args []string, env Env) int {

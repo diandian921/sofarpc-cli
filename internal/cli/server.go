@@ -40,6 +40,7 @@ func runServerAdd(args []string, env Env) int {
 	timeoutMS := fs.Int("timeout-ms", appconfig.DefaultServerTimeoutMS, "default total timeout in milliseconds")
 	appName := fs.String("app-name", appconfig.DefaultServerAppName, "SofaRPC consumer app name")
 	overwrite := fs.Bool("overwrite", false, "replace an existing server")
+	setActive := fs.Bool("set-active", false, "make this server's profile the project's activeProfile")
 	var attachments repeatedString
 	fs.Var(&attachments, "attachment", "SofaRPC request baggage as key=value; may be repeated")
 	rest, err := parseMixed(fs, args)
@@ -47,7 +48,7 @@ func runServerAdd(args []string, env Env) int {
 		return 2
 	}
 	if len(rest) != 2 {
-		fmt.Fprintln(env.Stderr, "usage: sofarpc server add <name> <host:port> --project <project> [--profile <profile>] [--timeout-ms <ms>] [--attachment k=v]")
+		fmt.Fprintln(env.Stderr, "usage: sofarpc server add <name> <host:port> --project <project> [--profile <profile>] [--timeout-ms <ms>] [--attachment k=v] [--set-active]")
 		return 2
 	}
 	name, addr := rest[0], rest[1]
@@ -66,7 +67,9 @@ func runServerAdd(args []string, env Env) int {
 		return emitResult(env, "config", app.RenderFailure(app.CodeInternalError, err.Error(), nil))
 	}
 	var server appconfig.Server
-	_, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
+	var prevActive string
+	updated, err := appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
+		prevActive = cfg.Projects[*project].ActiveProfile
 		var addErr error
 		server, addErr = cfg.AddServer(name, appconfig.Server{
 			Address:     addr,
@@ -77,12 +80,33 @@ func runServerAdd(args []string, env Env) int {
 			AppName:     *appName,
 			Attachments: attachmentMap,
 		}, *overwrite)
-		return addErr
+		if addErr != nil {
+			return addErr
+		}
+		if *setActive {
+			if server.Profile == "" {
+				return fmt.Errorf("--set-active requires a profile: server name %q infers none for project %q", name, *project)
+			}
+			_, setErr := cfg.SetActiveProfile(server.Project, server.Profile)
+			return setErr
+		}
+		return nil
 	})
 	if err != nil {
 		return emitResult(env, "config", app.RenderConfigFailure(err))
 	}
-	return emitResult(env, "config", app.RenderSuccess(map[string]interface{}{"name": name, "server": server}))
+	data := map[string]interface{}{"name": name, "server": server}
+	active, changed, warning := app.ProfileSaveAdvice(updated, server, prevActive)
+	if server.Profile != "" {
+		data["activeProfile"] = active
+	}
+	if changed {
+		data["activeProfileChanged"] = true
+	}
+	if warning != "" {
+		data["warning"] = warning
+	}
+	return emitResult(env, "config", app.RenderSuccess(data))
 }
 
 func runServerList(args []string, env Env) int {

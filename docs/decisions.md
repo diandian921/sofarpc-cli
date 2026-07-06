@@ -27,13 +27,14 @@
 | D14 | CLI 与 MCP 共用 Result 信封 | `sofarpc project/server` 子命令与 ping 全部输出统一 envelope（表格模式除外）；地址解析统一走 `app.ProbeEndpoint`/`app.Resolve` | 2026-07-06 落地；agent 可用同一套解析逻辑处理 CLI 与 MCP 输出 |
 | D15 | BOLT oracle 常驻 CI，Hessian oracle 留本地 | BOLT oracle 在独立 `oracletest/` 模块（自带 go.mod，隔离 sofastack 依赖树）并进 CI；Hessian oracle 需内网 JVM+jar，仍走 `scripts/oracle-gate.sh` 发布前门禁 | 2026-07-06 落地 |
 | D16 | 发布走 tag 触发流水线 | `.github/workflows/release.yml` 复用 package.sh/build-mcpb.sh 自动建 Release 上传产物；含 `-` 的 tag 标 prerelease | 消除人工上传的 checksum 出错面 |
+| D17 | activeProfile 显式化 | 保留"首个 profile 自动成为 activeProfile"（配置契约要求多 profile 必有 active，且删掉就无法自举）；但 save_server（MCP/CLI）回显 `activeProfile`/`activeProfileChanged`，非 active 的保存带 `warning`；显式切换入口：`setActive=true`（MCP）/ `--set-active`、`sofarpc project use <project> <profile>`（CLI），底层 `appconfig.SetActiveProfile` | 2026-07-06 落地；消除"保存第二个 server 时路由已被首个 profile 静默决定"的陷阱 |
 
 ## 未做事项（backlog，按价值排序）
 
 1. **traceId 生成/回显**（feature review #6 后半）：比调用级 attachments 更高价值的诊断锚点，net-new 未做。
 2. **invokePolicy 写操作护栏**（feature review #3）：高价值但需先拍策略语法/默认值/校验点，不是自治实现项。
 3. ~~mcp/tools 与 javavalue 补测~~：已完成（2026-07-06，tools 92.7%、javavalue 100%）。
-3a. **save_server 静默设置 activeProfile 的提示**：保存第二个带 profile 的 server 时，首个 profile 已静默成为 activeProfile，决定了 project 级调用的目标端点；save_server 输出应提示 activeProfile 当前值（补测时发现）。
+3a. ~~save_server 静默设置 activeProfile 的提示~~：已完成（2026-07-06，见 D17）。
 3b. **tools/helpers.go 与 app/resolve.go 的 resolveProject/resolveServer 双份实现**：语义相同但错误形态不同（plain error vs 带 kind 的 DomainError），doctor 走前者、resolve/invoke 走后者，应收敛到 app 层（补测时发现）。
 4. **正式 `vX.Y.Z` Release**：目前全是 `v0.1.0-beta.X` 预发布 tag；install.sh 的 `releases/latest` 路径需要一个正式 Release 验证（release.yml 已就绪）。
 5. **golangci-lint**：本机未安装，暂未引入；引入时需先本地跑通再上 CI 门禁。

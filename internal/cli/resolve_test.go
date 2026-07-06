@@ -110,6 +110,83 @@ func TestProjectListSupportsTableAndJSON(t *testing.T) {
 	}
 }
 
+// TestServerAddSurfacesActiveProfileAndProjectUseSwitches pins the CLI side of
+// the silent-activeProfile fix: server add reports the active profile, an
+// inactive save warns, and `project use` switches explicitly.
+func TestServerAddSurfacesActiveProfileAndProjectUseSwitches(t *testing.T) {
+	base, cleanup := tempHome(t)
+	defer cleanup()
+
+	env := Env{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
+	if code := runProject([]string{"add", "user", filepath.Dir(base)}, env); code != 0 {
+		t.Fatalf("project add exit=%d", code)
+	}
+
+	firstOut := &bytes.Buffer{}
+	if code := runServer([]string{"add", "user-a", "192.0.2.10:1", "--project", "user"},
+		Env{Stdout: firstOut, Stderr: &bytes.Buffer{}}); code != 0 {
+		t.Fatalf("first server add exit=%d", code)
+	}
+	first := decodeCLIData(t, firstOut.Bytes())
+	if first["activeProfile"] != "a" {
+		t.Fatalf("first add must report activeProfile=a, got %v", first["activeProfile"])
+	}
+	if changed, _ := first["activeProfileChanged"].(bool); !changed {
+		t.Fatal("first add implicitly sets activeProfile and must say so")
+	}
+
+	secondOut := &bytes.Buffer{}
+	if code := runServer([]string{"add", "user-b", "192.0.2.10:2", "--project", "user"},
+		Env{Stdout: secondOut, Stderr: &bytes.Buffer{}}); code != 0 {
+		t.Fatalf("second server add exit=%d", code)
+	}
+	second := decodeCLIData(t, secondOut.Bytes())
+	warning, _ := second["warning"].(string)
+	if !strings.Contains(warning, "sofarpc project use user b") {
+		t.Fatalf("inactive add must warn with the switch command, got %q", warning)
+	}
+
+	useOut := &bytes.Buffer{}
+	if code := runProject([]string{"use", "user", "b"},
+		Env{Stdout: useOut, Stderr: &bytes.Buffer{}}); code != 0 {
+		t.Fatalf("project use exit=%d out=%s", code, useOut.String())
+	}
+	use := decodeCLIData(t, useOut.Bytes())
+	if use["activeProfile"] != "b" {
+		t.Fatalf("project use must switch activeProfile to b, got %v", use["activeProfile"])
+	}
+
+	badOut := &bytes.Buffer{}
+	if code := runProject([]string{"use", "user", "nope"},
+		Env{Stdout: badOut, Stderr: &bytes.Buffer{}}); code == 0 {
+		t.Fatal("project use of an unknown profile must exit non-zero")
+	}
+	var failed app.Result
+	if err := json.Unmarshal(bytes.TrimSpace(badOut.Bytes()), &failed); err != nil || failed.OK {
+		t.Fatalf("unknown profile must emit a failure envelope: %s", badOut.String())
+	}
+	if !strings.Contains(failed.Error.Message, "a, b") {
+		t.Fatalf("failure should list known profiles: %+v", failed.Error)
+	}
+}
+
+// decodeCLIData unmarshals a CLI envelope line and returns its data object.
+func decodeCLIData(t *testing.T, out []byte) map[string]interface{} {
+	t.Helper()
+	var envelope app.Result
+	if err := json.Unmarshal(bytes.TrimSpace(out), &envelope); err != nil {
+		t.Fatalf("decode envelope: %v (%s)", err, out)
+	}
+	if !envelope.OK {
+		t.Fatalf("expected success envelope: %s", out)
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	return data
+}
+
 // TestPingResolvesConfiguredServerName pins the single config-backed resolution
 // path: ping shares app.ProbeEndpoint with the MCP probe tool, so a configured
 // server name resolves to its address and an unknown name yields the unified

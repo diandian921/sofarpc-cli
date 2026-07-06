@@ -389,6 +389,23 @@ func (c *Config) AddProfile(projectName, profileName string, profile Profile, ov
 	return server, nil
 }
 
+// SetActiveProfile switches which profile a project's project-level calls
+// resolve to. It is the explicit counterpart to AddProfile's implicit
+// first-profile default; the profile must already exist.
+func (c *Config) SetActiveProfile(projectName, profileName string) (Project, error) {
+	project, ok := c.Projects[projectName]
+	if !ok {
+		return Project{}, fmt.Errorf("project %q not found", projectName)
+	}
+	if _, ok := project.Profiles[profileName]; !ok {
+		return Project{}, fmt.Errorf("profile %q not found for project %q (profiles: %s)",
+			profileName, projectName, strings.Join(sortedKeys(project.Profiles), ", "))
+	}
+	project.ActiveProfile = profileName
+	c.Projects[projectName] = project
+	return project, nil
+}
+
 func (c Config) NormalizeProfile(projectName, profileName string, profile Profile) (Profile, error) {
 	if profile.Address == "" {
 		return Profile{}, fmt.Errorf("profile %q for project %q requires address", profileName, projectName)
