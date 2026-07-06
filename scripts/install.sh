@@ -50,10 +50,15 @@ while [ $# -gt 0 ]; do
 done
 
 # Dev path: if invoked from a repo checkout that has cmd/sofarpc, build
-# locally and hand off. Skips download/checksum entirely.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || true)"
-if [ -n "${REPO_ROOT:-}" ] && [ -d "$REPO_ROOT/cmd/sofarpc" ] && command -v go >/dev/null; then
+# locally and hand off. Skips download/checksum entirely. When piped to bash,
+# BASH_SOURCE[0] may be unset, so skip this path and use the release archive.
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
+REPO_ROOT=""
+if [ -n "$SCRIPT_SOURCE" ] && [ -f "$SCRIPT_SOURCE" ]; then
+    SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd 2>/dev/null || pwd)"
+    REPO_ROOT="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd || true)"
+fi
+if [ -n "$REPO_ROOT" ] && [ -d "$REPO_ROOT/cmd/sofarpc" ] && command -v go >/dev/null; then
     BUILD_DIR="$(mktemp -d)"
     trap 'rm -rf "$BUILD_DIR"' EXIT
     BIN_VERSION="$(git -C "$REPO_ROOT" describe --tags --match 'v*' --always 2>/dev/null || echo dev)"
