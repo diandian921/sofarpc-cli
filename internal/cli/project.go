@@ -58,7 +58,7 @@ func runProjectAdd(args []string, env Env) int {
 		fmt.Fprintln(env.Stderr, "project add:", err)
 		return 1
 	}
-	emitJSON(env.Stdout, map[string]interface{}{"ok": true, "name": rest[0], "project": project})
+	emitJSON(env.Stdout, env.Stderr, map[string]interface{}{"ok": true, "name": rest[0], "project": project})
 	return 0
 }
 
@@ -80,8 +80,7 @@ func runProjectList(args []string, env Env) int {
 		return 1
 	}
 	if *asJSON {
-		body, _ := json.Marshal(map[string]interface{}{"ok": true, "projects": projectsList(cfg)})
-		fmt.Fprintln(env.Stdout, string(body))
+		emitJSON(env.Stdout, env.Stderr, map[string]interface{}{"ok": true, "projects": projectsList(cfg)})
 		return 0
 	}
 	printProjectTable(env.Stdout, cfg)
@@ -113,7 +112,7 @@ func runProjectRemove(args []string, env Env) int {
 		fmt.Fprintln(env.Stderr, "project remove:", err)
 		return 1
 	}
-	emitJSON(env.Stdout, map[string]interface{}{"ok": true, "removed": rest[0]})
+	emitJSON(env.Stdout, env.Stderr, map[string]interface{}{"ok": true, "removed": rest[0]})
 	return 0
 }
 

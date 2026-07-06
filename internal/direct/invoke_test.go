@@ -385,6 +385,37 @@ func readRequestID(r io.Reader) (uint32, error) {
 	return binary.BigEndian.Uint32(fixed[5:9]), nil
 }
 
+func TestInvokeRejectsMismatchedResponseRequestID(t *testing.T) {
+	responseContent := successResponse(t, "ok")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		id, err := readRequestID(conn)
+		if err != nil {
+			return
+		}
+		_ = writeTestResponse(conn, id+1, responseContent)
+	}()
+
+	_, err = Invoke(context.Background(), Request{
+		Address: ln.Addr().String(),
+		Service: "com.example.Facade",
+		Method:  "query",
+		Timeout: 2 * time.Second,
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not match request id") {
+		t.Fatalf("err = %v, want request id mismatch", err)
+	}
+}
+
 func writeTestResponse(w io.Writer, id uint32, content []byte) error {
 	classBytes := []byte(responseClass)
 	fixed := make([]byte, responseHeaderLen)
