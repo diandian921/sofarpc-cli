@@ -1,0 +1,47 @@
+name: Release
+
+# Tag-triggered release automation: the install scripts (scripts/install.{sh,ps1})
+# download archives + SHA256SUMS from GitHub Releases, so asset naming and sums
+# must be produced by the same scripts every time — no manual uploads.
+#
+# The JVM Hessian oracle cannot run here (internal alipay jar); run the full
+# local gate (scripts/oracle-gate.sh) before pushing a release tag. CI-side the
+# BOLT oracle still guards the codec.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # package.sh derives VERSION from `git describe --tags`.
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Gate — pure-Go suite + BOLT oracle
+        run: |
+          go test -race ./...
+          go -C oracletest test -race -tags bolt_oracle ./...
+      - name: Package release archives
+        run: bash scripts/package.sh
+      - name: Build MCPB bundles
+        run: bash scripts/build-mcpb.sh
+      - name: Create GitHub Release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          args=()
+          case "$tag" in
+            *-*) args+=(--prerelease) ;;
+          esac
+          gh release create "$tag" --verify-tag --title "$tag" --generate-notes "${args[@]}" \
+            dist/sofarpc-*.tar.gz dist/sofarpc-*.zip dist/SHA256SUMS dist/mcpb/*.mcpb
