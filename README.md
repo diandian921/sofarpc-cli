@@ -312,6 +312,7 @@ go -C oracletest test -tags bolt_oracle ./...     # BOLT framing vs official sof
 
 ## Design Docs
 
+- [Current decisions (single source of truth)](docs/decisions.md)
 - [Pure-Go runtime](docs/pure-go-runtime.md)
 - [Compatibility matrix](docs/compatibility-matrix.md)
 - [Single-binary install target](docs/single-binary-install-target.md)
