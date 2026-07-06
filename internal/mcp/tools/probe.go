@@ -5,7 +5,7 @@ import "encoding/json"
 // Probe tool display text, shared with the SDK-native AddProbe.
 const (
 	probeTitle       = "SofaRPC Probe"
-	probeDescription = "Probe TCP reachability for a configured server or explicit address; this does not prove an interface or method exists."
+	probeDescription = "Probe TCP reachability for a configured server or explicit address; this does not prove an interface or method exists. To verify a service is actually provided, use sofarpc_invoke_plan or a real sofarpc_invoke; for config problems use sofarpc_doctor."
 	probeSummary     = "Probe completed. Success only means the TCP transport path was reachable; it does not prove the remote interface or method exists."
 )
 
@@ -28,6 +28,6 @@ var probeInputSchema = json.RawMessage(`{
     "service": {"type": "string", "description": "Optional service FQN for labeling diagnostics."},
     "project": {"type": "string", "description": "Optional project name used to infer a single bound server when server is omitted."},
     "profile": {"type": "string", "description": "Optional project profile name. Requires project when server is omitted."},
-    "timeoutMs": {"type": "integer", "description": "Optional total timeout in milliseconds."}
+    "timeoutMs": {"type": "integer", "minimum": 1, "description": "Optional total timeout in milliseconds."}
   }
 }`)

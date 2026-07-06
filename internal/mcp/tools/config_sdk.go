@@ -81,7 +81,8 @@ func AddConfigSaveProject(srv *mcpsdk.Server, stderr io.Writer) {
 		OutputSchema: configSaveProjectOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigSaveProjectArgs) (app.Result, string) {
 		if a.Name == "" || a.WorkspaceRoot == "" {
-			return app.RenderFailure(app.CodeBadRequest, "name and workspaceRoot are required", nil), ""
+			return app.RenderFailureAdvised(app.CodeBadRequest, "name and workspaceRoot are required", nil,
+				"", "Provide name and workspaceRoot, then call sofarpc_config_save_project again (dryRun=true to preview)."), ""
 		}
 		if a.DryRun {
 			cfg, err := loadConfig()
@@ -122,7 +123,8 @@ func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
 		OutputSchema: configSaveServerOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigSaveServerArgs) (app.Result, string) {
 		if a.Name == "" || a.Address == "" || a.Project == "" {
-			return app.RenderFailure(app.CodeBadRequest, "name, address and project are required", nil), ""
+			return app.RenderFailureAdvised(app.CodeBadRequest, "name, address and project are required", nil,
+				"sofarpc_config_list", "Provide name, address (host:port), and project (see sofarpc_config_list for configured projects), then call sofarpc_config_save_server again (dryRun=true to preview)."), ""
 		}
 		srv := appconfig.Server{
 			Address:     a.Address,
@@ -172,7 +174,8 @@ func AddConfigRemoveProject(srv *mcpsdk.Server, stderr io.Writer) {
 		OutputSchema: configRemoveOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigRemoveProjectArgs) (app.Result, string) {
 		if a.Name == "" {
-			return app.RenderFailure(app.CodeBadRequest, "name is required", nil), ""
+			return app.RenderFailureAdvised(app.CodeBadRequest, "name is required", nil,
+				"sofarpc_config_list", "Call sofarpc_config_list to see configured projects, then retry with name and confirm=true."), ""
 		}
 		path, lock, err := configPaths()
 		if err != nil {
@@ -199,7 +202,8 @@ func AddConfigRemoveServer(srv *mcpsdk.Server, stderr io.Writer) {
 		OutputSchema: configRemoveOutputSchema,
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigRemoveServerArgs) (app.Result, string) {
 		if a.Name == "" {
-			return app.RenderFailure(app.CodeBadRequest, "name is required", nil), ""
+			return app.RenderFailureAdvised(app.CodeBadRequest, "name is required", nil,
+				"sofarpc_config_list", "Call sofarpc_config_list to see configured servers, then retry with name and confirm=true."), ""
 		}
 		path, lock, err := configPaths()
 		if err != nil {

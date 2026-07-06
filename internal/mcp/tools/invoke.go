@@ -27,6 +27,18 @@ type InvokeArgs struct {
 	ResultPath       string                   `json:"resultPath,omitempty"`
 }
 
+// validate rejects argument combinations the schema documents as mutually
+// exclusive. The schema's "not" clause is documentation only (raw AddTool does
+// not validate inputs), so the handler enforces it with a pinned recovery.
+func (a InvokeArgs) validate() (app.Result, bool) {
+	if a.Arguments != nil && a.OrderedArguments != nil {
+		return app.RenderFailureAdvised(app.CodeBadRequest,
+			"provide either arguments or orderedArguments, not both", nil,
+			"", "Pass named arguments (parameter names from sofarpc_describe) or paramTypes + orderedArguments — exactly one form — then retry."), false
+	}
+	return app.Result{}, true
+}
+
 func (a InvokeArgs) toInput() app.InvocationInput {
 	input := app.InvocationInput{
 		Project:     a.Project,
@@ -56,6 +68,7 @@ var invokeInputSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
   "required": ["service", "method"],
+  "not": {"required": ["arguments", "orderedArguments"]},
   "properties": {
     "server": {"type": "string", "description": "Configured server name. Optional only when exactly one matching server can be inferred."},
     "project": {"type": "string", "description": "Optional project name used to infer a single bound server."},
@@ -63,10 +76,10 @@ var invokeInputSchema = json.RawMessage(`{
     "service": {"type": "string", "description": "Service interface FQN."},
     "method": {"type": "string", "description": "Method name."},
     "paramTypes": {"type": "array", "items": {"type": "string"}, "description": "Optional Java parameter type FQNs for overload disambiguation."},
-    "orderedArguments": {"type": "array", "description": "Arguments in method parameter order."},
-    "arguments": {"type": "object", "additionalProperties": true, "description": "Named arguments keyed by Java parameter name, or a single DTO object when the method has one parameter."},
+    "orderedArguments": {"type": "array", "description": "Arguments in method parameter order. Requires paramTypes when the source schema is unavailable. Mutually exclusive with arguments."},
+    "arguments": {"type": "object", "additionalProperties": true, "description": "Named arguments keyed by Java parameter name (from sofarpc_describe), or a single DTO object when the method has one parameter. Preferred form; mutually exclusive with orderedArguments."},
     "attachments": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional per-call SofaRPC request baggage. Merged with configured server/profile attachments; per-call values override configured defaults."},
-    "timeoutMs": {"type": "integer", "description": "Optional total timeout in milliseconds."},
+    "timeoutMs": {"type": "integer", "minimum": 1, "description": "Optional total timeout in milliseconds."},
     "rawResult": {"type": "boolean", "description": "When true, include the decoded Java object shape alongside the flattened result."},
     "assertions": {
       "type": "array",
@@ -90,6 +103,7 @@ var invokePlanInputSchema = json.RawMessage(`{
   "type": "object",
   "additionalProperties": false,
   "required": ["service", "method"],
+  "not": {"required": ["arguments", "orderedArguments"]},
   "properties": {
     "server": {"type": "string", "description": "Configured server name. Optional only when exactly one matching server can be inferred."},
     "project": {"type": "string", "description": "Optional project name used to infer a single bound server."},
@@ -97,9 +111,9 @@ var invokePlanInputSchema = json.RawMessage(`{
     "service": {"type": "string", "description": "Service interface FQN."},
     "method": {"type": "string", "description": "Method name."},
     "paramTypes": {"type": "array", "items": {"type": "string"}, "description": "Optional Java parameter type FQNs for overload disambiguation."},
-    "orderedArguments": {"type": "array", "description": "Arguments in method parameter order."},
-    "arguments": {"type": "object", "additionalProperties": true, "description": "Named arguments keyed by Java parameter name, or a single DTO object when the method has one parameter."},
+    "orderedArguments": {"type": "array", "description": "Arguments in method parameter order. Requires paramTypes when the source schema is unavailable. Mutually exclusive with arguments."},
+    "arguments": {"type": "object", "additionalProperties": true, "description": "Named arguments keyed by Java parameter name (from sofarpc_describe), or a single DTO object when the method has one parameter. Preferred form; mutually exclusive with orderedArguments."},
     "attachments": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional per-call SofaRPC request baggage. Merged with configured server/profile attachments; per-call values override configured defaults."},
-    "timeoutMs": {"type": "integer", "description": "Optional total timeout in milliseconds."}
+    "timeoutMs": {"type": "integer", "minimum": 1, "description": "Optional total timeout in milliseconds."}
   }
 }`)

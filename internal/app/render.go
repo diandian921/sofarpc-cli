@@ -64,11 +64,13 @@ var adviceByKind = map[ErrorKind]recoveryAdvice{
 }
 
 // adviceByCode is the fallback when no DomainError kind refines the failure: the
-// stable failure code alone decides the recovery step.
+// stable failure code alone decides the recovery step. The generic BAD_REQUEST
+// fallback deliberately names no tool: without a kind it is a local argument
+// problem (bad/unknown fields), and no other tool fixes the caller's arguments.
 var adviceByCode = map[string]recoveryAdvice{
 	CodeConnectFailed:               {"sofarpc_probe", "Call sofarpc_probe to check the server address is reachable."},
 	CodeRPCTimeout:                  {"sofarpc_probe", "Call sofarpc_probe to check the server address is reachable."},
-	CodeBadRequest:                  {"sofarpc_describe", "Call sofarpc_describe to confirm the service, method, and argument shape."},
+	CodeBadRequest:                  {"", "Fix the tool arguments to match the input schema (see error.message), then retry the same tool."},
 	CodeAssertionFailed:             {"", "The RPC succeeded but an assertion failed: compare expected vs actual in data.assertions and inspect data.result (set rawResult=true for the full Java object), then adjust the assertions or arguments."},
 	CodeInvokeFailed:                {"sofarpc_doctor", "Call sofarpc_doctor to diagnose config, source schema, and connectivity."},
 	CodeInternalError:               {"sofarpc_doctor", "Call sofarpc_doctor to diagnose config, source schema, and connectivity."},
@@ -134,10 +136,18 @@ func RenderProbe(probe ProbeResult) Result {
 		if code == "" {
 			code = CodeConnectFailed
 		}
+		resultErr := newResultError(code, probe.Error.Message, probe.Error.Cause, probe.Error.Details)
+		// The connect/timeout advice says "call sofarpc_probe" — correct from other
+		// tools, but a failed probe must never point back at itself; doctor owns
+		// the deeper config/connectivity diagnosis.
+		if resultErr.NextTool == "sofarpc_probe" {
+			resultErr.NextTool = "sofarpc_doctor"
+			resultErr.Recovery = "Call sofarpc_doctor to check config and connectivity, and verify the configured address/port is correct."
+		}
 		return Result{
 			OK:    false,
 			Code:  code,
-			Error: newResultError(code, probe.Error.Message, probe.Error.Cause, probe.Error.Details),
+			Error: resultErr,
 			Meta:  probe.Meta,
 		}
 	}
@@ -165,4 +175,15 @@ func RenderFailure(code, message string, details map[string]interface{}) Result 
 		Error: newResultError(code, message, "", details),
 		Meta:  map[string]interface{}{"runtime": "go"},
 	}
+}
+
+// RenderFailureAdvised builds a failure whose recovery advice the caller pins,
+// for places where the table's code-level fallback would mislead — typically a
+// tool's own parameter validation, which no other tool can fix. Invariant: the
+// pinned nextTool must never name the tool that produced the error.
+func RenderFailureAdvised(code, message string, details map[string]interface{}, nextTool, recovery string) Result {
+	result := RenderFailure(code, message, details)
+	result.Error.NextTool = nextTool
+	result.Error.Recovery = recovery
+	return result
 }
