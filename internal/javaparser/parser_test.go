@@ -291,10 +291,10 @@ func TestParsePackageContextualKeywordSegments(t *testing.T) {
 
 func TestParseImportMalformedReturnsError(t *testing.T) {
 	cases := []string{
-		"import ;",            // 缺 ident
-		"import a.;",          // dot 后无 ident 或 *
-		"import a.b.C",        // 缺 ;
-		"import static ;",     // static 后缺 ident
+		"import ;",        // 缺 ident
+		"import a.;",      // dot 后无 ident 或 *
+		"import a.b.C",    // 缺 ;
+		"import static ;", // static 后缺 ident
 	}
 	for _, src := range cases {
 		t.Run(src, func(t *testing.T) {

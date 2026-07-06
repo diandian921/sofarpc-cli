@@ -5,6 +5,8 @@
 #   - Hessian: a JVM running the alipay Hessian library (needs java/javac + the
 #     alipay Hessian jar in ~/.m2).
 #   - BOLT: the official github.com/sofastack/sofa-bolt-go library (pure Go).
+#     It lives in the oracletest/ module (own go.mod) so the sofa-bolt-go
+#     dependency tree stays out of the main module; CI also runs it.
 #
 # CRITICAL: the Hessian oracle calls t.Skip() when the JVM or the alipay jar is
 # absent, and a skipped Go test still exits 0 — which would fake a "pass" without
@@ -34,10 +36,10 @@ fi
 fail=0
 
 run_oracle() {
-	local tag="$1" runexpr="$2" label="$3" hint="$4"
-	echo "== ${label}  (go test -tags ${tag} -run '${runexpr}' ./internal/direct) =="
+	local tag="$1" runexpr="$2" label="$3" hint="$4" dir="$5" pkg="$6"
+	echo "== ${label}  (go -C ${dir} test -tags ${tag} -run '${runexpr}' ${pkg}) =="
 	local out
-	if ! out="$(go test -tags "$tag" -run "$runexpr" -v ./internal/direct 2>&1)"; then
+	if ! out="$(go -C "$dir" test -tags "$tag" -run "$runexpr" -v "$pkg" 2>&1)"; then
 		echo "$out"
 		echo "FAIL: ${label} oracle did not pass."
 		fail=1
@@ -61,9 +63,11 @@ run_oracle() {
 }
 
 run_oracle hessian_oracle '^TestHessianJavaContract' \
-	"Hessian (JVM alipay)" "Needs java/javac and the alipay Hessian jar in ~/.m2."
+	"Hessian (JVM alipay)" "Needs java/javac and the alipay Hessian jar in ~/.m2." \
+	. ./internal/direct
 run_oracle bolt_oracle '^TestBoltOracle' \
-	"BOLT (sofa-bolt-go)" "Needs the sofa-bolt-go module (go test will fetch it)."
+	"BOLT (sofa-bolt-go)" "Needs the sofa-bolt-go module (go test will fetch it)." \
+	oracletest ./...
 
 if [ "$fail" -ne 0 ]; then
 	echo "RELEASE GATE FAILED — do not cut a release."
