@@ -80,6 +80,12 @@ func finish(r app.Result, summary string, elapsed time.Duration) *mcpsdk.CallToo
 	return &mcpsdk.CallToolResult{Meta: meta, IsError: !r.OK}
 }
 
+// textMirrorMaxBytes bounds the JSON text block mirrored alongside
+// structuredContent. Below it the historical double emission stays (text-only
+// clients keep working); above it the text block becomes a one-line pointer, so
+// a large result is not paid for twice in the agent's context window.
+const textMirrorMaxBytes = 32 << 10
+
 // manualResult builds the complete CallToolResult: structuredContent plus a JSON
 // text block from the app.Result, plus the _meta and isError that finish() stamps.
 // (The raw Server.AddTool path does no auto folding, so the adapter does it here.)
@@ -92,7 +98,11 @@ func manualResult(r app.Result, summary string, elapsed time.Duration) *mcpsdk.C
 	}
 	res := finish(r, summary, elapsed)
 	res.StructuredContent = json.RawMessage(body)
-	res.Content = []mcpsdk.Content{&mcpsdk.TextContent{Text: string(body)}}
+	text := string(body)
+	if len(body) > textMirrorMaxBytes {
+		text = fmt.Sprintf("Result is %d bytes; read structuredContent for the full envelope. For sofarpc_invoke, pass resultPath to narrow data.result to a subtree.", len(body))
+	}
+	res.Content = []mcpsdk.Content{&mcpsdk.TextContent{Text: text}}
 	return res
 }
 

@@ -59,8 +59,6 @@ var (
     "server": {"type": "string"},
     "endpoint": {"type": "object"},
     "servers": {"type": "array"},
-    "network": {"type": "string"},
-    "diagnostics": {"type": "object"},
     "candidates": {"type": "array"}
   }
 }`)
@@ -113,6 +111,7 @@ var (
     "result": {},
     "rawResult": {},
     "resultPathMatched": {"type": "boolean"},
+    "resultTruncated": {"type": "boolean", "description": "True when arrays in result were cut to the first 200 items (see $truncated markers); use resultPath to narrow."},
     "assertions": {"type": "array"},
     "warnings": {"type": "array"},
     "diagnostics": {"type": "object"},

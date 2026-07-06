@@ -29,6 +29,9 @@ func AddResolve(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 		if err != nil {
 			return app.RenderFailure(app.CodeBadRequest, err.Error(), app.DomainErrorDetails(err)), ""
 		}
+		// network is a constant "not_probed" and diagnostics.resolution repeats the
+		// top-level fields verbatim; both are omitted from the tool payload to keep
+		// the per-call token cost down.
 		if resolved.Endpoint != nil {
 			return okResult(map[string]interface{}{
 				"project":     resolved.Project.Name,
@@ -36,16 +39,12 @@ func AddResolve(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 				"projectInfo": publicProject(resolved.Project.Info),
 				"server":      resolved.Server,
 				"endpoint":    publicEndpoint(*resolved.Endpoint),
-				"network":     resolved.Network,
-				"diagnostics": resolved.Diagnostics,
 			}), "Endpoint resolved."
 		}
 		return okResult(map[string]interface{}{
 			"project":     resolved.Project.Name,
 			"projectInfo": publicProject(resolved.Project.Info),
 			"servers":     publicServers(resolved.Servers),
-			"network":     resolved.Network,
-			"diagnostics": resolved.Diagnostics,
 		}), "Project resolved; no single endpoint was selected."
 	}))
 }

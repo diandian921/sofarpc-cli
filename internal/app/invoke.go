@@ -148,17 +148,21 @@ func (s *Service) planExplicitAddressInvocation(input InvocationInput, start tim
 func (s *Service) ExecuteInvocation(ctx context.Context, plan InvocationPlan) InvocationExecution {
 	out, err := direct.Invoke(ctx, directRequestFromPlan(plan))
 	if err != nil {
+		details := map[string]interface{}{
+			"address":      plan.Endpoint.Address,
+			"service":      plan.Service,
+			"method":       plan.Method.Name,
+			"rpcTimeoutMs": plan.TimeoutMS,
+		}
+		if len(out.Diagnostics) > 0 {
+			details["transport"] = out.Diagnostics
+		}
 		return InvocationExecution{
 			OK:   false,
 			Code: errorCode(err),
 			Error: &ExecutionError{
 				Message: err.Error(),
-				Details: map[string]interface{}{
-					"address":      plan.Endpoint.Address,
-					"service":      plan.Service,
-					"method":       plan.Method.Name,
-					"rpcTimeoutMs": plan.TimeoutMS,
-				},
+				Details: details,
 			},
 			Meta: map[string]interface{}{"runtime": "go"},
 		}
@@ -187,14 +191,16 @@ func (s *Service) ExecuteInvocation(ctx context.Context, plan InvocationPlan) In
 
 // buildInvokeData assembles a successful invocation's data envelope: the flattened
 // result (optionally narrowed to a resultPath subtree), the optional rawResult tree,
-// any assertion outcomes, plus timing/diagnostics. It returns the failed-assertion
-// count so the caller can flip OK=false while still emitting data.result/data.assertions
-// (the contract RenderExecution documents).
+// any assertion outcomes, plus timing. It returns the failed-assertion count so the
+// caller can flip OK=false while still emitting data.result/data.assertions (the
+// contract RenderExecution documents). Assertions and resultPath both evaluate on
+// the full tree; only afterwards is the displayed result truncated for size.
+// Transport diagnostics are emitted only when they can matter — on failed
+// assertions or an explicit rawResult — not as per-call noise.
 func buildInvokeData(flattened, raw interface{}, rawResult bool, elapsedMs int64, diagnostics interface{}, assertions []presentation.Assertion, resultPath string) (map[string]interface{}, int) {
 	data := map[string]interface{}{
-		"result":      flattened,
-		"elapsedMs":   elapsedMs,
-		"diagnostics": diagnostics,
+		"result":    flattened,
+		"elapsedMs": elapsedMs,
 	}
 	failCount := 0
 	if len(assertions) > 0 {
@@ -211,8 +217,17 @@ func buildInvokeData(flattened, raw interface{}, rawResult bool, elapsedMs int64
 		}
 		data["resultPathMatched"] = matched
 	}
+	if truncated, cut := presentation.TruncateArrays(data["result"], presentation.MaxArrayItems); cut {
+		data["result"] = truncated
+		data["resultTruncated"] = true
+	}
 	if rawResult {
+		// rawResult stays untruncated: it is the explicit escape hatch, and unlike
+		// the flattened tree it may contain shared substructure unsafe to rewrite.
 		data["rawResult"] = raw
+	}
+	if diagnostics != nil && (rawResult || failCount > 0) {
+		data["diagnostics"] = diagnostics
 	}
 	return data, failCount
 }
