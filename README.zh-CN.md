@@ -284,6 +284,7 @@ go -C oracletest test -tags bolt_oracle ./...     # BOLT framing vs official sof
 
 ## 设计文档
 
+- [当前有效决策（单一事实源）](docs/decisions.md)
 - [Pure-Go runtime](docs/pure-go-runtime.md)
 - [Compatibility matrix](docs/compatibility-matrix.md)
 - [Single-binary install target](docs/single-binary-install-target.md)
