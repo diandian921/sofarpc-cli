@@ -70,7 +70,7 @@ func TestNextToolForMapsCodesAndKinds(t *testing.T) {
 	}{
 		{"connect", CodeConnectFailed, nil, "sofarpc_probe"},
 		{"timeout", CodeRPCTimeout, nil, "sofarpc_probe"},
-		{"bad-request", CodeBadRequest, nil, "sofarpc_describe"},
+		{"bad-request", CodeBadRequest, nil, ""},
 		{"invoke-failed", CodeInvokeFailed, nil, "sofarpc_doctor"},
 		{"internal", CodeInternalError, nil, "sofarpc_doctor"},
 		{"config-invalid", "CONFIG_INVALID", nil, "sofarpc_doctor"},
@@ -125,6 +125,30 @@ func TestRenderFailureSetsRecovery(t *testing.T) {
 	r := RenderFailure(CodeBadRequest, "no server", map[string]interface{}{"kind": string(ErrServerNotFound)})
 	if r.Error == nil || !strings.Contains(r.Error.Recovery, "sofarpc_config_list") {
 		t.Fatalf("RenderFailure recovery = %+v, want it to mention sofarpc_config_list", r.Error)
+	}
+}
+
+// TestRenderProbeFailureDoesNotPointAtProbe pins the advice invariant: a failed
+// probe must never recommend calling sofarpc_probe again; doctor owns diagnosis.
+func TestRenderProbeFailureDoesNotPointAtProbe(t *testing.T) {
+	result := RenderProbe(ProbeResult{Error: &ExecutionError{Message: "dial failed"}})
+	if result.Error == nil {
+		t.Fatal("expected an error envelope")
+	}
+	if result.Error.NextTool == "sofarpc_probe" {
+		t.Fatalf("probe failure must not point back at probe: %+v", result.Error)
+	}
+	if result.Error.NextTool != "sofarpc_doctor" {
+		t.Fatalf("probe failure nextTool = %q, want sofarpc_doctor", result.Error.NextTool)
+	}
+}
+
+// TestRenderFailureAdvisedPinsAdvice checks the caller-pinned advice overrides
+// the table-driven fallback.
+func TestRenderFailureAdvisedPinsAdvice(t *testing.T) {
+	r := RenderFailureAdvised(CodeBadRequest, "query or service is required", nil, "", "Pass query or service.")
+	if r.Error == nil || r.Error.NextTool != "" || r.Error.Recovery != "Pass query or service." {
+		t.Fatalf("advised failure not pinned: %+v", r.Error)
 	}
 }
 

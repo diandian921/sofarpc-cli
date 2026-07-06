@@ -20,13 +20,14 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_describe",
 		Title:        "SofaRPC Describe",
-		Description:  "Search local Java source or describe methods and DTO fields for a service FQN.",
+		Description:  "Search local Java source for services (query=...) or describe a service FQN's methods, paramTypes, and DTO fields (service=..., optional method=...). Call this before composing sofarpc_invoke arguments; it reads the configured project's workspaceRoot sources, not the remote provider.",
 		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  describeInputSchema,
 		OutputSchema: describeOutputSchema,
 	}, adaptTool(stderr, func(ctx context.Context, req *mcpsdk.CallToolRequest, a DescribeArgs) (app.Result, string) {
 		if a.Query == "" && a.Service == "" {
-			return app.RenderFailure(app.CodeBadRequest, "query or service is required", nil), ""
+			return app.RenderFailureAdvised(app.CodeBadRequest, "query or service is required", nil,
+				"", "Pass query=<keywords> to search services, or service=<FQN> (optionally with method) to describe one, then call sofarpc_describe again."), ""
 		}
 		cfg, err := loadConfig()
 		if err != nil {
@@ -52,7 +53,10 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 		if a.Query != "" {
 			limit := a.Limit
 			if limit <= 0 {
-				limit = 5
+				limit = describeDefaultLimit
+			}
+			if limit > describeMaxLimit {
+				limit = describeMaxLimit
 			}
 			results := schema.Search(idx, a.Query, limit, a.IncludeOutOfPrefix)
 			data["query"] = a.Query

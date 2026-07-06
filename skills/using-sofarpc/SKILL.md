@@ -27,7 +27,7 @@ endpoint 选择方式。不要先 probe `salesfundmp-test`,再 invoke 只传 `pr
 | 步 | 工具 | 目的 |
 |---|---|---|
 | 1 | `sofarpc_resolve` | 确认 project/profile/server 配好,拿到 endpoint |
-| 2 | `sofarpc_describe --service <FQN>` | 拿 method 列表 + paramTypes + DTO fields |
+| 2 | `sofarpc_describe`(`service=<FQN>`) | 拿 method 列表 + paramTypes + DTO fields |
 | 3 | `sofarpc_probe`(可选) | 确认 IP 可达;但**不能**当作 service 一定能调 |
 | 4 | `sofarpc_invoke_plan` | 渲染 plan,确认 paramTypes / args 没写错(不发请求) |
 | 5 | `sofarpc_invoke` | 真打 |

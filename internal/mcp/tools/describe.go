@@ -2,6 +2,13 @@ package tools
 
 import "encoding/json"
 
+// describeDefaultLimit and describeMaxLimit bound search-mode candidate counts;
+// the input schema advertises the same values.
+const (
+	describeDefaultLimit = 5
+	describeMaxLimit     = 20
+)
+
 // DescribeArgs are the arguments for sofarpc_describe.
 type DescribeArgs struct {
 	Project            string `json:"project,omitempty"`
@@ -22,7 +29,7 @@ var describeInputSchema = json.RawMessage(`{
     "query": {"type": "string", "description": "Natural language or identifier query for search mode."},
     "service": {"type": "string", "description": "Service interface FQN for describe mode."},
     "method": {"type": "string", "description": "Optional method filter for describe mode."},
-    "limit": {"type": "integer", "description": "Max search candidates; default 5, max 20."},
+    "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5, "description": "Max search candidates; values above 20 are capped."},
     "includeOutOfPrefix": {"type": "boolean", "description": "Include services outside configured servicePrefixes."}
   }
 }`)
