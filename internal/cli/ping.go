@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/diandian921/sofarpc-mcp/internal/app"
+	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
 func runPing(args []string, env Env) int {
@@ -22,25 +23,14 @@ func runPing(args []string, env Env) int {
 		fmt.Fprintln(env.Stderr, "usage: sofarpc ping <host:port|server> [--service <name>] [--timeout-ms <ms>]")
 		return 2
 	}
-	addr, err := resolveAddress(rest[0])
-	if err != nil {
-		fmt.Fprintln(env.Stderr, "ping:", err)
-		return 2
+	// A raw host:port dials directly; anything else is a configured server name,
+	// resolved by app.ProbeEndpoint (the same path the MCP probe tool uses).
+	input := app.ProbeInput{Service: *service, TimeoutMS: *timeoutMS}
+	if appconfig.IsHostPort(rest[0]) {
+		input.Address = rest[0]
+	} else {
+		input.Server = rest[0]
 	}
-
-	probe := app.New(nil).ProbeEndpoint(context.Background(), app.ProbeInput{
-		Address:   addr,
-		Service:   *service,
-		TimeoutMS: *timeoutMS,
-	})
-	result := app.RenderProbe(probe)
-	result.RequestID = app.NewRequestID("ping")
-	if err := writeResult(env.Stdout, result); err != nil {
-		fmt.Fprintln(env.Stderr, "ping: write result:", err)
-		return 1
-	}
-	if !result.OK {
-		return 1
-	}
-	return 0
+	probe := app.New(nil).ProbeEndpoint(context.Background(), input)
+	return emitResult(env, "ping", app.RenderProbe(probe))
 }

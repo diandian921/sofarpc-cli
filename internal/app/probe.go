@@ -133,7 +133,7 @@ func probeFailure(input ProbeInput, code string, err error, timeoutMS int, sourc
 			"endpointSource": source,
 			"address":        input.Address,
 		}},
-		Error: &ExecutionError{Message: err.Error()},
+		Error: &ExecutionError{Message: err.Error(), Details: DomainErrorDetails(err)},
 		Code:  code,
 		Meta:  map[string]interface{}{"runtime": "go"},
 	}

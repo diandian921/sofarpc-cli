@@ -100,9 +100,16 @@ func TestServerAddAcceptsFlagAfterPositionals(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
 	}
-	var out map[string]interface{}
-	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &out); err != nil {
+	var envelope app.Result
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &envelope); err != nil {
 		t.Fatalf("decode: %v", err)
+	}
+	if !envelope.OK {
+		t.Fatalf("unexpected envelope: %+v", envelope)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(envelope.Data, &out); err != nil {
+		t.Fatalf("decode data: %v", err)
 	}
 	if out["name"] != "user-test" {
 		t.Fatalf("unexpected output: %+v", out)

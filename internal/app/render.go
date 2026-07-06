@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
@@ -175,6 +176,29 @@ func RenderFailure(code, message string, details map[string]interface{}) Result 
 		Error: newResultError(code, message, "", details),
 		Meta:  map[string]interface{}{"runtime": "go"},
 	}
+}
+
+// RenderSuccess builds an OK result carrying the marshaled business payload,
+// so CLI subcommands and MCP tools emit the same success envelope.
+func RenderSuccess(data map[string]interface{}) Result {
+	body, err := json.Marshal(data)
+	if err != nil {
+		return RenderFailure(CodeInternalError, err.Error(), nil)
+	}
+	return Result{OK: true, Code: CodeSuccess, Data: body}
+}
+
+// RenderConfigFailure preserves an appconfig error's stable code and path, so
+// CLI and MCP config surfaces emit the same envelope for the same failure.
+func RenderConfigFailure(err error) Result {
+	code := CodeBadRequest
+	var details map[string]interface{}
+	var cfgErr *appconfig.ConfigError
+	if errors.As(err, &cfgErr) {
+		code = cfgErr.Code
+		details = map[string]interface{}{"configPath": cfgErr.Path}
+	}
+	return RenderFailure(code, err.Error(), details)
 }
 
 // RenderFailureAdvised builds a failure whose recovery advice the caller pins,
