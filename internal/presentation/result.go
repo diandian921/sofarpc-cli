@@ -29,6 +29,53 @@ type AssertionOutcome struct {
 // handles real object cycles precisely, this only catches anything it can't.
 const flattenMaxDepth = 512
 
+// MaxArrayItems caps how many elements of any array survive TruncateArrays.
+// Large list results otherwise dominate the agent's context window; the
+// trailing $truncated marker tells it to narrow with resultPath instead.
+const MaxArrayItems = 200
+
+// TruncateArrays walks a flattened (acyclic) tree and cuts every array longer
+// than maxItems down to its first maxItems elements plus a trailing
+// {"$truncated": {"omittedItems": k, "totalItems": n}} marker element, keeping
+// index paths of the surviving elements stable. It reports whether anything was
+// cut. Callers must run assertions and resultPath extraction on the full tree
+// first — this is display-only truncation.
+func TruncateArrays(v interface{}, maxItems int) (interface{}, bool) {
+	switch x := v.(type) {
+	case []interface{}:
+		kept := x
+		omitted := 0
+		if maxItems > 0 && len(x) > maxItems {
+			kept = x[:maxItems]
+			omitted = len(x) - maxItems
+		}
+		out := make([]interface{}, len(kept), len(kept)+1)
+		cut := omitted > 0
+		for i, item := range kept {
+			child, childCut := TruncateArrays(item, maxItems)
+			out[i] = child
+			cut = cut || childCut
+		}
+		if omitted > 0 {
+			out = append(out, map[string]interface{}{
+				"$truncated": map[string]interface{}{"omittedItems": omitted, "totalItems": len(x)},
+			})
+		}
+		return out, cut
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(x))
+		cut := false
+		for k, item := range x {
+			child, childCut := TruncateArrays(item, maxItems)
+			out[k] = child
+			cut = cut || childCut
+		}
+		return out, cut
+	default:
+		return v, false
+	}
+}
+
 func Flatten(v interface{}) interface{} {
 	return flatten(v, map[uintptr]bool{}, 0)
 }

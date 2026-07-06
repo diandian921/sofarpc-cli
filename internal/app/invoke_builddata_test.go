@@ -87,6 +87,64 @@ func TestBuildInvokeDataAssertionsSeeFullBeforeResultPathNarrows(t *testing.T) {
 	}
 }
 
+// TestBuildInvokeDataDiagnosticsOnlyWhenTheyMatter: transport diagnostics are
+// noise on a plain success; they are emitted only for rawResult or a failed
+// assertion.
+func TestBuildInvokeDataDiagnosticsOnlyWhenTheyMatter(t *testing.T) {
+	flattened := map[string]interface{}{"status": "ACTIVE"}
+	diag := map[string]interface{}{"transport": "go-direct-bolt"}
+
+	data, _ := buildInvokeData(flattened, flattened, false, 1, diag, nil, "")
+	if _, ok := data["diagnostics"]; ok {
+		t.Error("plain success must omit data.diagnostics")
+	}
+
+	data, _ = buildInvokeData(flattened, flattened, true, 1, diag, nil, "")
+	if data["diagnostics"] == nil {
+		t.Error("rawResult=true must include data.diagnostics")
+	}
+
+	data, fail := buildInvokeData(flattened, flattened, false, 1, diag,
+		[]presentation.Assertion{{Path: "$.status", Equals: "CLOSED"}}, "")
+	if fail != 1 || data["diagnostics"] == nil {
+		t.Error("a failed assertion must include data.diagnostics")
+	}
+
+	data, _ = buildInvokeData(flattened, flattened, false, 1, diag,
+		[]presentation.Assertion{{Path: "$.status", Equals: "ACTIVE"}}, "")
+	if _, ok := data["diagnostics"]; ok {
+		t.Error("passing assertions on success must omit data.diagnostics")
+	}
+}
+
+// TestBuildInvokeDataTruncatesLargeArrays: display truncation kicks in after
+// assertions ran on the full tree, and flags data.resultTruncated.
+func TestBuildInvokeDataTruncatesLargeArrays(t *testing.T) {
+	items := make([]interface{}, presentation.MaxArrayItems+50)
+	for i := range items {
+		items[i] = i
+	}
+	flattened := map[string]interface{}{"list": items, "count": len(items)}
+
+	data, fail := buildInvokeData(flattened, flattened, false, 1, nil,
+		[]presentation.Assertion{{Path: "$.count", Equals: len(items)}}, "")
+	if fail != 0 {
+		t.Fatalf("assertion on full tree must pass, got %d failures", fail)
+	}
+	if truncated, _ := data["resultTruncated"].(bool); !truncated {
+		t.Fatal("expected data.resultTruncated=true")
+	}
+	list := data["result"].(map[string]interface{})["list"].([]interface{})
+	if len(list) != presentation.MaxArrayItems+1 {
+		t.Fatalf("expected %d kept + marker, got %d", presentation.MaxArrayItems, len(list))
+	}
+
+	small, _ := buildInvokeData(map[string]interface{}{"a": 1}, nil, false, 1, nil, nil, "")
+	if _, ok := small["resultTruncated"]; ok {
+		t.Error("small results must omit data.resultTruncated")
+	}
+}
+
 // TestBuildInvokeDataOmitsOptionalKeys: with no assertions and no resultPath, those
 // keys are absent; rawResult is included only when requested.
 func TestBuildInvokeDataOmitsOptionalKeys(t *testing.T) {
