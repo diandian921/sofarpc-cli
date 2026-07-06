@@ -34,6 +34,11 @@ const (
 	requestBaggageProp = "rpc_req_baggage"
 )
 
+// DefaultTimeout is the defensive fallback when a request carries no timeout.
+// It must stay equal to appconfig.DefaultServerTimeoutMS; a consistency test
+// in internal/app enforces that (direct must not import appconfig).
+const DefaultTimeout = 5 * time.Second
+
 var requestID atomic.Uint32
 
 func init() {
@@ -96,7 +101,7 @@ func Invoke(ctx context.Context, req Request) (Outcome, error) {
 		return Outcome{}, err
 	}
 	if req.Timeout <= 0 {
-		req.Timeout = 5 * time.Second
+		req.Timeout = DefaultTimeout
 	}
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
@@ -120,6 +125,10 @@ func Invoke(ctx context.Context, req Request) (Outcome, error) {
 	elapsed := time.Since(start)
 	if err != nil {
 		return Outcome{Elapsed: elapsed}, err
+	}
+	if resp.RequestID != id {
+		return Outcome{Elapsed: elapsed, Diagnostics: responseDiagnostics(resp, targetService, id)},
+			fmt.Errorf("response request id %d does not match request id %d", resp.RequestID, id)
 	}
 	decoded, err := decodeSofaResponse(resp.Content)
 	if err != nil {

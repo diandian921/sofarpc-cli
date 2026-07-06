@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -89,7 +88,7 @@ func runServerAdd(args []string, env Env) int {
 		"name":   name,
 		"server": server,
 	}
-	emitJSON(env.Stdout, out)
+	emitJSON(env.Stdout, env.Stderr, out)
 	return 0
 }
 
@@ -111,8 +110,7 @@ func runServerList(args []string, env Env) int {
 		return 1
 	}
 	if *asJSON {
-		body, _ := json.Marshal(map[string]interface{}{"ok": true, "servers": serversList(cfg)})
-		fmt.Fprintln(env.Stdout, string(body))
+		emitJSON(env.Stdout, env.Stderr, map[string]interface{}{"ok": true, "servers": serversList(cfg)})
 		return 0
 	}
 	printServerTable(env.Stdout, cfg)
@@ -145,7 +143,7 @@ func runServerRemove(args []string, env Env) int {
 		fmt.Fprintln(env.Stderr, "server remove:", err)
 		return 1
 	}
-	emitJSON(env.Stdout, map[string]interface{}{"ok": true, "removed": name})
+	emitJSON(env.Stdout, env.Stderr, map[string]interface{}{"ok": true, "removed": name})
 	return 0
 }
 
