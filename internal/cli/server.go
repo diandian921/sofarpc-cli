@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/diandian921/sofarpc-mcp/internal/app"
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
@@ -62,8 +63,7 @@ func runServerAdd(args []string, env Env) int {
 	}
 	path, lock, err := configPaths()
 	if err != nil {
-		fmt.Fprintln(env.Stderr, "server add:", err)
-		return 1
+		return emitResult(env, "config", app.RenderFailure(app.CodeInternalError, err.Error(), nil))
 	}
 	var server appconfig.Server
 	_, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
@@ -80,16 +80,9 @@ func runServerAdd(args []string, env Env) int {
 		return addErr
 	})
 	if err != nil {
-		fmt.Fprintln(env.Stderr, "server add:", err)
-		return 1
+		return emitResult(env, "config", app.RenderConfigFailure(err))
 	}
-	out := map[string]interface{}{
-		"ok":     true,
-		"name":   name,
-		"server": server,
-	}
-	emitJSON(env.Stdout, env.Stderr, out)
-	return 0
+	return emitResult(env, "config", app.RenderSuccess(map[string]interface{}{"name": name, "server": server}))
 }
 
 func runServerList(args []string, env Env) int {
@@ -106,12 +99,14 @@ func runServerList(args []string, env Env) int {
 	}
 	cfg, err := appconfig.Load(path)
 	if err != nil {
+		if *asJSON {
+			return emitResult(env, "config", app.RenderConfigFailure(err))
+		}
 		fmt.Fprintln(env.Stderr, "server list:", err)
 		return 1
 	}
 	if *asJSON {
-		emitJSON(env.Stdout, env.Stderr, map[string]interface{}{"ok": true, "servers": serversList(cfg)})
-		return 0
+		return emitResult(env, "config", app.RenderSuccess(map[string]interface{}{"servers": serversList(cfg)}))
 	}
 	printServerTable(env.Stdout, cfg)
 	return 0
@@ -133,18 +128,15 @@ func runServerRemove(args []string, env Env) int {
 
 	path, lock, err := configPaths()
 	if err != nil {
-		fmt.Fprintln(env.Stderr, "server remove:", err)
-		return 1
+		return emitResult(env, "config", app.RenderFailure(app.CodeInternalError, err.Error(), nil))
 	}
 	_, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
 		return cfg.RemoveServer(name, *confirm)
 	})
 	if err != nil {
-		fmt.Fprintln(env.Stderr, "server remove:", err)
-		return 1
+		return emitResult(env, "config", app.RenderConfigFailure(err))
 	}
-	emitJSON(env.Stdout, env.Stderr, map[string]interface{}{"ok": true, "removed": name})
-	return 0
+	return emitResult(env, "config", app.RenderSuccess(map[string]interface{}{"removed": name}))
 }
 
 func printServerTable(w io.Writer, cfg appconfig.Config) {

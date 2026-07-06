@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"io"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -11,18 +10,10 @@ import (
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
-// configFailureResult is the app.Result form of configFailure: it preserves an
-// appconfig error's stable code and path so the agent gets a consistent recovery
-// hint.
+// configFailureResult preserves an appconfig error's stable code and path so
+// the agent gets a consistent recovery hint; shared with the CLI via app.
 func configFailureResult(err error) app.Result {
-	code := app.CodeBadRequest
-	var details map[string]interface{}
-	var cfgErr *appconfig.ConfigError
-	if errors.As(err, &cfgErr) {
-		code = cfgErr.Code
-		details = map[string]interface{}{"configPath": cfgErr.Path}
-	}
-	return app.RenderFailure(code, err.Error(), details)
+	return app.RenderConfigFailure(err)
 }
 
 // AddConfigList registers sofarpc_config_list (read-only). SDK-native replacement

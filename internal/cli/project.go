@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/diandian921/sofarpc-mcp/internal/app"
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
@@ -45,8 +46,7 @@ func runProjectAdd(args []string, env Env) int {
 	}
 	path, lock, err := configPaths()
 	if err != nil {
-		fmt.Fprintln(env.Stderr, "project add:", err)
-		return 1
+		return emitResult(env, "config", app.RenderFailure(app.CodeInternalError, err.Error(), nil))
 	}
 	var project appconfig.Project
 	_, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
@@ -55,11 +55,9 @@ func runProjectAdd(args []string, env Env) int {
 		return addErr
 	})
 	if err != nil {
-		fmt.Fprintln(env.Stderr, "project add:", err)
-		return 1
+		return emitResult(env, "config", app.RenderConfigFailure(err))
 	}
-	emitJSON(env.Stdout, env.Stderr, map[string]interface{}{"ok": true, "name": rest[0], "project": project})
-	return 0
+	return emitResult(env, "config", app.RenderSuccess(map[string]interface{}{"name": rest[0], "project": project}))
 }
 
 func runProjectList(args []string, env Env) int {
@@ -76,12 +74,14 @@ func runProjectList(args []string, env Env) int {
 	}
 	cfg, err := appconfig.Load(path)
 	if err != nil {
+		if *asJSON {
+			return emitResult(env, "config", app.RenderConfigFailure(err))
+		}
 		fmt.Fprintln(env.Stderr, "project list:", err)
 		return 1
 	}
 	if *asJSON {
-		emitJSON(env.Stdout, env.Stderr, map[string]interface{}{"ok": true, "projects": projectsList(cfg)})
-		return 0
+		return emitResult(env, "config", app.RenderSuccess(map[string]interface{}{"projects": projectsList(cfg)}))
 	}
 	printProjectTable(env.Stdout, cfg)
 	return 0
@@ -102,18 +102,15 @@ func runProjectRemove(args []string, env Env) int {
 	}
 	path, lock, err := configPaths()
 	if err != nil {
-		fmt.Fprintln(env.Stderr, "project remove:", err)
-		return 1
+		return emitResult(env, "config", app.RenderFailure(app.CodeInternalError, err.Error(), nil))
 	}
 	_, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
 		return cfg.RemoveProject(rest[0], *confirm, *cascade)
 	})
 	if err != nil {
-		fmt.Fprintln(env.Stderr, "project remove:", err)
-		return 1
+		return emitResult(env, "config", app.RenderConfigFailure(err))
 	}
-	emitJSON(env.Stdout, env.Stderr, map[string]interface{}{"ok": true, "removed": rest[0]})
-	return 0
+	return emitResult(env, "config", app.RenderSuccess(map[string]interface{}{"removed": rest[0]}))
 }
 
 type repeatedString []string
