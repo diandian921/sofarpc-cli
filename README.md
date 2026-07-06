@@ -275,8 +275,8 @@ Not supported (intentionally not advertised): `roots`, `sampling`, `elicitation`
 
 ## Test
 
-The pure-Go suite runs in CI (`.github/workflows/ci.yml`: `go build` + `go vet` +
-`go test -race`) and locally from the repo root:
+The pure-Go suite runs in CI (`.github/workflows/ci.yml`: `gofmt` + `go build` +
+`go vet` + `go test -race` + the BOLT oracle) and locally from the repo root:
 
 ```bash
 go test ./...
@@ -284,11 +284,13 @@ go test ./...
 
 Some tests open loopback ports. In restricted sandboxes, they need permission to bind `127.0.0.1`.
 
-### Real-compatibility oracle (local pre-release gate)
+### Real-compatibility oracle (pre-release gate)
 
 The hand-written Hessian2/BOLT codec is verified against real oracles — a JVM
-running the alipay Hessian library, and the official `sofa-bolt-go` library. Run
-the gate before cutting a release:
+running the alipay Hessian library, and the official `sofa-bolt-go` library. The
+BOLT oracle lives in the `oracletest/` module (own `go.mod`, so the sofa-bolt-go
+dependency tree stays out of the main module) and also runs in CI. Run the full
+gate before cutting a release:
 
 ```bash
 bash scripts/oracle-gate.sh
@@ -299,12 +301,13 @@ Hessian oracle `t.Skip()`s when the JVM or the alipay Hessian jar (`~/.m2`) is
 missing, and a skipped Go test still exits 0 — which would fake a pass. The gate
 fails loudly instead, so green always means the codec was actually checked.
 
-These suites are excluded from CI (the alipay Hessian jar is an internal artifact
-not on public Maven). The underlying commands, if you want to run one directly:
+The Hessian oracle is excluded from CI (the alipay Hessian jar is an internal
+artifact not on public Maven). The underlying commands, if you want to run one
+directly:
 
 ```bash
-go test ./internal/direct -tags hessian_oracle   # Go<->Java Hessian contract + golden bytes == real Java
-go test ./internal/direct -tags bolt_oracle       # BOLT framing vs official sofa-bolt-go
+go test ./internal/direct -tags hessian_oracle    # Go<->Java Hessian contract + golden bytes == real Java
+go -C oracletest test -tags bolt_oracle ./...     # BOLT framing vs official sofa-bolt-go
 ```
 
 ## Design Docs

@@ -380,7 +380,9 @@ func TestTokenPositions(t *testing.T) {
 }
 
 // TestGenerateFacadeGolden 是 env-gated 生成器:
-//   GO_GENERATE=1 go test ./internal/javaparser/ -run TestGenerateFacadeGolden
+//
+//	GO_GENERATE=1 go test ./internal/javaparser/ -run TestGenerateFacadeGolden
+//
 // 跑完后人工审查 testdata/facade.tokens.json 是否符合预期,审查通过后
 // 后续 TestTokenizeFacadeMatchesGolden 用同一份数据做 regression。
 // 常规 go test 直接 skip,不会污染 golden。

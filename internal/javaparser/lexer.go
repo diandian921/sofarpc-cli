@@ -190,9 +190,12 @@ func (l *lexer) readBlockOrJavadoc(line, col, off int) (Token, error) {
 // 支持 decimal / hex (0x) / binary (0b) / octal (0...),后缀 L/l/F/f/D/d。
 // 接收 Java 7+ 下划线分隔(如 1_000_000)。
 // 关键 1:'+'/'-' 必须紧跟 exponent 标志(e/E/p/P)才属于 number 的一部分,
-//   否则会把 "1-2" 错误吃成一个 token。
+//
+//	否则会把 "1-2" 错误吃成一个 token。
+//
 // 关键 2:a-f 字符只在 hex 模式(0x / 0X 开头)接受,否则 "3.14f" 的 'f'
-//   会被当 hex digit 吃掉,suffix switch 永远进不去。
+//
+//	会被当 hex digit 吃掉,suffix switch 永远进不去。
 func (l *lexer) readNumber(line, col, off int) Token {
 	start := l.pos
 	l.advance() // 首字符 0-9 已校验

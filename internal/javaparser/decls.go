@@ -482,12 +482,12 @@ bodyStart2:
 //
 // 流程:
 //
-//	1. optional declared type params(generic method `<T> T foo(...)`)
-//	2. 看是否 ctor:next token 是 Ident 且 value == owner.Name 且 peekN(1) == `(`
-//	   → 直接走 method path,ReturnType 为空,IsConstructor = true
-//	3. 否则:parseTypeRef → ReturnType
-//	4. 接 Ident(member 名)
-//	5. 若 peek 是 `(` → method;否则 → field(可能 multi-decl)
+//  1. optional declared type params(generic method `<T> T foo(...)`)
+//  2. 看是否 ctor:next token 是 Ident 且 value == owner.Name 且 peekN(1) == `(`
+//     → 直接走 method path,ReturnType 为空,IsConstructor = true
+//  3. 否则:parseTypeRef → ReturnType
+//  4. 接 Ident(member 名)
+//  5. 若 peek 是 `(` → method;否则 → field(可能 multi-decl)
 //
 // 返回 (method, fields, err):method 与 fields 互斥,但有可能两者都是 nil
 // (例如 `;` 单独占位但已被 parseTypeBody 提前剥掉)。

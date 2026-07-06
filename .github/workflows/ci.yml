@@ -18,6 +18,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: gofmt
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "gofmt required for:"
+            echo "$files"
+            exit 1
+          fi
       - name: Build
         run: go build ./...
       # The project ships a Windows installer (scripts/install.ps1); keep the
@@ -26,10 +34,14 @@ jobs:
         run: GOOS=windows GOARCH=amd64 go build ./...
       - name: Vet
         run: go vet ./...
-      # Pure-Go suite. The JVM compatibility oracle (-tags hessian_oracle /
-      # bolt_oracle) is intentionally excluded here: it needs a JVM and the
-      # internal alipay Hessian jar, so it runs as a local pre-release gate
-      # (see README "Test"). gofmt is not gated due to pre-existing comment-format
-      # debt in a few files.
+      # Pure-Go suite. The JVM compatibility oracle (-tags hessian_oracle) is
+      # intentionally excluded here: it needs a JVM and the internal alipay
+      # Hessian jar, so it runs as a local pre-release gate (see README "Test").
       - name: Test
         run: go test -race ./...
+      # The BOLT oracle checks the hand-written BOLT framing against the
+      # official sofa-bolt-go library. Pure Go, isolated in its own module so
+      # the sofa-bolt-go tree stays out of the main go.mod.
+      - name: BOLT codec oracle (sofa-bolt-go)
+        run: go test -race -tags bolt_oracle ./...
+        working-directory: oracletest

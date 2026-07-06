@@ -257,7 +257,7 @@ JSON-RPC 协议层使用官方 `modelcontextprotocol/go-sdk`(stdio 传输、生�
 
 ## 测试
 
-纯 Go 测试套件会在 CI 中运行（`.github/workflows/ci.yml`：`go build` + `go vet` + `go test -race`），也可以在 repo root 本地运行：
+纯 Go 测试套件会在 CI 中运行（`.github/workflows/ci.yml`：`gofmt` + `go build` + `go vet` + `go test -race` + BOLT oracle），也可以在 repo root 本地运行：
 
 ```bash
 go test ./...
@@ -265,9 +265,9 @@ go test ./...
 
 部分测试会打开 loopback ports。在受限沙箱中，它们需要绑定 `127.0.0.1` 的权限。
 
-### 真实兼容性 oracle（本地 pre-release gate）
+### 真实兼容性 oracle（pre-release gate）
 
-手写 Hessian2/BOLT codec 会用真实 oracle 校验：一个运行 alipay Hessian library 的 JVM，以及官方 `sofa-bolt-go` library。发布前运行 gate：
+手写 Hessian2/BOLT codec 会用真实 oracle 校验：一个运行 alipay Hessian library 的 JVM，以及官方 `sofa-bolt-go` library。BOLT oracle 位于独立的 `oracletest/` module（自带 `go.mod`，让 sofa-bolt-go 依赖树不进主 module），并同时在 CI 中运行。发布前运行完整 gate：
 
 ```bash
 bash scripts/oracle-gate.sh
@@ -275,11 +275,11 @@ bash scripts/oracle-gate.sh
 
 它会运行两个 oracle，并且关键点是：把 **skipped** oracle 当成失败处理。Hessian oracle 在 JVM 或 alipay Hessian jar（`~/.m2`）缺失时会 `t.Skip()`，而被 skip 的 Go test 仍会 exit 0，这会造成假通过。gate 会明确失败，所以绿色结果一定表示 codec 真的被检查过。
 
-这些 suites 不进入 CI（alipay Hessian jar 是内部 artifact，不在 public Maven）。如果想直接运行底层命令：
+Hessian oracle 不进入 CI（alipay Hessian jar 是内部 artifact，不在 public Maven）。如果想直接运行底层命令：
 
 ```bash
-go test ./internal/direct -tags hessian_oracle   # Go<->Java Hessian contract + golden bytes == real Java
-go test ./internal/direct -tags bolt_oracle       # BOLT framing vs official sofa-bolt-go
+go test ./internal/direct -tags hessian_oracle    # Go<->Java Hessian contract + golden bytes == real Java
+go -C oracletest test -tags bolt_oracle ./...     # BOLT framing vs official sofa-bolt-go
 ```
 
 ## 设计文档
