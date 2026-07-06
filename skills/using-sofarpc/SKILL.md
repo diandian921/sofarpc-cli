@@ -22,6 +22,11 @@ description: Use when invoking any SofaRPC service from this machine — calling
 endpoint 选择方式。不要先 probe `salesfundmp-test`,再 invoke 只传 `project` 而误走
 另一个 `activeProfile`。
 
+保存 server/profile 时注意:**首个 profile 会自动成为该项目的 activeProfile**,
+之后保存的 profile 不会改变它(save_server 的输出带 `activeProfile` / `warning`
+字段提示)。切换默认环境用 `sofarpc project use <project> <profile>`,或
+save_server 时传 `setActive=true`。
+
 ## 标准工作流(陌生 facade 必走这五步)
 
 | 步 | 工具 | 目的 |

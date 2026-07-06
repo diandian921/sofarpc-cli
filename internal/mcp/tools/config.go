@@ -55,6 +55,7 @@ type ConfigSaveServerArgs struct {
 	Attachments map[string]string `json:"attachments,omitempty"`
 	Overwrite   bool              `json:"overwrite,omitempty"`
 	DryRun      bool              `json:"dryRun,omitempty"`
+	SetActive   bool              `json:"setActive,omitempty"`
 }
 
 var configSaveServerInputSchema = json.RawMessage(`{
@@ -71,7 +72,8 @@ var configSaveServerInputSchema = json.RawMessage(`{
     "appName": {"type": "string", "description": "SofaRPC consumer app name."},
     "attachments": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional static SofaRPC request baggage."},
     "overwrite": {"type": "boolean", "description": "Allow replacing an existing server."},
-    "dryRun": {"type": "boolean", "description": "Validate and preview the entry without writing config.json."}
+    "dryRun": {"type": "boolean", "description": "Validate and preview the entry without writing config.json."},
+    "setActive": {"type": "boolean", "description": "Make this server's profile the project's activeProfile (the target of project-level calls). Requires a profile."}
   }
 }`)
 

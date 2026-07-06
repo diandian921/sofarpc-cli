@@ -79,7 +79,7 @@ func printUsage(w io.Writer) {
 Usage:
   sofarpc install [claude|codex|all]   Install the binary and (optionally) register it with hosts.
   sofarpc ping <host:port|server>      Probe a target TCP address.
-  sofarpc project add|list|remove      Manage local source projects.
+  sofarpc project add|list|use|remove  Manage local source projects.
   sofarpc server add|list|remove       Manage configured RPC servers.
   sofarpc self-install [flags]         (advanced) Place the binary into ~/.sofarpc/bin only.
   sofarpc setup claude|codex|all       (advanced) Register the MCP server with agent hosts.

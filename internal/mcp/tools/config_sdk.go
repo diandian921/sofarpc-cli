@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -14,6 +15,31 @@ import (
 // the agent gets a consistent recovery hint; shared with the CLI via app.
 func configFailureResult(err error) app.Result {
 	return app.RenderConfigFailure(err)
+}
+
+// saveServerData assembles the save_server payload, surfacing activeProfile so
+// a save can never silently decide project-level routing (the first saved
+// profile becomes active per the config contract).
+func saveServerData(cfg appconfig.Config, name string, saved appconfig.Server, prevActive string, dryRun bool) map[string]interface{} {
+	data := map[string]interface{}{"name": name, "server": publicServer(saved)}
+	if dryRun {
+		data["dryRun"] = true
+	}
+	active, changed, warning := app.ProfileSaveAdvice(cfg, saved, prevActive)
+	if saved.Profile != "" {
+		data["activeProfile"] = active
+	}
+	if changed {
+		data["activeProfileChanged"] = true
+	}
+	if warning != "" {
+		data["warning"] = warning
+	}
+	return data
+}
+
+func errSetActiveNeedsProfile(name, project string) error {
+	return fmt.Errorf("setActive requires a profile: server name %q infers none for project %q (use <project>-<profile> naming or pass profile)", name, project)
 }
 
 // AddConfigList registers sofarpc_config_list (read-only). SDK-native replacement
@@ -108,7 +134,7 @@ func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
 	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_config_save_server",
 		Title:        "SofaRPC Config: Save Server",
-		Description:  "Add or replace a configured RPC server in config.json.",
+		Description:  "Add or replace a configured RPC server in config.json. The first profile saved for a project becomes its activeProfile (the target of project-level calls); pass setActive=true to switch it explicitly.",
 		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(false)},
 		InputSchema:  configSaveServerInputSchema,
 		OutputSchema: configSaveServerOutputSchema,
@@ -131,25 +157,47 @@ func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
 			if err != nil {
 				return configFailureResult(err), ""
 			}
+			prevActive := cfg.Projects[a.Project].ActiveProfile
 			saved, err := cfg.AddServer(a.Name, srv, a.Overwrite)
 			if err != nil {
 				return configFailureResult(err), ""
 			}
-			return okResult(map[string]interface{}{"dryRun": true, "name": a.Name, "server": publicServer(saved)}), "Dry run; config.json not modified."
+			if a.SetActive {
+				if saved.Profile == "" {
+					return configFailureResult(errSetActiveNeedsProfile(a.Name, a.Project)), ""
+				}
+				if _, err := cfg.SetActiveProfile(saved.Project, saved.Profile); err != nil {
+					return configFailureResult(err), ""
+				}
+			}
+			return okResult(saveServerData(cfg, a.Name, saved, prevActive, true)), "Dry run; config.json not modified."
 		}
 		path, lock, err := configPaths()
 		if err != nil {
 			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
 		}
 		var saved appconfig.Server
-		if _, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
+		var prevActive string
+		updated, err := appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
+			prevActive = cfg.Projects[a.Project].ActiveProfile
 			var addErr error
 			saved, addErr = cfg.AddServer(a.Name, srv, a.Overwrite)
-			return addErr
-		}); err != nil {
+			if addErr != nil {
+				return addErr
+			}
+			if a.SetActive {
+				if saved.Profile == "" {
+					return errSetActiveNeedsProfile(a.Name, a.Project)
+				}
+				_, setErr := cfg.SetActiveProfile(saved.Project, saved.Profile)
+				return setErr
+			}
+			return nil
+		})
+		if err != nil {
 			return configFailureResult(err), ""
 		}
-		return okResult(map[string]interface{}{"name": a.Name, "server": publicServer(saved)}), "Server saved to config.json."
+		return okResult(saveServerData(updated, a.Name, saved, prevActive, false)), "Server saved to config.json."
 	}))
 }
 

@@ -141,7 +141,10 @@ var (
   "properties": {
     "name": {"type": "string"},
     "server": {"type": "object"},
-    "dryRun": {"type": "boolean"}
+    "dryRun": {"type": "boolean"},
+    "activeProfile": {"type": "string", "description": "The project's active profile after this save (what project-level calls resolve to)."},
+    "activeProfileChanged": {"type": "boolean", "description": "True when this save changed the project's activeProfile."},
+    "warning": {"type": "string", "description": "Present when the saved profile is not the active one."}
   }
 }`)
 
