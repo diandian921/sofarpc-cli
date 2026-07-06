@@ -32,7 +32,9 @@
 
 1. **traceId 生成/回显**（feature review #6 后半）：比调用级 attachments 更高价值的诊断锚点，net-new 未做。
 2. **invokePolicy 写操作护栏**（feature review #3）：高价值但需先拍策略语法/默认值/校验点，不是自治实现项。
-3. **mcp/tools 与 javavalue 补测**：目标 tools ≥60%、javavalue ≥70%（2026-07-06 进行中）。
+3. ~~mcp/tools 与 javavalue 补测~~：已完成（2026-07-06，tools 92.7%、javavalue 100%）。
+3a. **save_server 静默设置 activeProfile 的提示**：保存第二个带 profile 的 server 时，首个 profile 已静默成为 activeProfile，决定了 project 级调用的目标端点；save_server 输出应提示 activeProfile 当前值（补测时发现）。
+3b. **tools/helpers.go 与 app/resolve.go 的 resolveProject/resolveServer 双份实现**：语义相同但错误形态不同（plain error vs 带 kind 的 DomainError），doctor 走前者、resolve/invoke 走后者，应收敛到 app 层（补测时发现）。
 4. **正式 `vX.Y.Z` Release**：目前全是 `v0.1.0-beta.X` 预发布 tag；install.sh 的 `releases/latest` 路径需要一个正式 Release 验证（release.yml 已就绪）。
 5. **golangci-lint**：本机未安装，暂未引入；引入时需先本地跑通再上 CI 门禁。
 6. probe 升级 BOLT 心跳（feature review #2）、describe `exampleArguments` 参数骨架（#4）、describe 跨项目搜索（#7）：C/D 档按需。
