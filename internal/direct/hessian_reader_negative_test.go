@@ -46,6 +46,43 @@ func TestReaderRejectsLengthBeyondRemainingInput(t *testing.T) {
 	}
 }
 
+func TestReaderAllowsBatchBeyondLegacyItemBudget(t *testing.T) {
+	const legacyItemBudget = 1 << 20
+	n := legacyItemBudget + 1
+	data := make([]byte, 0, 6+n)
+	data = append(data, 'V', 'l')
+	length := make([]byte, 4)
+	binary.BigEndian.PutUint32(length, uint32(n))
+	data = append(data, length...)
+	data = append(data, make([]byte, n)...)
+	for i := 6; i < len(data); i++ {
+		data[i] = 'N'
+	}
+
+	value, err := (&reader{data: data}).readValue()
+	if err != nil {
+		t.Fatalf("decode %d-item list above legacy budget: %v", n, err)
+	}
+	items, ok := value.([]interface{})
+	if !ok || len(items) != n {
+		t.Fatalf("decoded list = %T len %d, want []interface{} len %d", value, len(items), n)
+	}
+}
+
+func TestReaderEnforcesNewAggregateItemBudget(t *testing.T) {
+	r := &reader{data: make([]byte, maxHessianTotalItems+1)}
+	if err := r.reserveContainerItems("list", (1<<20)+1, 1); err != nil {
+		t.Fatalf("aggregate count above legacy budget should now pass: %v", err)
+	}
+	r.items = maxHessianTotalItems - 1
+	if err := r.reserveContainerItems("list", 1, 1); err != nil {
+		t.Fatalf("exact aggregate budget should pass: %v", err)
+	}
+	if err := r.reserveContainerItems("list", 1, 1); err == nil || !strings.Contains(err.Error(), "budget exceeded") {
+		t.Fatalf("new aggregate budget must remain enforced, got %v", err)
+	}
+}
+
 func FuzzReaderMalformedContainers(f *testing.F) {
 	f.Add([]byte{'V', 'l', 0x7f, 0xff, 0xff, 0xff})
 	f.Add([]byte{'O', 0x90, 'I', 0xff, 0xff, 0xff, 0xff})

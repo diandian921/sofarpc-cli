@@ -21,10 +21,12 @@ const (
 	refShort      = 0x4b
 
 	// A BOLT response is capped at 16 MiB, but compact Hessian values can encode
-	// millions of logical items in that space. Bound both a single container and
-	// the aggregate number of container slots before allocating Go slices/maps.
-	maxHessianContainerItems = 1 << 20
-	maxHessianTotalItems     = 1 << 20
+	// millions of logical items in that space. A 64-bit interface slot is 16
+	// bytes, so these limits allow roughly 32 MiB in one slice and 64 MiB of
+	// aggregate slots before map/object overhead, while still preventing the
+	// multi-GiB allocation triggered by an untrusted int32 length.
+	maxHessianContainerItems = 2 << 20
+	maxHessianTotalItems     = 4 << 20
 )
 
 type decodedResponse struct {
