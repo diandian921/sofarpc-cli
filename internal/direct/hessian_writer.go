@@ -58,20 +58,56 @@ func (w *writer) writeValueWithType(javaType string, v interface{}) error {
 		}
 		return w.writeTypedValue(*x)
 	}
+	// Two scalar paths funnel into the same primitives: writeJavaScalar dispatches
+	// on the declared Java type, writeUntypedScalar on the Go type when no type
+	// directed the encoding. Containers are handled below.
 	if handled, err := w.writeJavaScalar(javaType, v); handled || err != nil {
 		return err
 	}
+	if handled, err := w.writeUntypedScalar(v); handled || err != nil {
+		return err
+	}
+	switch x := v.(type) {
+	case []string:
+		items := make([]interface{}, len(x))
+		for i := range x {
+			items[i] = x[i]
+		}
+		return w.writeList("[string]", items)
+	case map[string]interface{}:
+		return w.writeMap("", x)
+	case map[string]string:
+		m := make(map[string]interface{}, len(x))
+		for k, v := range x {
+			m[k] = v
+		}
+		return w.writeMap("", m)
+	case typedObject:
+		return w.writeTypedObject(x)
+	default:
+		return fmt.Errorf("unsupported hessian value %T", v)
+	}
+}
+
+// writeUntypedScalar encodes a Go-native scalar for the path where no declared
+// Java type directed the encoding (writeJavaScalar did not handle it). It is the
+// untyped sibling of writeJavaScalar — that dispatches on the declared Java type,
+// this on the Go type — and both funnel into the same writeBool/writeInt/
+// writeLong/writeDouble/writeString primitives, so tag encoding stays single-source.
+// Returns handled=false for non-scalar values so the caller can try containers.
+//
+// Width policy: int32-and-narrower use the Hessian int tag, wider integers the
+// long tag. An integral float64 collapses to long because a JSON number carries
+// no int/float distinction — a value that must remain a Double reaches
+// writeJavaScalar via its declared "double"/"Double" type and is always a double.
+func (w *writer) writeUntypedScalar(v interface{}) (bool, error) {
 	switch x := v.(type) {
 	case bool:
-		if x {
-			w.buf = append(w.buf, 'T')
-		} else {
-			w.buf = append(w.buf, 'F')
-		}
+		w.writeBool(x)
 	case string:
-		return w.writeString(x)
+		return true, w.writeString(x)
 	case json.Number:
-		return w.writeValue(numberValue(x))
+		return true, w.writeValue(numberValue(x))
 	case int:
 		w.writeInt(int64(x))
 	case int8:
@@ -92,7 +128,7 @@ func (w *writer) writeValueWithType(javaType string, v interface{}) error {
 		w.writeLong(int64(x))
 	case uint64:
 		if x > math.MaxInt64 {
-			return fmt.Errorf("uint64 out of range: %d", x)
+			return true, fmt.Errorf("uint64 out of range: %d", x)
 		}
 		w.writeLong(int64(x))
 	case float32:
@@ -103,26 +139,10 @@ func (w *writer) writeValueWithType(javaType string, v interface{}) error {
 		} else {
 			w.writeDouble(x)
 		}
-	case []string:
-		items := make([]interface{}, len(x))
-		for i := range x {
-			items[i] = x[i]
-		}
-		return w.writeList("[string]", items)
-	case map[string]interface{}:
-		return w.writeMap("", x)
-	case map[string]string:
-		m := make(map[string]interface{}, len(x))
-		for k, v := range x {
-			m[k] = v
-		}
-		return w.writeMap("", m)
-	case typedObject:
-		return w.writeTypedObject(x)
 	default:
-		return fmt.Errorf("unsupported hessian value %T", v)
+		return false, nil
 	}
-	return nil
+	return true, nil
 }
 
 func (w *writer) writeTypedValue(value javavalue.TypedValue) error {
@@ -300,6 +320,14 @@ func (w *writer) writeLength(n int) {
 	w.writeUint32(uint32(n))
 }
 
+func (w *writer) writeBool(b bool) {
+	if b {
+		w.buf = append(w.buf, 'T')
+	} else {
+		w.buf = append(w.buf, 'F')
+	}
+}
+
 func (w *writer) writeInt(n int64) {
 	w.buf = append(w.buf, 'I')
 	w.writeUint32(uint32(int32(n)))
@@ -347,11 +375,7 @@ func (w *writer) writeJavaScalar(javaType string, v interface{}) (bool, error) {
 		if !ok {
 			return true, fmt.Errorf("cannot encode %T as %s", v, base)
 		}
-		if b {
-			w.buf = append(w.buf, 'T')
-		} else {
-			w.buf = append(w.buf, 'F')
-		}
+		w.writeBool(b)
 		return true, nil
 	case "byte", "java.lang.Byte":
 		n, ok := int64Value(v)
