@@ -116,7 +116,7 @@ func (r *reader) readValue() (interface{}, error) {
 		return int64(n), err
 	case tag >= 0xd8 && tag <= 0xef:
 		return int64(int(tag) - longZero), nil
-	case tag >= 0xf0 && tag <= 0xff:
+	case tag >= 0xf0: // 0xf0..0xff (tag is a byte, so the upper bound is implicit)
 		b, err := r.byte()
 		if err != nil {
 			return nil, err

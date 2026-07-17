@@ -99,19 +99,6 @@ func (c *cursor) matchKeyword(kw string) bool {
 	return true
 }
 
-// matchIdentValue 当前 token 是 Ident 且 value 等于 want 时消费并返回 true。
-// 用于上下文关键字(record / sealed / permits / yield / var)
-// —— 注意 javaKeywords 已经把它们识别为 TokenKeyword,所以**优先用 matchKeyword**;
-// matchIdentValue 仅用于 `non` / `sealed` 拼接 non-sealed 这种特殊场景。
-func (c *cursor) matchIdentValue(want string) bool {
-	tok := c.peek()
-	if tok.Kind != TokenIdent || tok.Value != want {
-		return false
-	}
-	c.consume()
-	return true
-}
-
 // expect 消费 kind 类型 token 并返回。 不匹配则返回 parseError。
 func (c *cursor) expect(kind TokenKind, what string) (Token, error) {
 	tok := c.peek()

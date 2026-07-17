@@ -99,9 +99,6 @@ func TestSetupPreflightRunsSelftest(t *testing.T) {
 	}
 }
 
-func isGet(c hostCall) bool {
-	return len(c.args) >= 2 && c.args[0] == "mcp" && c.args[1] == "get"
-}
 func isAdd(c hostCall) bool {
 	return len(c.args) >= 2 && c.args[0] == "mcp" && c.args[1] == "add"
 }
