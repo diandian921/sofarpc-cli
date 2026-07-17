@@ -476,7 +476,9 @@ func TestPlanExplicitAddressValidatesSpecialArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("valid LocalDate must plan: %v", err)
 	}
-	if len(plan.Arguments) != 1 || plan.Arguments[0].JavaType != "com.caucho.hessian.io.jdk8.LocalDateHandle" {
+	// App emits a neutral scalar; direct owns the LocalDateHandle wire shape.
+	if len(plan.Arguments) != 1 || plan.Arguments[0].Kind != javavalue.KindScalar ||
+		plan.Arguments[0].JavaType != "java.time.LocalDate" || plan.Arguments[0].Scalar != "2024-01-15" {
 		t.Fatalf("arguments = %#v", plan.Arguments)
 	}
 }

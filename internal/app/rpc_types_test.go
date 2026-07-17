@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/diandian921/sofarpc-mcp/internal/javavalue"
 	"github.com/diandian921/sofarpc-mcp/internal/schema"
@@ -219,24 +218,22 @@ func TestTypedArgumentsEncodesJavaTimeFromISO(t *testing.T) {
 	desc := schema.Description{Methods: []schema.Method{method}}
 	args := []interface{}{"2024-01-15", "2024-01-15T10:30:00", "2024-01-15T10:30:00Z"}
 
+	// The app layer now emits a neutral, canonicalized scalar; the direct writer
+	// owns the caucho *Handle wire shape (byte-pinned by
+	// direct.TestSpecialTypeEncodingGolden).
 	got := typedArgumentsForMethod(args, method, desc)
 	if len(got) != 3 {
 		t.Fatalf("want 3 args, got %#v", got)
 	}
-	if got[0].Kind != javavalue.KindObject || got[0].JavaType != "com.caucho.hessian.io.jdk8.LocalDateHandle" {
-		t.Fatalf("LocalDate -> %#v", got[0])
+	want := []struct{ jt, val string }{
+		{"java.time.LocalDate", "2024-01-15"},
+		{"java.time.LocalDateTime", "2024-01-15T10:30:00"},
+		{"java.time.Instant", "2024-01-15T10:30:00Z"},
 	}
-	if fmt.Sprint(got[0].Fields["year"].Scalar) != "2024" || fmt.Sprint(got[0].Fields["day"].Scalar) != "15" {
-		t.Fatalf("LocalDate fields = %#v", got[0].Fields)
-	}
-	if got[1].JavaType != "com.caucho.hessian.io.jdk8.LocalDateTimeHandle" {
-		t.Fatalf("LocalDateTime -> %#v", got[1])
-	}
-	if got[2].JavaType != "com.caucho.hessian.io.jdk8.InstantHandle" {
-		t.Fatalf("Instant -> %#v", got[2])
-	}
-	if fmt.Sprint(got[2].Fields["seconds"].Scalar) != "1705314600" {
-		t.Fatalf("Instant seconds = %#v", got[2].Fields["seconds"])
+	for i, w := range want {
+		if got[i].Kind != javavalue.KindScalar || got[i].JavaType != w.jt || fmt.Sprint(got[i].Scalar) != w.val {
+			t.Fatalf("arg %d -> %#v, want scalar %s=%q", i, got[i], w.jt, w.val)
+		}
 	}
 }
 
@@ -250,23 +247,15 @@ func TestTypedArgumentsEncodesBigIntegerFromString(t *testing.T) {
 	}
 	desc := schema.Description{Methods: []schema.Method{method}}
 
+	// App emits a neutral scalar with the canonical decimal; the direct writer
+	// owns the signum/mag object form (byte-pinned by the direct encode golden).
 	got := typedArgumentsForMethod([]interface{}{"9223372036854775807"}, method, desc)
 	if len(got) != 1 {
 		t.Fatalf("want 1 arg, got %#v", got)
 	}
 	bi := got[0]
-	if bi.Kind != javavalue.KindObject || bi.JavaType != "java.math.BigInteger" {
+	if bi.Kind != javavalue.KindScalar || bi.JavaType != "java.math.BigInteger" || fmt.Sprint(bi.Scalar) != "9223372036854775807" {
 		t.Fatalf("BigInteger -> %#v", bi)
-	}
-	if fmt.Sprint(bi.Fields["signum"].Scalar) != "1" {
-		t.Fatalf("signum = %#v", bi.Fields["signum"])
-	}
-	mag := bi.Fields["mag"]
-	if mag.Kind != javavalue.KindList || len(mag.Items) != 2 {
-		t.Fatalf("mag = %#v", mag)
-	}
-	if fmt.Sprint(mag.Items[0].Scalar) != "2147483647" || fmt.Sprint(mag.Items[1].Scalar) != "-1" {
-		t.Fatalf("mag items = %#v", mag.Items)
 	}
 }
 
@@ -295,9 +284,12 @@ func TestValidateSpecialArgsRejectsMalformed(t *testing.T) {
 		}),
 	})
 
-	// a valid (coerced to object form) special arg passes
-	if err := validateSpecialArgs([]javavalue.TypedValue{localDateHandle(time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC))}); err != nil {
-		t.Fatalf("valid LocalDate object must pass: %v", err)
+	// a valid special arg (now a neutral scalar) passes validation
+	if err := validateSpecialArgs([]javavalue.TypedValue{javavalue.Scalar("java.time.LocalDate", "2024-01-15")}); err != nil {
+		t.Fatalf("valid LocalDate scalar must pass: %v", err)
+	}
+	if err := validateSpecialArgs([]javavalue.TypedValue{javavalue.Scalar("java.math.BigInteger", "9223372036854775807")}); err != nil {
+		t.Fatalf("valid BigInteger scalar must pass: %v", err)
 	}
 	if err := validateSpecialArgs([]javavalue.TypedValue{javavalue.Scalar("java.util.Date", json.Number("1782844800000"))}); err != nil {
 		t.Fatalf("epoch-millis java.util.Date must pass: %v", err)
