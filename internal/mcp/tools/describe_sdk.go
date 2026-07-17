@@ -20,7 +20,7 @@ func AddDescribe(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_describe",
 		Title:        "SofaRPC Describe",
-		Description:  "Search local Java source for services (query=...) or describe a service FQN's methods, paramTypes, and DTO fields (service=..., optional method=...). Call this before composing sofarpc_invoke arguments; it reads the configured project's workspaceRoot sources, not the remote provider.",
+		Description:  "Search local Java source for services (query=...) or describe a service FQN's methods, paramTypes, and DTO fields (service=..., optional method=...). Call this before composing sofarpc_invoke arguments; it reads the configured project's workspaceRoot sources, not the remote provider. Each described method includes exampleArguments: a named placeholder skeleton (structural only — String is \"\", numbers are 0, enum is its first value, a self-referential field is null) to copy into sofarpc_invoke.arguments and fill with real values; consult the types map for exact types, enum options, and any field the skeleton left null.",
 		Annotations:  &mcpsdk.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true, DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(false)},
 		InputSchema:  describeInputSchema,
 		OutputSchema: describeOutputSchema,

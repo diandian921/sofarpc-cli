@@ -35,6 +35,10 @@ type Method struct {
 	// TypeParams 是方法 declared type parameters 的简单名列表(`<T, K extends X>` → ["T", "K"])。
 	// rpc_types.go 用它精确识别 type variable,避免把同名 same-pkg class 误判为 DTO(Plan B P3 fix)。
 	TypeParams []string `json:"typeParams,omitempty"`
+	// ExampleArguments 是一份 named 形态的参数占位骨架(结构正确、值是占位:String→"",
+	// 数字→0),供 agent 复制后填真实值直接 invoke。它在 **Describe 时** 现算(依赖解析
+	// 上下文),不进 schema cache —— 缓存里恒为 nil,故新增此字段无需 bump indexCacheVersion。
+	ExampleArguments map[string]interface{} `json:"exampleArguments,omitempty"`
 }
 
 type Parameter struct {
@@ -247,6 +251,9 @@ func Describe(idx *Index, service string, methodFilter string) (Description, err
 		if methodFilter != "" && method.Method != methodFilter {
 			continue
 		}
+		// Fill the example-argument skeleton on the returned copy (not the cached
+		// Index.Method): it needs the resolution context and is describe-time only.
+		method.ExampleArguments = ExampleArgumentsFor(idx, method)
 		desc.Methods = append(desc.Methods, method)
 		for _, typ := range referencedMethodTypes(method, method.ReturnType) {
 			if schema, ok := resolveType(idx, typ, method.Package, method.Imports); ok {

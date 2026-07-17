@@ -146,6 +146,12 @@ func TestDescribeServiceMode(t *testing.T) {
 	if len(methods) != 1 {
 		t.Fatalf("expected 1 described method, got %d", len(methods))
 	}
+	// The example-argument skeleton reaches the agent: getUser(String userId).
+	method0, _ := methods[0].(map[string]any)
+	example, _ := method0["exampleArguments"].(map[string]any)
+	if example == nil || example["userId"] != "" {
+		t.Errorf("getUser exampleArguments = %#v, want {\"userId\":\"\"}", method0["exampleArguments"])
+	}
 	if _, hasCandidates := env.Data["candidates"]; hasCandidates {
 		t.Error("service-only mode must not emit candidates")
 	}
