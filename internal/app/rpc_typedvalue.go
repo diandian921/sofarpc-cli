@@ -118,15 +118,23 @@ func enumTypedValue(value interface{}, javaType string) javavalue.TypedValue {
 	})
 }
 
+// isJDKBuiltinType reports whether base is a JDK type the encoder handles without
+// local source schema: java.lang/java.math/java.util scalars & collections, plus
+// the java.time types encoded via Hessian handles. Single source for the prefix
+// set so shouldWrapJavaObject and needsSchemaAnnotation cannot drift.
+func isJDKBuiltinType(base string) bool {
+	return strings.HasPrefix(base, "java.lang.") ||
+		strings.HasPrefix(base, "java.math.") ||
+		strings.HasPrefix(base, "java.util.") ||
+		strings.HasPrefix(base, "java.time.")
+}
+
 func shouldWrapJavaObject(javaType string) bool {
 	base := javavalue.BaseJavaType(javaType)
 	if base == "" || !strings.Contains(base, ".") {
 		return false
 	}
-	if strings.HasPrefix(base, "java.lang.") || strings.HasPrefix(base, "java.math.") || strings.HasPrefix(base, "java.util.") {
-		return false
-	}
-	return true
+	return !isJDKBuiltinType(base)
 }
 
 func untypedArguments(values []interface{}, types []string) []javavalue.TypedValue {
@@ -150,7 +158,7 @@ func needsSchemaAnnotation(types []string) bool {
 		if isPrimitiveRPCType(base) {
 			continue
 		}
-		if strings.HasPrefix(base, "java.lang.") || strings.HasPrefix(base, "java.math.") || strings.HasPrefix(base, "java.util.") {
+		if isJDKBuiltinType(base) {
 			continue
 		}
 		return true

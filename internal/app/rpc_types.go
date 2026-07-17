@@ -252,6 +252,8 @@ func rpcParamType(typ string) string {
 		return "java.lang.Character"
 	case "BigDecimal":
 		return "java.math.BigDecimal"
+	case "BigInteger":
+		return "java.math.BigInteger"
 	case "Date":
 		return "java.util.Date"
 	case "List":
@@ -285,11 +287,11 @@ func extractGenericArgs(javaType string) []string {
 	if open < 0 {
 		return nil
 	}
-	close := strings.LastIndex(javaType, ">")
-	if close <= open {
+	closeIdx := strings.LastIndex(javaType, ">")
+	if closeIdx <= open {
 		return nil
 	}
-	inner := javaType[open+1 : close]
+	inner := javaType[open+1 : closeIdx]
 	var args []string
 	depth := 0
 	start := 0

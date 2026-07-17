@@ -48,10 +48,13 @@ func (s *Service) ProbeEndpoint(ctx context.Context, input ProbeInput) ProbeResu
 			Project: input.Project, Profile: input.Profile, Server: input.Server, Required: true,
 		})
 		if err != nil {
-			return probeFailure(input, CodeConnectFailed, err, timeoutMS, "configured-server")
+			// Selection failed before any dial: this is a configuration/argument
+			// problem, not a connectivity failure. The DomainError kind refines the
+			// recovery advice.
+			return probeFailure(input, CodeBadRequest, err, timeoutMS, "configured-server")
 		}
 		if !selection.Found {
-			return probeFailure(input, CodeConnectFailed, errServerRequired(), timeoutMS, "configured-server")
+			return probeFailure(input, CodeBadRequest, errServerRequired(), timeoutMS, "configured-server")
 		}
 		serverName = selection.Name
 		projectName = selection.Server.Project

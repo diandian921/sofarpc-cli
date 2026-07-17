@@ -17,6 +17,7 @@ const (
 	CodeInvokeFailed    = "INVOKE_FAILED"
 	CodeAssertionFailed = "ASSERTION_FAILED"
 	CodeInternalError   = "INTERNAL_ERROR"
+	CodeCanceled        = "CANCELED"
 )
 
 type ErrorKind string
@@ -57,6 +58,11 @@ func DomainErrorDetails(err error) map[string]interface{} {
 }
 
 func errorCode(err error) string {
+	// Caller-initiated cancellation is not an invoke failure; keep it distinct so
+	// it does not carry the INVOKE_FAILED "run doctor" recovery advice.
+	if errors.Is(err, context.Canceled) {
+		return CodeCanceled
+	}
 	var connectErr *direct.ConnectError
 	if errors.As(err, &connectErr) {
 		return CodeConnectFailed
@@ -80,8 +86,12 @@ func errorCode(err error) string {
 	if errors.As(err, &opErr) && opErr.Op == "dial" {
 		return CodeConnectFailed
 	}
+	// Typed checks above are the primary signal; the string sniff only catches
+	// timeout/connect errors that lost their type through wrapping, so keep the
+	// fragments specific ("i/o timeout"/"deadline exceeded") to avoid matching
+	// unrelated messages that merely contain the word "timeout".
 	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "timeout") {
+	if strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "i/o timeout") {
 		return CodeRPCTimeout
 	}
 	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "no such host") {

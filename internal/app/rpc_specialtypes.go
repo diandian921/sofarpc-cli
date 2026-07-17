@@ -33,6 +33,12 @@ func javaTimeTypedValue(javaType string, value interface{}) (javavalue.TypedValu
 				return localDateTimeHandle(t), true
 			}
 		}
+	case "java.time.LocalTime":
+		for _, layout := range []string{"15:04:05.999999999", "15:04:05", "15:04"} {
+			if t, err := time.Parse(layout, s); err == nil {
+				return localTimeHandle(t), true
+			}
+		}
 	case "java.time.Instant":
 		if t, err := time.Parse(time.RFC3339, s); err == nil {
 			return instantHandle(t.UTC()), true
@@ -251,6 +257,10 @@ func firstMalformedSpecial(v javavalue.TypedValue) string {
 		}
 	case javavalue.KindMap:
 		for _, e := range v.Entries {
+			// Keys now carry their declared type too, so validate both sides.
+			if t := firstMalformedSpecial(e.Key); t != "" {
+				return t
+			}
 			if t := firstMalformedSpecial(e.Value); t != "" {
 				return t
 			}
@@ -261,7 +271,8 @@ func firstMalformedSpecial(v javavalue.TypedValue) string {
 
 func isSpecialEncodedType(javaType string) bool {
 	switch javaType {
-	case "java.time.LocalDate", "java.time.LocalDateTime", "java.time.Instant", "java.math.BigInteger":
+	case "java.time.LocalDate", "java.time.LocalDateTime", "java.time.LocalTime",
+		"java.time.Instant", "java.math.BigInteger":
 		return true
 	}
 	return false

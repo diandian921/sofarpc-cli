@@ -1,3 +1,12 @@
+// Package javavalue is the transport-neutral tagged union the app layer builds
+// from source schema and hands to the direct (Hessian) writer. A TypedValue pairs
+// a Java type name with one of four shapes (scalar/object/list/map); constructors
+// normalize nil children so callers never see a partially-built value.
+//
+// JavaType may still carry generic arguments (e.g. "java.util.List<java.lang.Long>")
+// or array suffixes; the direct writer erases them to a base name via
+// BaseJavaType for scalar dispatch. Type-erasure lives here (BaseJavaType /
+// IsByteArrayType in types.go) so app and direct share one definition.
 package javavalue
 
 import "sort"
@@ -11,6 +20,8 @@ const (
 	KindMap    Kind = "map"
 )
 
+// TypedValue is a Java value tagged with its declared type and shape. Exactly one
+// of Scalar/Fields/Items/Entries is meaningful, selected by Kind.
 type TypedValue struct {
 	JavaType string
 	Kind     Kind

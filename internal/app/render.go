@@ -74,6 +74,7 @@ var adviceByCode = map[string]recoveryAdvice{
 	CodeBadRequest:                  {"", "Fix the tool arguments to match the input schema (see error.message), then retry the same tool."},
 	CodeAssertionFailed:             {"", "The RPC succeeded but an assertion failed: compare expected vs actual in data.assertions and inspect data.result (set rawResult=true for the full Java object), then adjust the assertions or arguments."},
 	CodeInvokeFailed:                {"sofarpc_doctor", "Call sofarpc_doctor to diagnose config, source schema, and connectivity."},
+	CodeCanceled:                    {"", "The request was canceled before completion; re-issue it if that was not intended."},
 	CodeInternalError:               {"sofarpc_doctor", "Call sofarpc_doctor to diagnose config, source schema, and connectivity."},
 	appconfig.CodeConfigInvalid:     {"sofarpc_doctor", "Call sofarpc_doctor to inspect the configuration problem."},
 	appconfig.CodeConfigUnsupported: {"sofarpc_doctor", "Call sofarpc_doctor to inspect the configuration problem."},
