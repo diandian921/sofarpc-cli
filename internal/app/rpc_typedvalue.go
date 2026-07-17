@@ -34,21 +34,21 @@ func typedValueForJavaType(value interface{}, javaType string, types map[string]
 	if isUnresolvedTypeMarker(javaType) {
 		javaType = ""
 	}
-	if isByteArrayType(javaType) {
+	if javavalue.IsByteArrayType(javaType) {
 		return javavalue.Scalar(javaType, value)
 	}
-	if tv, ok := javaTimeTypedValue(eraseRPCGeneric(javaType), value); ok {
+	if tv, ok := javaTimeTypedValue(javavalue.BaseJavaType(javaType), value); ok {
 		return tv
 	}
-	if tv, ok := bigIntegerTypedValue(eraseRPCGeneric(javaType), value); ok {
+	if tv, ok := bigIntegerTypedValue(javavalue.BaseJavaType(javaType), value); ok {
 		return tv
 	}
-	if typ, ok := types[eraseRPCGeneric(javaType)]; ok && typ.Kind == "enum" {
+	if typ, ok := types[javavalue.BaseJavaType(javaType)]; ok && typ.Kind == "enum" {
 		return enumTypedValue(value, typ.Type)
 	}
 	switch raw := value.(type) {
 	case map[string]interface{}:
-		typ, ok := types[eraseRPCGeneric(javaType)]
+		typ, ok := types[javavalue.BaseJavaType(javaType)]
 		if ok && typ.Kind == "class" {
 			fields := map[string]javavalue.TypedValue{}
 			fieldTypes := map[string]string{}
@@ -73,7 +73,7 @@ func typedValueForJavaType(value interface{}, javaType string, types map[string]
 			for name, child := range raw {
 				fields[name] = typedValueForJavaType(child, "", types, depth+1)
 			}
-			return javavalue.Object(eraseRPCGeneric(javaType), fields)
+			return javavalue.Object(javavalue.BaseJavaType(javaType), fields)
 		}
 		keyType := "java.lang.String"
 		valueType := ""
@@ -119,7 +119,7 @@ func enumTypedValue(value interface{}, javaType string) javavalue.TypedValue {
 }
 
 func shouldWrapJavaObject(javaType string) bool {
-	base := eraseRPCGeneric(javaType)
+	base := javavalue.BaseJavaType(javaType)
 	if base == "" || !strings.Contains(base, ".") {
 		return false
 	}
@@ -143,7 +143,7 @@ func untypedArguments(values []interface{}, types []string) []javavalue.TypedVal
 
 func needsSchemaAnnotation(types []string) bool {
 	for _, typ := range types {
-		base := eraseRPCGeneric(typ)
+		base := javavalue.BaseJavaType(typ)
 		if base == "" {
 			continue
 		}

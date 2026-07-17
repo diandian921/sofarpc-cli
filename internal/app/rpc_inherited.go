@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 
+	"github.com/diandian921/sofarpc-mcp/internal/javavalue"
 	"github.com/diandian921/sofarpc-mcp/internal/schema"
 )
 
@@ -152,7 +153,7 @@ func isIdentRune(r rune) bool {
 // generic "Base<String>") to its TypeSchema within types, using the subclass's
 // imports/package — mirroring schema.resolveType over the described type map.
 func resolveExtendsType(ref string, owner schema.TypeSchema, types map[string]schema.TypeSchema) (schema.TypeSchema, bool) {
-	base := eraseRPCGeneric(ref)
+	base := javavalue.BaseJavaType(ref)
 	if t, ok := types[base]; ok {
 		return t, true
 	}

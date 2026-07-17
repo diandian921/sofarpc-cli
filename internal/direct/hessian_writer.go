@@ -129,7 +129,7 @@ func (w *writer) writeValueWithType(javaType string, v interface{}) error {
 func (w *writer) writeTypedValue(value javavalue.TypedValue) error {
 	switch value.Kind {
 	case javavalue.KindObject:
-		class := eraseJavaType(value.JavaType)
+		class := javavalue.BaseJavaType(value.JavaType)
 		if class == "" {
 			return fmt.Errorf("object javaType is required")
 		}
@@ -145,7 +145,7 @@ func (w *writer) writeTypedValue(value javavalue.TypedValue) error {
 		}
 		return w.writeObjectWithTypes(class, keys, values, fieldTypes)
 	case javavalue.KindList:
-		class := eraseJavaType(value.JavaType)
+		class := javavalue.BaseJavaType(value.JavaType)
 		if class == "" {
 			class = "java.util.ArrayList"
 		}
@@ -155,7 +155,7 @@ func (w *writer) writeTypedValue(value javavalue.TypedValue) error {
 		}
 		return w.writeList(class, items)
 	case javavalue.KindMap:
-		class := eraseJavaType(value.JavaType)
+		class := javavalue.BaseJavaType(value.JavaType)
 		if class == "java.util.Map" || class == "java.util.HashMap" || class == "java.util.LinkedHashMap" {
 			class = "java.util.LinkedHashMap"
 		}
@@ -331,14 +331,14 @@ func (w *writer) writeUint64(n uint64) {
 }
 
 func (w *writer) writeJavaScalar(javaType string, v interface{}) (bool, error) {
-	if isByteArrayType(javaType) {
+	if javavalue.IsByteArrayType(javaType) {
 		b, ok := byteSliceValue(v)
 		if !ok {
 			return true, fmt.Errorf("cannot encode %T as %s", v, javaType)
 		}
 		return true, w.writeBytes(b)
 	}
-	base := eraseJavaType(javaType)
+	base := javavalue.BaseJavaType(javaType)
 	if base == "" {
 		return false, nil
 	}
@@ -441,23 +441,6 @@ func (w *writer) writeBytes(b []byte) error {
 	w.writeUint16(uint16(len(b)))
 	w.buf = append(w.buf, b...)
 	return nil
-}
-
-func eraseJavaType(t string) string {
-	t = strings.TrimSpace(t)
-	if i := strings.IndexByte(t, '<'); i >= 0 {
-		t = strings.TrimSpace(t[:i])
-	}
-	for strings.HasSuffix(t, "[]") {
-		t = strings.TrimSuffix(t, "[]")
-	}
-	return t
-}
-
-func isByteArrayType(t string) bool {
-	t = strings.TrimSpace(t)
-	t = strings.TrimPrefix(t, "final ")
-	return t == "byte[]" || t == "java.lang.Byte[]"
 }
 
 func numberValue(n json.Number) interface{} {

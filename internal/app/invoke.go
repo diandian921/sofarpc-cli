@@ -361,7 +361,7 @@ func (s *Service) planOrderedArguments(ctx context.Context, projectName string, 
 }
 
 func acceptsWholeDTO(paramType string, method schema.Method, types map[string]schema.TypeSchema) bool {
-	resolved := eraseRPCGeneric(rpcValueTypeForMethod(paramType, method, types))
+	resolved := javavalue.BaseJavaType(rpcValueTypeForMethod(paramType, method, types))
 	typ, ok := types[resolved]
 	return ok && typ.Kind == "class"
 }

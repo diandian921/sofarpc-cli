@@ -192,7 +192,7 @@ func validMapKeyScalar(javaType string, value interface{}) bool {
 		return true
 	}
 	s := strings.TrimSpace(fmt.Sprint(value))
-	switch rpcParamType(eraseRPCGeneric(javaType)) {
+	switch rpcParamType(javavalue.BaseJavaType(javaType)) {
 	case "byte", "java.lang.Byte":
 		_, err := strconv.ParseInt(s, 10, 8)
 		return err == nil

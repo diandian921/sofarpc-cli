@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/diandian921/sofarpc-mcp/internal/javavalue"
 	"github.com/diandian921/sofarpc-mcp/internal/schema"
 )
 
@@ -52,20 +53,30 @@ func RPCParamTypes(method schema.Method) []string {
 	return rpcParamTypesForMethod(method)
 }
 
-// resolveGenericType 把短名 + 泛型字符串解析成 resolved-with-generics 完整 FQN。
-// 例:输入 "List<MaterialItem>" + imports{MaterialItem:"com.x.dto.MaterialItem"}
-//
-//	→ "java.util.List<com.x.dto.MaterialItem>"
-//
-// 嵌套 generic 递归 resolve;无 generic 时退化为 resolveBaseType。
-// 数组维度 "[]" 先剥离再 resolve,再原样追加回去。
-// Wildcard generic("?", "? extends X", "? super X")显式特判,
-// 不走 import resolve,**整段保留**(连 bound 内部的 X 也不递归)
-// —— wildcard element 永远走 untyped Map 兜底,这是预期行为。
-// types 用于 same-package lookup:有 schema 的 acronym DTO(URL/XML/ID 等)
-// 优先按 schema FQN 解析,只在 schema miss 时才让 type variable 启发式生效。
-func resolveGenericType(typ string, imports map[string]string, pkg string, types map[string]schema.TypeSchema, declaredTypeParams []string) string {
-	typ = strings.TrimSpace(typ)
+// rpcTypeResolver is the single owner of Java source type resolution inside app.
+// identity returns the erased wire/method identity while value preserves generic
+// arguments for javavalue construction. Both forms share the same base-name
+// precedence, so imports, type parameters, and same-package lookup cannot drift.
+type rpcTypeResolver struct {
+	imports            map[string]string
+	packageName        string
+	declaredTypeParams []string
+	knownTypes         map[string]schema.TypeSchema
+}
+
+func (r rpcTypeResolver) identity(javaType string) string {
+	base := javavalue.BaseJavaType(javaType)
+	if base == "" {
+		return javaType
+	}
+	return r.resolveBase(base)
+}
+
+// value 把短名 + 泛型字符串解析成 resolved-with-generics 完整 FQN。
+// Wildcard generic("?", "? extends X", "? super X")整段保留,让调用方安全
+// 降级为 untyped value;数组维度在递归解析后原样追加。
+func (r rpcTypeResolver) value(javaType string) string {
+	typ := strings.TrimSpace(javaType)
 	typ = strings.TrimPrefix(typ, "final ")
 	if typ == "" {
 		return typ
@@ -87,30 +98,22 @@ func resolveGenericType(typ string, imports map[string]string, pkg string, types
 		base = strings.TrimSpace(typ[:open])
 		genericRaw = typ[open:]
 	}
-	resolvedBase := resolveBaseType(base, imports, pkg, types, declaredTypeParams)
+	resolvedBase := r.resolveBase(base)
 	if genericRaw == "" {
 		return resolvedBase + suffix
 	}
 	args := extractGenericArgs(typ)
 	resolved := make([]string, len(args))
 	for i, arg := range args {
-		resolved[i] = resolveGenericType(arg, imports, pkg, types, declaredTypeParams)
+		resolved[i] = r.value(arg)
 	}
 	return resolvedBase + "<" + strings.Join(resolved, ", ") + ">" + suffix
 }
 
-// resolveBaseType 把无泛型的短名解析成 FQN。
+// resolveBase 把无泛型的短名解析成 FQN。
 // 顺序:Java built-in → 已带 "." → 显式 import → declared type params 精确匹配 → same-pkg
 // schema lookup → type variable 启发式 fallback → pkg fallback。
-//
-// declaredTypeParams 是当前 method 或 type 的 declared type parameter 简单名列表
-// (`<T, K>` → ["T", "K"])。 在 pkg fallback 之前精确匹配:命中即 return as-is,
-// 不进 same-pkg lookup。 根治 [[rpc-types-generic-preservation]] P3(`class Page<T>`
-// 同 package 真有 `com.x.dto.T` 类时不被误解析为 DTO)。
-//
-// declaredTypeParams 为 nil 时(老 schema cache 还没填 TypeParams,或调用方没传)
-// 退化为老的启发式行为(`isLikelyTypeVariable`)。
-func resolveBaseType(base string, imports map[string]string, pkg string, types map[string]schema.TypeSchema, declaredTypeParams []string) string {
+func (r rpcTypeResolver) resolveBase(base string) string {
 	if base == "" {
 		return base
 	}
@@ -118,26 +121,26 @@ func resolveBaseType(base string, imports map[string]string, pkg string, types m
 	if mapped != base || strings.Contains(mapped, ".") || isPrimitiveRPCType(mapped) {
 		return mapped
 	}
-	if imported, ok := imports[base]; ok {
+	if imported, ok := r.imports[base]; ok {
 		return imported
 	}
 	// 精确匹配 declared type params —— same-pkg DTO 同名时按 type var 处理
-	for _, tp := range declaredTypeParams {
+	for _, tp := range r.declaredTypeParams {
 		if tp == base {
 			return base
 		}
 	}
-	if pkg != "" {
-		fqn := pkg + "." + base
-		if _, ok := types[fqn]; ok {
+	if r.packageName != "" {
+		fqn := r.packageName + "." + base
+		if _, ok := r.knownTypes[fqn]; ok {
 			return fqn
 		}
 	}
 	if isLikelyTypeVariable(base) {
 		return base
 	}
-	if pkg != "" {
-		return pkg + "." + base
+	if r.packageName != "" {
+		return r.packageName + "." + base
 	}
 	return base
 }
@@ -154,28 +157,42 @@ func isUnresolvedTypeMarker(typ string) bool {
 	return isLikelyTypeVariable(typ)
 }
 
-// isLikelyTypeVariable 用 Java 命名 convention 启发式识别 type variable。
-// Java 强约定 type variable 全大写字母 + 数字,长度 1-3(T / K / V / E / R / T1 / T2)。
-// 真实 DTO class 极少这样命名 ——即便像 URL/XML/ID 这种 acronym 被误判,
-// 退化效果只是 element fall back 到 untyped Map(不 corrupt wire),
-// 不会比"错误 wrap 成 bogus class"更糟。
+// isLikelyTypeVariable conservatively recognizes one uppercase letter followed
+// only by optional digits (T, K, T1). Acronym class names such as ID and URL are
+// not type variables and must continue through same-package resolution.
 func isLikelyTypeVariable(s string) bool {
-	if len(s) == 0 || len(s) > 3 {
+	if len(s) == 0 || s[0] < 'A' || s[0] > 'Z' {
 		return false
 	}
-	hasLetter := false
-	for i := 0; i < len(s); i++ {
+	for i := 1; i < len(s); i++ {
 		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			hasLetter = true
-			continue
+		if c < '0' || c > '9' {
+			return false
 		}
-		if c >= '0' && c <= '9' {
-			continue
-		}
-		return false
 	}
-	return hasLetter
+	return true
+}
+
+func rpcTypeResolverForMethod(method schema.Method, knownTypes map[string]schema.TypeSchema) rpcTypeResolver {
+	return rpcTypeResolver{
+		imports:            method.Imports,
+		packageName:        method.Package,
+		declaredTypeParams: method.TypeParams,
+		knownTypes:         knownTypes,
+	}
+}
+
+func rpcTypeResolverForType(owner schema.TypeSchema, knownTypes map[string]schema.TypeSchema) rpcTypeResolver {
+	pkg := ""
+	if lastDot := strings.LastIndex(owner.Type, "."); lastDot > 0 {
+		pkg = owner.Type[:lastDot]
+	}
+	return rpcTypeResolver{
+		imports:            owner.Imports,
+		packageName:        pkg,
+		declaredTypeParams: owner.TypeParams,
+		knownTypes:         knownTypes,
+	}
 }
 
 // rpcParamTypeForMethod returns the *identity* form of a parameter type:
@@ -186,27 +203,7 @@ func isLikelyTypeVariable(s string) bool {
 // DO NOT use this when building javavalue trees — element types will be lost.
 // For javavalue construction, use rpcValueTypeForMethod.
 func rpcParamTypeForMethod(typ string, method schema.Method) string {
-	base := eraseRPCGeneric(typ)
-	if base == "" {
-		return typ
-	}
-	mapped := rpcParamType(base)
-	if mapped != base || strings.Contains(mapped, ".") || isPrimitiveRPCType(mapped) {
-		return mapped
-	}
-	if imported, ok := method.Imports[base]; ok {
-		return imported
-	}
-	// declared type param 精确匹配 → 不 pkg fallback,return as-is
-	for _, tp := range method.TypeParams {
-		if tp == base {
-			return base
-		}
-	}
-	if method.Package != "" {
-		return method.Package + "." + base
-	}
-	return base
+	return rpcTypeResolverForMethod(method, nil).identity(typ)
 }
 
 // rpcValueTypeForMethod returns the *value* form of a parameter type:
@@ -214,50 +211,23 @@ func rpcParamTypeForMethod(typ string, method schema.Method) string {
 // recursively resolved (e.g. "java.util.List<com.x.dto.MaterialItem>").
 // Used ONLY when constructing javavalue.TypedValue trees that need to know
 // nested element / value types for proper hessian serialization.
-// MUST NOT leak to wire ArgTypes — hessian writer's eraseJavaType backstops,
+// MUST NOT leak to wire ArgTypes — hessian writer's BaseJavaType backstops,
 // but call sites should never plumb this string into Request.ArgTypes.
 func rpcValueTypeForMethod(typ string, method schema.Method, types map[string]schema.TypeSchema) string {
-	return resolveGenericType(typ, method.Imports, method.Package, types, method.TypeParams)
+	return rpcTypeResolverForMethod(method, types).value(typ)
 }
 
 // rpcFieldTypeForType returns the *identity* form of a field type. See
 // rpcParamTypeForMethod doc. For javavalue construction inside DTO fields,
 // use rpcValueTypeForType.
 func rpcFieldTypeForType(typ string, owner schema.TypeSchema) string {
-	base := eraseRPCGeneric(typ)
-	if base == "" {
-		return typ
-	}
-	mapped := rpcParamType(base)
-	if mapped != base || strings.Contains(mapped, ".") || isPrimitiveRPCType(mapped) {
-		return mapped
-	}
-	if imported, ok := owner.Imports[base]; ok {
-		return imported
-	}
-	for _, tp := range owner.TypeParams {
-		if tp == base {
-			return base
-		}
-	}
-	if owner.Type != "" {
-		if lastDot := strings.LastIndex(owner.Type, "."); lastDot > 0 {
-			return owner.Type[:lastDot+1] + base
-		}
-	}
-	return base
+	return rpcTypeResolverForType(owner, nil).identity(typ)
 }
 
 // rpcValueTypeForType returns the *value* form of a field type:
 // generic-aware FQN for javavalue tree construction. See rpcValueTypeForMethod.
 func rpcValueTypeForType(typ string, owner schema.TypeSchema, types map[string]schema.TypeSchema) string {
-	pkg := ""
-	if owner.Type != "" {
-		if lastDot := strings.LastIndex(owner.Type, "."); lastDot > 0 {
-			pkg = owner.Type[:lastDot]
-		}
-	}
-	return resolveGenericType(typ, owner.Imports, pkg, types, owner.TypeParams)
+	return rpcTypeResolverForType(owner, types).value(typ)
 }
 
 func rpcParamType(typ string) string {
@@ -293,21 +263,6 @@ func rpcParamType(typ string) string {
 	default:
 		return typ
 	}
-}
-
-func eraseRPCGeneric(typ string) string {
-	base := strings.TrimSpace(typ)
-	base = strings.TrimPrefix(base, "final ")
-	if idx := strings.Index(base, "<"); idx >= 0 {
-		base = strings.TrimSpace(base[:idx])
-	}
-	return strings.TrimSuffix(base, "[]")
-}
-
-func isByteArrayType(typ string) bool {
-	typ = strings.TrimSpace(typ)
-	typ = strings.TrimPrefix(typ, "final ")
-	return typ == "byte[]" || typ == "java.lang.Byte[]"
 }
 
 func isPrimitiveRPCType(typ string) bool {

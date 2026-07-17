@@ -412,6 +412,7 @@ func TestResolveGenericType(t *testing.T) {
 		"MaterialAddRequest": "com.x.dto.MaterialAddRequest",
 	}
 	pkg := "com.x.facade"
+	resolver := rpcTypeResolver{imports: imports, packageName: pkg}
 	cases := []struct {
 		in   string
 		want string
@@ -451,9 +452,9 @@ func TestResolveGenericType(t *testing.T) {
 		//  imports 表如果显式有 T -> com.x.T,会走 imports lookup,见下个单测)
 	}
 	for _, tc := range cases {
-		got := resolveGenericType(tc.in, imports, pkg, nil, nil)
+		got := resolver.value(tc.in)
 		if got != tc.want {
-			t.Errorf("resolveGenericType(%q) = %q, want %q", tc.in, got, tc.want)
+			t.Errorf("rpcTypeResolver.value(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
@@ -585,7 +586,7 @@ func TestResolveTypeVariableOverriddenByExplicitImport(t *testing.T) {
 	// 边界 case:如果 user 真的 import 了一个叫 T 的 class(违反 convention 但可能),
 	// explicit import 必须优先于 type variable 启发式。
 	imports := map[string]string{"T": "com.example.weird.T"}
-	got := resolveGenericType("T", imports, "com.example.pkg", nil, nil)
+	got := (rpcTypeResolver{imports: imports, packageName: "com.example.pkg"}).value("T")
 	if got != "com.example.weird.T" {
 		t.Errorf("explicit import should win over type-var heuristic, got %q", got)
 	}
@@ -595,22 +596,22 @@ func TestResolveAcronymDTOWithSchemaUsesPkgLookup(t *testing.T) {
 	types := map[string]schema.TypeSchema{
 		"com.example.dto.URL": {Type: "com.example.dto.URL", Kind: "class"},
 	}
-	got := resolveGenericType("URL", nil, "com.example.dto", types, nil)
+	got := (rpcTypeResolver{packageName: "com.example.dto", knownTypes: types}).value("URL")
 	if got != "com.example.dto.URL" {
 		t.Errorf("same-pkg schema lookup should win over type-var heuristic, got %q", got)
 	}
 }
 
-func TestResolveAcronymDTOWithoutSchemaFallsBackUntyped(t *testing.T) {
-	got := resolveGenericType("URL", nil, "com.example.dto", nil, nil)
-	if got != "URL" {
-		t.Errorf("no-schema acronym should hit type-var heuristic, got %q", got)
+func TestResolveAcronymDTOWithoutSchemaUsesPackageFallback(t *testing.T) {
+	got := (rpcTypeResolver{packageName: "com.example.dto"}).value("URL")
+	if got != "com.example.dto.URL" {
+		t.Errorf("no-schema acronym should use package fallback, got %q", got)
 	}
 }
 
 func TestIsLikelyTypeVariable(t *testing.T) {
-	yes := []string{"T", "K", "V", "E", "R", "T1", "T2", "K2", "ID", "URL"}
-	no := []string{"", "Foo", "Bar", "Id", "Url", "MaterialItem", "ABCD", "list", "t"}
+	yes := []string{"T", "K", "V", "E", "R", "T1", "T2", "K2", "T10"}
+	no := []string{"", "Foo", "Bar", "Id", "ID", "Url", "URL", "MaterialItem", "ABCD", "list", "t"}
 	for _, s := range yes {
 		if !isLikelyTypeVariable(s) {
 			t.Errorf("isLikelyTypeVariable(%q) = false, want true", s)
@@ -685,18 +686,19 @@ func TestResolveBaseTypeP3DeclaredTypeParamShadowsSamePkgClass(t *testing.T) {
 	types := map[string]schema.TypeSchema{
 		"com.x.dto.T": {Type: "com.x.dto.T", Kind: "class"},
 	}
-	got := resolveBaseType("T", imports, pkg, types, []string{"T", "K"})
+	resolver := rpcTypeResolver{imports: imports, packageName: pkg, knownTypes: types, declaredTypeParams: []string{"T", "K"}}
+	got := resolver.resolveBase("T")
 	if got != "T" {
-		t.Errorf("resolveBaseType(T) = %q, want T (declared type param wins over same-pkg lookup)", got)
+		t.Errorf("resolveBase(T) = %q, want T (declared type param wins over same-pkg lookup)", got)
 	}
-	got = resolveBaseType("K", imports, pkg, types, []string{"T", "K"})
+	got = resolver.resolveBase("K")
 	if got != "K" {
-		t.Errorf("resolveBaseType(K) = %q, want K", got)
+		t.Errorf("resolveBase(K) = %q, want K", got)
 	}
 	types["com.x.dto.MaterialItem"] = schema.TypeSchema{Type: "com.x.dto.MaterialItem", Kind: "class"}
-	got = resolveBaseType("MaterialItem", imports, pkg, types, []string{"T", "K"})
+	got = resolver.resolveBase("MaterialItem")
 	if got != "com.x.dto.MaterialItem" {
-		t.Errorf("resolveBaseType(MaterialItem) = %q, want com.x.dto.MaterialItem", got)
+		t.Errorf("resolveBase(MaterialItem) = %q, want com.x.dto.MaterialItem", got)
 	}
 }
 
@@ -704,12 +706,13 @@ func TestResolveBaseTypeP3NilDeclaredTypeParamsFallsBackToHeuristic(t *testing.T
 	imports := map[string]string{}
 	pkg := "com.x.dto"
 	types := map[string]schema.TypeSchema{}
-	got := resolveBaseType("T", imports, pkg, types, nil)
+	resolver := rpcTypeResolver{imports: imports, packageName: pkg, knownTypes: types}
+	got := resolver.resolveBase("T")
 	if got != "T" {
 		t.Errorf("nil TypeParams + likely type var → %q, want T (heuristic still fires)", got)
 	}
 	types["com.x.dto.ID"] = schema.TypeSchema{Type: "com.x.dto.ID", Kind: "class"}
-	got = resolveBaseType("ID", imports, pkg, types, nil)
+	got = resolver.resolveBase("ID")
 	if got != "com.x.dto.ID" {
 		t.Errorf("nil TypeParams + ID with schema → %q, want com.x.dto.ID", got)
 	}
