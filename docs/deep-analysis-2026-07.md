@@ -1,8 +1,10 @@
 # 项目深度分析报告（2026-07）
 
-> 本文是对 sofarpc-mcp 全仓的一次深度代码评审，覆盖 direct 编解码、
+> 本文是对 sofarpc-mcp 全仓的一次深度代码评审，审计基线为
+> `main@ccabc60`（2026-07-17）。覆盖 direct 编解码、
 > javaparser/schema、app/javavalue、mcp/presentation、cli/appconfig 与脚本/CI
-> 六个面。所有列出的发现均经读码验证，头号问题另做了可执行复现。
+> 六个面。高优先级发现均经调用链读码核验；尚未固化成自动化回归测试的复现，
+> 统一列入配套实施计划，不以“已复现”替代可重复证据。
 > 本文是**过程记录**，不覆盖 `docs/decisions.md` 的既定决策（D1–D17）；
 > 与决策冲突处以 decisions.md 为准。
 
@@ -28,15 +30,24 @@ MCP stdio 严守 stdout=协议流、诊断走 stderr；`decisions.md` 作为决�
 下文先按这四类主题展开（最高价值），再补类型映射/配置健壮性/诊断逃生舱三块，
 最后给出分包发现清单与建议修复优先级。
 
+优先级口径：
+
+- **P0**：可由运行时输入触发进程不可恢复崩溃、数据破坏或安全边界突破，需立即修复。
+- **P1**：支持平台不可用、静默错误结果或关键诊断链路失效，属于发布阻断或近期修复项。
+- **P2**：有限场景缺陷、性能/可维护性问题，纳入后续迭代。
+
+其中 Windows 安装问题按 **P1/发布阻断** 管理：它不造成已运行实例崩溃，但在项目公开承诺
+Windows 支持的前提下，修复前不应发布新版本。
+
 ---
 
 ## A. 解析失败 = 整文件静默蒸发（javaparser/schema）
 
-这是全仓**单点价值最高**的架构问题：schema 提取链路对任何解析错误一律静默丢弃整个
+这是 schema 链路**单点价值最高**的正确性问题：schema 提取链路对任何解析错误一律静默丢弃整个
 文件，而承接诊断的字段（`Description.Warnings`、`SourceRoot`，`schema.go:71-72`）声明后
 从未赋值，现成的观测通道闲置。触发面比想象宽：
 
-- **[P0] `skipFieldInitializer` 的 `<` 启发式在合法比较表达式上误判**
+- **[P1] `skipFieldInitializer` 的 `<` 启发式在合法比较表达式上误判**
   （`decls.go:777-815`）。字段初始化器含 `size < limit` 之类裸比较时，`<` 前是 ident
   被计入 `angleDepth`，随后 `;` 在 `angleDepth>0` 时被**消费而非终止**（`decls.go:783-788`），
   且无 token 能让 depth 归零，一路吞到 EOF 报 `field initializer hit EOF`。注释
@@ -77,8 +88,10 @@ BOLT 帧体虽限制在 `maxResponseBytes = 16MB`（`invoke.go:32,329`），但 
 - **[P0] `reader.fixedList()`**（`hessian_reader.go:247`）：`make([]interface{}, 0, n)` 完全不校验
   `n` 符号，负数触发 `makeslice: cap out of range`。
 
-> 三处是同一类缺陷，建议统一封装 `r.checkCount(n)`（校验 `0 <= n <= 剩余可读字节数`）后
-> 再 `make`，并补一批畸形/截断/超大响应的负面测试 + `FuzzReadValue`。当前 direct 包对这些
+> 三处是同一类缺陷，建议统一封装容器预算校验：除 `0 <= n <= 剩余可读字节数` 外，
+> 还必须限制单容器元素数和单次解码累计分配预算。仅按剩余字节校验仍允许 16MB 的紧凑值
+> 诱导出数百 MB 的 `[]interface{}` 分配。修复后补一批畸形/截断/超大响应负面测试 +
+> `FuzzReadValue`。当前 direct 包对这些
 > 路径**零负面覆盖**（包覆盖率 59.7%）。
 
 同层其它：
@@ -100,10 +113,10 @@ BOLT 帧体虽限制在 `maxResponseBytes = 16MB`（`invoke.go:32,329`），但 
 发布产物含 windows zip + install.ps1，但一键安装两处断裂，且 CI 无 Windows 作业
 （`ci.yml:19` 矩阵只有 ubuntu/macos），手写的 `LockFileEx`（`lock_windows.go`）从未被执行过。
 
-- **[P0] `install.ps1` 对只读自动变量 `$Host` 赋值**（`install.ps1:30,38-40,64,115`）。
+- **[P1/发布阻断] `install.ps1` 对只读自动变量 `$Host` 赋值**（`install.ps1:30,38-40,64,115`）。
   `$Host` 是 PowerShell 内置只读变量（宿主对象），赋值抛 `Cannot overwrite variable Host`，
   且 `if ($Host)` 恒真。修：改名 `$TargetHost`，并加一条 `pwsh -File scripts/install.ps1 -h` CI 冒烟。
-- **[P0] Windows zip 布局与 install.ps1 期望不一致**（`package.sh:48` 从 `WORK_DIR` 内部
+- **[P1/发布阻断] Windows zip 布局与 install.ps1 期望不一致**（`package.sh:48` 从 `WORK_DIR` 内部
   `zip -qr "$archive" .`，产物无顶层目录；而 tar 路径 `:52` 带顶层目录；install.ps1 期望
   `sofarpc-<ver>-windows-<arch>/sofarpc.exe`）。修：改为 `(cd "$DIST_DIR" && zip -qr "$archive" "$base")`，
   并在 CI 对两种归档做布局断言。
@@ -220,7 +233,7 @@ BOLT 帧体虽限制在 `maxResponseBytes = 16MB`（`invoke.go:32,329`），但 
 
 D1–D17 的截断/rawResult/resultPath/assertions 决策方向正确，但实现有洞，偏偏落在最需要它们的场景：
 
-- **[P0] `rawResult=true` 遇循环引用响应时整个 invoke 结果被替换为 INTERNAL_ERROR**
+- **[P1] `rawResult=true` 遇循环引用响应时整个 invoke 结果被替换为 INTERNAL_ERROR**
   （`render.go:120-124` 对含循环 map 的 `exec.Data` 做 `json.Marshal` 返回 cycle 错误 → 整个成功 RPC 结果
   被 `RenderFailure` 丢弃，`nextTool` 还指向无关的 doctor）。而兼容矩阵（`resource_sdk.go:41`）声称
   "Cyclic responses: supported" 且推荐用 `rawResult=true` 诊断——最需要它的场景全军覆没。
@@ -272,9 +285,10 @@ errorCode 表驱动、v1→v2 迁移后 `project use` 可用性、windows-latest
 - **staticcheck 三项**：`cursor.go:94` `matchIdentValue` 死代码（且其注释谎称"用于 non-sealed 拼接"，
   实际 non-sealed 解析在 `decls.go:41-50` 内联手写、根本没调它）；`setup_test.go:102` `isGet` 死代码；
   `hessian_reader.go:110` `tag <= 0xff` 恒真（SA4003，无害但可删）。
-- **`decisions.md` 引用 5 个已不存在的历史文档**（agent-first-mcp-review.md、-followup.md、
-  -feature-review.md、-review-r3-verification.md、mcp-best-practices-audit.md）——"历史文档状态"表指向的文件
-  已被删，链接全断。建议要么恢复文件，要么把该表改为"已归档删除"。
+- **`decisions.md` 引用 5 个未纳入审计基线版本控制的历史文档**（agent-first-mcp-review.md、
+  -followup.md、-feature-review.md、-review-r3-verification.md、mcp-best-practices-audit.md）。当前工作区
+  存在对应未跟踪副本，但只合并已提交内容时链接仍会断。应明确选择：审阅后提交这些文档，或把状态表
+  改为“已归档删除”；本次实施不擅自纳入未跟踪文件。
 - **中英文注释混用**：65 个非测试文件中 14 个含中文注释，其余英文——同一仓库注释语言不统一。
 - **手写 `itoa`**（`adapter_javaparser.go:155-178`）复刻 24 行整数格式化只为省一个 `strconv` import。
 - **`search.go` 每次查询对每个 method 重新 `Tokenize` 全文**（`search.go:50`），应在 BuildIndex 时预计算 token 集。
@@ -284,20 +298,20 @@ errorCode 表驱动、v1→v2 迁移后 `project use` 可用性、windows-latest
 
 ## 建议修复优先级
 
-按"可被触发 × 修复成本"排序，前四项建议尽快处理：
+按“运行时影响 × 发布阻断 × 修复成本”排序：
 
 1. **B 类三个 make 越界**（direct）——唯一能被远端输入直接触发进程崩溃的一类；一个 `checkCount` helper
-   覆盖 `list`/`fixedList`/`classDef` + 一批畸形响应负面测试。**成本低、收益最高。**
-2. **A 类 P0 `skipFieldInitializer` + 解析失败可观测化**（javaparser/schema）——一个普通 `<` 比较就丢整个 DTO；
-   `TokenSemicolon` 硬终止 + `Warnings` 透出跳过的文件 + `FuzzParse`。
-3. **C 类 Windows 安装两处 P0**（scripts）——`$Host` 改名 + zip 布局对齐 + install.sh 去 `exec`（trap 泄漏）+
+   覆盖 `list`/`fixedList`/`classDef`，同时增加单容器上限和累计预算，再补畸形响应测试。**成本低、收益最高。**
+2. **C 类 Windows 安装发布阻断**（scripts）——`$Host` 改名 + zip 布局对齐 + install.sh 去 `exec`（trap 泄漏）+
    windows-latest 进 CI。
-4. **G 类 P0 rawResult 循环引用**（mcp/presentation）——切环拷贝或降级保留其余 data。
-5. **E 类 Map key 类型 + whole-DTO 回退 + ordered 短名 paramTypes**（app）——静默错值，业务侧最难排查。
-6. **D 类平行实现收敛**（跨层）——resolveProject/Server 委托、erase/byteArray 移入 javavalue、
+3. **A 类 `skipFieldInitializer` + 解析失败可观测化**（javaparser/schema）——一个普通 `<` 比较就丢整个 DTO；
+   `TokenSemicolon` 硬终止 + `Warnings` 透出跳过的文件 + 解析回归测试/Fuzz seed。
+4. **E 类 Map key 类型 + whole-DTO 回退 + ordered 短名 paramTypes**（app）——静默错值，业务侧最难排查。
+5. **G 类 rawResult 循环引用 + 断言严格性 + plan schema**（mcp/presentation）——恢复诊断逃生舱可信度。
+6. **F 类迁移/并发**（appconfig）——v1→v2 profile 物化、版本闸门前置、configForSave 深拷贝、cache 原子写。
+7. **D 类平行实现收敛**（跨层）——resolveProject/Server 委托、erase/byteArray 移入 javavalue、
    三套类型解析链参数化、parseTypeDecl 委托、config 错误码统一路由。可维护性，非紧急但持续付息。
-7. **F 类迁移/并发**（appconfig）——v1→v2 profile 物化、版本闸门前置、configForSave 深拷贝、cache 原子写。
 8. 剩余 P2 打磨 + 测试补洞 + 文档腐化清扫。
 
-> 说明：本报告只做分析、未改动任何代码。上述 1–4 项含明确的正确性/健壮性缺陷，
-> 建议优先安排；若需要，可按此优先级逐项落地并补对应回归测试。
+> 说明：本报告只做分析、未改动任何代码。具体范围、阶段、验收命令与完成定义见
+> `docs/deep-analysis-implementation-plan.md`。
