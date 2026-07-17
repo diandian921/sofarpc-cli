@@ -27,7 +27,7 @@ Usage: install.ps1 [-Version vX.Y.Z] [claude|codex|all]
 
 # Parse args manually so we can also be invoked via iex with arguments.
 $Version = $null
-$Host = $null
+$TargetHost = $null
 $i = 0
 while ($i -lt $args.Count) {
   switch ($args[$i]) {
@@ -35,9 +35,9 @@ while ($i -lt $args.Count) {
     "--help"    { Show-Usage; exit 0 }
     "-Version"  { $i++; $Version = $args[$i] }
     "--version" { $i++; $Version = $args[$i] }
-    "claude"    { $Host = "claude" }
-    "codex"     { $Host = "codex"  }
-    "all"       { $Host = "all"    }
+    "claude"    { $TargetHost = "claude" }
+    "codex"     { $TargetHost = "codex"  }
+    "all"       { $TargetHost = "all"    }
     default {
       Write-Error "unknown argument $($args[$i])"
       Show-Usage
@@ -61,7 +61,7 @@ if ($ScriptDir) {
       & go build -ldflags "-X main.BuildVersion=$BinVersion" -o $Cli ./cmd/sofarpc
       if ($LASTEXITCODE -ne 0) { throw "go build failed" }
     } finally { Pop-Location }
-    if ($Host) { & $Cli install $Host } else { & $Cli install }
+    if ($TargetHost) { & $Cli install $TargetHost } else { & $Cli install }
     exit $LASTEXITCODE
   }
 }
@@ -75,11 +75,13 @@ $Arch = switch ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArch
 
 # Resolve latest tag via the redirect.
 if (-not $Version) {
-  $resp = Invoke-WebRequest -UseBasicParsing -MaximumRedirection 0 -Uri "https://github.com/$Repo/releases/latest" -ErrorAction SilentlyContinue
+  $resp = Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/$Repo/releases/latest"
   $location = $null
-  if ($resp.Headers["Location"]) { $location = $resp.Headers["Location"] }
-  if (-not $location) {
-    $resp = Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/$Repo/releases/latest"
+  if ($resp.BaseResponse.RequestMessage -and $resp.BaseResponse.RequestMessage.RequestUri) {
+    # PowerShell 7 / .NET Core exposes the final URI through HttpResponseMessage.
+    $location = $resp.BaseResponse.RequestMessage.RequestUri.AbsoluteUri
+  } elseif ($resp.BaseResponse.ResponseUri) {
+    # Windows PowerShell 5.1 / .NET Framework compatibility.
     $location = $resp.BaseResponse.ResponseUri.AbsoluteUri
   }
   if ($location -match "/tag/(.+)$") { $Version = $matches[1] }
@@ -112,7 +114,7 @@ try {
   $Cli = Join-Path $Tmp "sofarpc-$Version-windows-$Arch/sofarpc.exe"
   if (-not (Test-Path $Cli)) { throw "archive did not contain sofarpc.exe" }
 
-  if ($Host) { & $Cli install $Host } else { & $Cli install }
+  if ($TargetHost) { & $Cli install $TargetHost } else { & $Cli install }
   exit $LASTEXITCODE
 } finally {
   Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $Tmp

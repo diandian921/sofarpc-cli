@@ -11,12 +11,12 @@ permissions:
 jobs:
   build-test:
     name: build + vet + test (${{ matrix.os }})
-    # macOS is the primary release target (darwin archives + daily use), so it
-    # is tested for real, not just cross-compiled.
+    # Test every advertised desktop platform for real. Windows owns installer,
+    # locking, and executable-replacement paths that cross-compilation cannot cover.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +25,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: gofmt
+        shell: bash
         run: |
           files=$(gofmt -l .)
           if [ -n "$files" ]; then
@@ -37,7 +38,12 @@ jobs:
       # The project ships a Windows installer (scripts/install.ps1); keep the
       # Windows target compiling. Pure-Go, so a cross-compile is enough.
       - name: Build (windows/amd64)
+        shell: bash
         run: GOOS=windows GOARCH=amd64 go build ./...
+      - name: PowerShell installer smoke
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: ./scripts/install.ps1 -h
       - name: Vet
         run: go vet ./...
       # Pure-Go suite. The JVM compatibility oracle (-tags hessian_oracle) is
@@ -51,3 +57,10 @@ jobs:
       - name: BOLT codec oracle (sofa-bolt-go)
         run: go test -race -tags bolt_oracle ./...
         working-directory: oracletest
+      - name: Windows archive layout
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          VERSION=v0.0.0-test PLATFORMS=windows/amd64 bash scripts/package.sh
+          unzip -Z1 dist/sofarpc-v0.0.0-test-windows-amd64.zip | \
+            grep -qx 'sofarpc-v0.0.0-test-windows-amd64/sofarpc.exe'

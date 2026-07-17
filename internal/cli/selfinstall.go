@@ -214,7 +214,7 @@ func printPathHint(env Env, binDir string) {
 		}
 	}
 	if runtime.GOOS == "windows" {
-		fmt.Fprintf(env.Stdout, "\n%s is not on PATH. Add it, e.g.:\n  setx PATH \"%%PATH%%;%s\"\n", binDir, binDir)
+		fmt.Fprintf(env.Stdout, "\n%s is not on PATH. Add it to your user PATH, e.g. in PowerShell:\n  $userPath = [Environment]::GetEnvironmentVariable('Path', 'User'); [Environment]::SetEnvironmentVariable('Path', \"$userPath;%s\", 'User')\n", binDir, binDir)
 		return
 	}
 	fmt.Fprintf(env.Stdout, "\n%s is not on PATH. Add this to your shell rc:\n  export PATH=\"%s:$PATH\"\n", binDir, binDir)

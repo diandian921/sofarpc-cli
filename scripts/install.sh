@@ -64,9 +64,11 @@ if [ -n "$REPO_ROOT" ] && [ -d "$REPO_ROOT/cmd/sofarpc" ] && command -v go >/dev
     BIN_VERSION="$(git -C "$REPO_ROOT" describe --tags --match 'v*' --always 2>/dev/null || echo dev)"
     (cd "$REPO_ROOT" && go build -ldflags "-X main.BuildVersion=$BIN_VERSION" -o "$BUILD_DIR/sofarpc" ./cmd/sofarpc)
     if [ -n "$host" ]; then
-        exec "$BUILD_DIR/sofarpc" install "$host"
+        "$BUILD_DIR/sofarpc" install "$host"
+    else
+        "$BUILD_DIR/sofarpc" install
     fi
-    exec "$BUILD_DIR/sofarpc" install
+    exit $?
 fi
 
 # Network path: detect platform.
@@ -135,6 +137,7 @@ sofarpc_bin="$extracted_dir/sofarpc"
 [ -x "$sofarpc_bin" ] || { echo "error: archive did not contain $sofarpc_bin" >&2; exit 1; }
 
 if [ -n "$host" ]; then
-    exec "$sofarpc_bin" install "$host"
+    "$sofarpc_bin" install "$host"
+else
+    "$sofarpc_bin" install
 fi
-exec "$sofarpc_bin" install

@@ -11,10 +11,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Module is at repo root: release tags are vX.Y.Z.
 VERSION="${VERSION:-$(git -C "$REPO_ROOT" describe --tags --match 'v*' --always 2>/dev/null || echo dev)}"
-DIST_DIR="$REPO_ROOT/dist"
+DIST_DIR="${DIST_DIR:-$REPO_ROOT/dist}"
 
 # Default matrix; override with PLATFORMS="os/arch os/arch ...".
-PLATFORMS="${PLATFORMS:-darwin/arm64 darwin/amd64 linux/amd64 windows/amd64}"
+PLATFORMS="${PLATFORMS:-darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64}"
 
 command -v go >/dev/null || { echo "error: go not found in PATH" >&2; exit 1; }
 command -v tar >/dev/null || { echo "error: tar not found in PATH" >&2; exit 1; }
@@ -45,7 +45,7 @@ for platform in $PLATFORMS; do
     if [ "$GOOS_VALUE" = "windows" ]; then
         archive="$DIST_DIR/$base.zip"
         rm -f "$archive"
-        (cd "$WORK_DIR" && zip -qr "$archive" .)
+        (cd "$DIST_DIR" && zip -qr "$archive" "$base")
     else
         archive="$DIST_DIR/$base.tar.gz"
         rm -f "$archive"
