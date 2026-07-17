@@ -579,17 +579,22 @@ func TestHessianBigIntegerDecodesToSignumMagFields(t *testing.T) {
 	}
 }
 
-// TestHessianWriterRejectsBareBigIntegerScalar documents that the low-level writer
-// has no BigInteger scalar tag: BigInteger is encoded via its serialized signum/mag
-// object form (built by the app coercion; see the "big-integer write" oracle case),
-// so a bare scalar is correctly rejected.
-func TestHessianWriterRejectsBareBigIntegerScalar(t *testing.T) {
+// TestHessianWriterEncodesBigIntegerScalar documents that the writer now shapes a
+// neutral BigInteger scalar into its serialized signum/mag object form itself
+// (the encoding was pushed down from the app layer; see hessian_special.go). The
+// exact bytes are pinned in CI by TestSpecialTypeEncodingGolden; here we just
+// confirm the scalar encodes and round-trips to the BigInteger object.
+func TestHessianWriterEncodesBigIntegerScalar(t *testing.T) {
 	w := newWriter()
-	err := w.writeValueWithType("java.math.BigInteger", "9223372036854775807")
-	if err == nil {
-		t.Fatalf("a bare BigInteger scalar must be rejected (encode via the object form)")
+	if err := w.writeValueWithType("java.math.BigInteger", "9223372036854775807"); err != nil {
+		t.Fatalf("a BigInteger scalar must now encode via the object form: %v", err)
 	}
-	if !strings.Contains(err.Error(), "object form") {
-		t.Fatalf("err = %v", err)
+	got, err := (&reader{data: w.bytes()}).readValue()
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	obj, ok := got.(map[string]interface{})
+	if !ok || obj["type"] != "java.math.BigInteger" {
+		t.Fatalf("want BigInteger object form, got %#v", got)
 	}
 }
