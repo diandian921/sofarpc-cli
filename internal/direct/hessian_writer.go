@@ -425,7 +425,17 @@ func (w *writer) writeJavaScalar(javaType string, v interface{}) (bool, error) {
 		}
 		return true, w.writeTypedObject(typedObject{name: base, fields: map[string]interface{}{"value": s}})
 	case "java.math.BigInteger":
-		return true, fmt.Errorf("java.math.BigInteger must be encoded as its signum/mag object form, not a scalar")
+		tv, ok := bigIntegerHandleValue(v)
+		if !ok {
+			return true, fmt.Errorf("cannot encode %v as %s", v, base)
+		}
+		return true, w.writeTypedValue(tv)
+	case "java.time.LocalDate", "java.time.LocalDateTime", "java.time.LocalTime", "java.time.Instant":
+		tv, ok := javaTimeHandleValue(base, v)
+		if !ok {
+			return true, fmt.Errorf("cannot encode %v as %s (expected ISO-8601 string)", v, base)
+		}
+		return true, w.writeTypedValue(tv)
 	case "java.util.Date":
 		n, ok := int64Value(v)
 		if !ok {
