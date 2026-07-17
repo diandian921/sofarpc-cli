@@ -3,6 +3,7 @@
 package appconfig
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -12,17 +13,20 @@ import (
 const lockfileExclusiveLock = 0x00000002
 
 var (
-	kernel32            = syscall.NewLazyDLL("kernel32.dll")
-	procLockFileEx      = kernel32.NewProc("LockFileEx")
-	procUnlockFileEx    = kernel32.NewProc("UnlockFileEx")
-	errLockFileExFailed = syscall.Errno(1)
+	kernel32         = syscall.NewLazyDLL("kernel32.dll")
+	procLockFileEx   = kernel32.NewProc("LockFileEx")
+	procUnlockFileEx = kernel32.NewProc("UnlockFileEx")
+	// A clear message: the raw syscall.Errno(1) would render as the misleading
+	// "Incorrect function." Used only when LockFileEx fails without setting an
+	// error code (the callErr branch below reports the real OS error otherwise).
+	errLockFileExFailed = errors.New("LockFileEx reported failure without an error code")
 )
 
 func lockConfig(path string) (func(), error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, err
 	}

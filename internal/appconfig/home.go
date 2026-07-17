@@ -22,7 +22,7 @@ const DefaultDirName = ".sofarpc"
 //     config.json, that parent (the canonical-install case);
 //  3. else, <user home>/.sofarpc.
 func Home() (string, error) {
-	if env := os.Getenv(EnvHome); env != "" {
+	if env, ok := envHomeOverride(); ok {
 		return env, nil
 	}
 	if root, ok := selfLocatedRoot(); ok {
@@ -31,11 +31,25 @@ func Home() (string, error) {
 	return defaultRoot()
 }
 
+// envHomeOverride returns an absolute SOFARPC_HOME when the variable is set. A
+// relative value is resolved against the current directory so the runtime root
+// does not drift as the process changes CWD; if Abs fails the raw value is used.
+func envHomeOverride() (string, bool) {
+	env := os.Getenv(EnvHome)
+	if env == "" {
+		return "", false
+	}
+	if abs, err := filepath.Abs(env); err == nil {
+		return abs, true
+	}
+	return env, true
+}
+
 // InstallRoot resolves the destination for self-install. It deliberately omits
 // the self-locate step: during installation the running binary is the source,
 // not yet placed under the canonical root.
 func InstallRoot() (string, error) {
-	if env := os.Getenv(EnvHome); env != "" {
+	if env, ok := envHomeOverride(); ok {
 		return env, nil
 	}
 	return defaultRoot()

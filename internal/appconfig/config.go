@@ -196,7 +196,9 @@ func Load(path string) (Config, error) {
 
 func Save(path string, cfg Config) error {
 	cfg = configForSave(cfg)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// The config directory can hold credential-bearing attachments, so keep it
+	// owner-only (0700) rather than world-readable.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	body, err := json.MarshalIndent(cfg, "", "  ")
@@ -209,7 +211,20 @@ func Save(path string, cfg Config) error {
 		return err
 	}
 	tmpName := tmp.Name()
+	// Own the file mode explicitly rather than relying on CreateTemp's default.
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
 	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	// fsync before rename so a crash cannot leave the renamed file with unflushed
+	// (empty/partial) contents.
+	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpName)
 		return err
@@ -218,7 +233,11 @@ func Save(path string, cfg Config) error {
 		_ = os.Remove(tmpName)
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
 }
 
 func Update(path, lockPath string, mutate func(*Config) error) (Config, error) {
@@ -516,7 +535,14 @@ func CanonicalWorkspaceRoot(root string) (string, error) {
 	if root == "" {
 		return "", fmt.Errorf("workspaceRoot is required")
 	}
-	if strings.HasPrefix(root, "~/") {
+	// Expand a leading ~ (bare, ~/, or Windows ~\) to the user home.
+	if root == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		root = home
+	} else if strings.HasPrefix(root, "~/") || strings.HasPrefix(root, `~\`) {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
