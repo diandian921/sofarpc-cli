@@ -70,7 +70,10 @@ func parseCompilationUnit(c *cursor, sourceFile string) (*CompilationUnit, error
 // 形态:`@Name` 或 `@Name(...)` 或 `@a.b.Name(...)`。
 // Annotation 名段允许 contextual keyword(`record` / `sealed` / `var` 等 —— Java 真实
 // 代码常出现包名 `com.acme.record.X`),不限定纯 TokenIdent。
-func skipFileLevelAnnotation(c *cursor) error {
+// skipAnnotation consumes one `@Name` / `@a.b.Name(...)` annotation; the leading
+// `@` must be the current token. Shared by skipFileLevelAnnotation and
+// skipTypeUseAnnotations so the name/arg-skip logic has a single definition.
+func skipAnnotation(c *cursor) error {
 	if _, err := c.expect(TokenAt, "@"); err != nil {
 		return err
 	}
@@ -90,6 +93,10 @@ func skipFileLevelAnnotation(c *cursor) error {
 		}
 	}
 	return nil
+}
+
+func skipFileLevelAnnotation(c *cursor) error {
+	return skipAnnotation(c)
 }
 
 // peekAnnotationsLeadToKeyword 不消费 token,判断 `@...` annotation 序列之后
@@ -153,6 +160,17 @@ func isContextualKeyword(value string) bool {
 	case "module", "open", "opens", "uses", "provides", "requires",
 		"exports", "to", "with", "transitive",
 		"record", "sealed", "permits", "yield", "var":
+		return true
+	}
+	return false
+}
+
+// isPrimitiveTypeKeyword reports whether value is a primitive type or void — the
+// only hard reserved keywords that may begin a type reference. Other reserved
+// words (if/for/class/return/...) must not parse as a type name.
+func isPrimitiveTypeKeyword(value string) bool {
+	switch value {
+	case "boolean", "byte", "char", "short", "int", "long", "float", "double", "void":
 		return true
 	}
 	return false

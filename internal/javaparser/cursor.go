@@ -149,6 +149,10 @@ func tokenPos(t Token) Position {
 // **非 trivia 的** token 间隔(允许 line/block comment,不允许 ident/keyword/punct)。
 // 也就是 javadoc 必须直接挂在下一个声明的上方。
 // 找不到返回空字符串。
+//
+// 不变量:调用方必须已经 peek/skipTrivia 到声明的首 token(c.idx 指向它),
+// 本函数才从 c.idx-1 往回找。所有调用点(parsePreamble 等)都满足;新增调用点
+// 前请确保 c.idx 已推进过声明前的 trivia。
 func (c *cursor) peekJavadoc() string {
 	for i := c.idx - 1; i >= 0; i-- {
 		k := c.tokens[i].Kind

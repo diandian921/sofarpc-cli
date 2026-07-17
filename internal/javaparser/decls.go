@@ -141,7 +141,7 @@ func parseTypeBody(c *cursor, decl *TypeDecl) error {
 	}
 }
 
-// parseClassBodyMembers 把 Task 6 的 dispatcher 主循环抽出来命名,parseTypeBody 与
+// parseClassBodyMembers 是类型体成员的 dispatcher 主循环,parseTypeBody 与
 // annotation body 复用。
 func parseClassBodyMembers(c *cursor, decl *TypeDecl) error {
 	for {
@@ -455,7 +455,7 @@ func parseMethodOrField(c *cursor, pre preamble, owner *TypeDecl) (*MethodDecl, 
 	// 注意不检查 pre.Modifiers —— 即使没 modifier 也是合法 compact ctor。
 	// 必须在普通 ctor 快路径之前,否则会被 parseTypeRef 当 ReturnType 误吃。
 	if owner.Kind == TypeKindRecord {
-		if tok := c.peek(); tok.Kind == TokenIdent && tok.Value == owner.Name && c.peekN(1).Kind == TokenLBrace {
+		if tok := c.peek(); isIdentLike(tok) && tok.Value == owner.Name && c.peekN(1).Kind == TokenLBrace {
 			c.consume() // ctor name
 			if err := c.skipBalanced(TokenLBrace, TokenRBrace); err != nil {
 				return nil, nil, err
@@ -464,8 +464,9 @@ func parseMethodOrField(c *cursor, pre preamble, owner *TypeDecl) (*MethodDecl, 
 		}
 	}
 
-	// ctor 快路径:Ident(owner.Name) + `(`
-	if tok := c.peek(); tok.Kind == TokenIdent && tok.Value == owner.Name && c.peekN(1).Kind == TokenLParen {
+	// ctor 快路径:Ident(owner.Name) + `(`。 用 isIdentLike 而非 TokenIdent,
+	// 让类名是 contextual keyword(`class record { record() {} }`)时 ctor 仍被识别。
+	if tok := c.peek(); isIdentLike(tok) && tok.Value == owner.Name && c.peekN(1).Kind == TokenLParen {
 		ctor, err := parseConstructorDecl(c, pre, tparams)
 		if err != nil {
 			return nil, nil, err
@@ -492,7 +493,7 @@ func parseMethodOrField(c *cursor, pre preamble, owner *TypeDecl) (*MethodDecl, 
 		return &method, nil, nil
 	}
 
-	// field — Task 8 接入完整 multi-decl 逻辑;Task 7 先返回单字段(无 multi-decl 时正常 work)
+	// field —— finishFieldDecl 处理 multi-decl(`int a, b;`)与单字段两种形态。
 	fields, err := finishFieldDecl(c, pre, retType, nameTok.Value, startPos)
 	if err != nil {
 		return nil, nil, err
@@ -571,7 +572,7 @@ func finishMethodDecl(c *cursor, pre preamble, tparams []TypeParam, retType Type
 		method.Throws = refs
 	}
 
-	// annotation type `default <expr>` 在 Task 9 完整处理。 这里只识别 method body 或 `;`。
+	// 这里只识别 method body 或 `;`;annotation type element 的 `default <expr>` 走下方兜底。
 	switch c.peek().Kind {
 	case TokenLBrace:
 		if err := c.skipBalanced(TokenLBrace, TokenRBrace); err != nil {
@@ -580,7 +581,7 @@ func finishMethodDecl(c *cursor, pre preamble, tparams []TypeParam, retType Type
 	case TokenSemicolon:
 		c.consume()
 	default:
-		// 容错:可能是 annotation `default literal;`,Task 9 替换
+		// 容错:annotation type element 的 `default <literal>;` —— 跳到分号即可
 		if c.peek().Kind == TokenKeyword && c.peek().Value == "default" {
 			if !c.skipUntil(TokenSemicolon) {
 				return method, parseError(c.pos(), "annotation method `default` missing trailing `;`")

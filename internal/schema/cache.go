@@ -109,11 +109,27 @@ func CachePath(project Project) (string, error) {
 	}
 	hash := sha256.Sum256([]byte(project.WorkspaceRoot))
 	workspaceHash := hex.EncodeToString(hash[:])[:12]
-	name := project.Name
+	name := sanitizeCacheSegment(project.Name)
 	if name == "" {
 		name = "project"
 	}
 	return filepath.Join(home, "cache", "schema", "projects", name+"-"+workspaceHash, "index.json"), nil
+}
+
+// sanitizeCacheSegment keeps a project name usable as a single path segment so a
+// name containing "/", "\" or ".." cannot escape the cache projects directory.
+// Uniqueness is preserved by the workspace-hash suffix appended by the caller.
+func sanitizeCacheSegment(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 func SourceFingerprint(workspace string) (string, error) {

@@ -113,16 +113,6 @@ func (l *lexer) next() (Token, error) {
 		return Token{Kind: TokenArrow, Value: "->", Line: startLine, Col: startCol, Off: startOff}, nil
 	}
 
-	punctMap := map[byte]TokenKind{
-		'{': TokenLBrace, '}': TokenRBrace,
-		'(': TokenLParen, ')': TokenRParen,
-		'[': TokenLBracket, ']': TokenRBracket,
-		'<': TokenLAngle, '>': TokenRAngle,
-		',': TokenComma, ';': TokenSemicolon,
-		'.': TokenDot, '@': TokenAt,
-		'=': TokenAssign, '?': TokenQuestion,
-		'*': TokenStar, ':': TokenColon, '&': TokenAmp,
-	}
 	if kind, ok := punctMap[c]; ok {
 		l.advance()
 		return Token{Kind: kind, Value: string(c), Line: startLine, Col: startCol, Off: startOff}, nil
@@ -132,6 +122,19 @@ func (l *lexer) next() (Token, error) {
 	// parser 在 skip method body 时遇到不影响 brace 计数,可以全部忽略。
 	l.advance()
 	return Token{Kind: TokenOther, Value: string(c), Line: startLine, Col: startCol, Off: startOff}, nil
+}
+
+// punctMap maps single-byte punctuation to its token kind. Package-level so it is
+// allocated once, not on every next() call.
+var punctMap = map[byte]TokenKind{
+	'{': TokenLBrace, '}': TokenRBrace,
+	'(': TokenLParen, ')': TokenRParen,
+	'[': TokenLBracket, ']': TokenRBracket,
+	'<': TokenLAngle, '>': TokenRAngle,
+	',': TokenComma, ';': TokenSemicolon,
+	'.': TokenDot, '@': TokenAt,
+	'=': TokenAssign, '?': TokenQuestion,
+	'*': TokenStar, ':': TokenColon, '&': TokenAmp,
 }
 
 func isIdentStart(r rune) bool {
@@ -303,6 +306,20 @@ func (l *lexer) readNumber(line, col, off int) Token {
 	return Token{Kind: kind, Value: value, Line: line, Col: col, Off: off}
 }
 
+// advanceEscaped consumes the character after a backslash inside a string, char,
+// or text-block literal, keeping line/column tracking correct when that character
+// is a newline (a legal text-block line continuation). Plain advance() never
+// increments l.line, so using it here would drift every later token's line.
+func (l *lexer) advanceEscaped() {
+	if l.pos < len(l.src) && l.src[l.pos] == '\n' {
+		l.pos++
+		l.line++
+		l.col = 1
+		return
+	}
+	l.advance()
+}
+
 // readString 识别 "..." 单行字符串字面量(text block 由 readTextBlock 处理)。
 // 不解析转义,只识别边界(\" 是转义,不结束字符串)。
 // 单行 string 不能跨 newline,遇 newline 返回 error。
@@ -313,7 +330,7 @@ func (l *lexer) readString(line, col, off int) (Token, error) {
 		c := l.src[l.pos]
 		if c == '\\' && l.peek(1) != 0 {
 			l.advance()
-			l.advance()
+			l.advanceEscaped()
 			continue
 		}
 		if c == '"' {
@@ -337,7 +354,7 @@ func (l *lexer) readChar(line, col, off int) (Token, error) {
 		c := l.src[l.pos]
 		if c == '\\' && l.peek(1) != 0 {
 			l.advance()
-			l.advance()
+			l.advanceEscaped()
 			continue
 		}
 		if c == '\'' {
@@ -375,7 +392,7 @@ func (l *lexer) readTextBlock(line, col, off int) (Token, error) {
 		}
 		if l.src[l.pos] == '\\' && l.peek(1) != 0 {
 			l.advance()
-			l.advance()
+			l.advanceEscaped()
 			continue
 		}
 		if l.src[l.pos] == '\n' {

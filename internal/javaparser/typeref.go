@@ -31,7 +31,10 @@ func parseTypeRef(c *cursor) (TypeRef, error) {
 		return TypeRef{}, err
 	}
 	tok := c.peek()
-	if !isIdentLike(tok) && tok.Kind != TokenKeyword {
+	// A type name is an identifier, a contextual keyword (record/var/...), or a
+	// primitive/void. Hard reserved words (if/for/class/...) are rejected so
+	// malformed input does not silently parse as a bogus type.
+	if !isIdentLike(tok) && !(tok.Kind == TokenKeyword && isPrimitiveTypeKeyword(tok.Value)) {
 		return TypeRef{}, parseError(startPos, "expected type, got %s %q", tok.Kind, tok.Value)
 	}
 	c.consume()
@@ -84,23 +87,8 @@ func parseTypeRef(c *cursor) (TypeRef, error) {
 // 这里 inline 实现。
 func skipTypeUseAnnotations(c *cursor) error {
 	for c.peek().Kind == TokenAt {
-		c.consume() // @
-		// 吃 qualified annotation name
-		for {
-			tok := c.peek()
-			if !isIdentLike(tok) {
-				return parseError(tokenPos(tok), "expected annotation name, got %s %q", tok.Kind, tok.Value)
-			}
-			c.consume()
-			if !c.match(TokenDot) {
-				break
-			}
-		}
-		// optional `(...)` balanced skip
-		if c.peek().Kind == TokenLParen {
-			if err := c.skipBalanced(TokenLParen, TokenRParen); err != nil {
-				return err
-			}
+		if err := skipAnnotation(c); err != nil {
+			return err
 		}
 	}
 	return nil

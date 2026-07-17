@@ -6,14 +6,24 @@ import (
 	"unicode"
 )
 
+const (
+	defaultSearchLimit = 5
+	maxSearchLimit     = 20
+)
+
 func Search(idx *Index, query string, limit int, includeOutOfPrefix bool) []Method {
 	if limit <= 0 {
-		limit = 5
+		limit = defaultSearchLimit
 	}
-	if limit > 20 {
-		limit = 20
+	if limit > maxSearchLimit {
+		limit = maxSearchLimit
 	}
 	queryTokens := Tokenize(query)
+	// A non-blank query that tokenizes to nothing (e.g. pure punctuation "!!!")
+	// has no searchable terms; return no matches instead of scoring every method 1.
+	if len(queryTokens) == 0 && strings.TrimSpace(query) != "" {
+		return nil
+	}
 	var scored []Method
 	for _, method := range idx.Methods {
 		if method.OutOfPrefix && !includeOutOfPrefix {

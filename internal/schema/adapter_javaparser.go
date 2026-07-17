@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/diandian921/sofarpc-mcp/internal/javaparser"
@@ -149,32 +150,7 @@ func buildParameters(params []javaparser.ParamDecl) []Parameter {
 }
 
 func fallbackParamName(i int) string {
-	return "arg" + itoa(i)
-}
-
-// itoa 是 strconv.Itoa 的简化别名 —— 避免 adapter 文件再 import strconv,只此一处。
-// 极少出现 i > 9 的 facade method,简单实现即可。
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	neg := false
-	if i < 0 {
-		neg = true
-		i = -i
-	}
-	var buf [20]byte
-	pos := len(buf)
-	for i > 0 {
-		pos--
-		buf[pos] = byte('0' + i%10)
-		i /= 10
-	}
-	if neg {
-		pos--
-		buf[pos] = '-'
-	}
-	return string(buf[pos:])
+	return "arg" + strconv.Itoa(i)
 }
 
 // typeRefToString 是 TypeRef.String() 的轻包装,留扩展点(C.3 之后真要做 nested type

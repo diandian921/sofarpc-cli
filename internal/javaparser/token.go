@@ -61,7 +61,7 @@ type Token struct {
 	Kind  TokenKind
 	Value string // raw source bytes
 	Line  int    // 1-based
-	Col   int    // 1-based,Tab 算 1 列
+	Col   int    // 1-based,Tab 算 1 列;按 rune 前进但多字节 rune 仍计 1 列,故含多字节字符的行列号是近似值(仅用于报错提示)
 	Off   int    // byte offset into source
 }
 

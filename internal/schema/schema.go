@@ -184,6 +184,11 @@ func gatherCompilationUnits(roots []string) ([]parsedFile, map[string]bool, []st
 	return parsed, topLevelFQNs, warnings, nil
 }
 
+// maxSourceRootDepth bounds how deep DiscoverSourceRoots walks below the
+// workspace before giving up on a subtree, so a pathological tree cannot make
+// discovery walk unboundedly.
+const maxSourceRootDepth = 8
+
 func DiscoverSourceRoots(workspace string) ([]string, error) {
 	info, err := os.Stat(workspace)
 	if err != nil {
@@ -205,10 +210,14 @@ func DiscoverSourceRoots(workspace string) ([]string, error) {
 			return filepath.SkipDir
 		}
 		rel, _ := filepath.Rel(workspace, path)
-		if rel != "." && strings.Count(rel, string(os.PathSeparator)) > 8 {
+		if rel != "." && strings.Count(rel, string(os.PathSeparator)) > maxSourceRootDepth {
 			return filepath.SkipDir
 		}
-		if filepath.ToSlash(rel) == "src/main/java" || strings.HasSuffix(filepath.ToSlash(rel), "/src/main/java") {
+		slashRel := filepath.ToSlash(rel)
+		// Match a nested src/main/java, or the workspace itself being one (rel ".").
+		slashWorkspace := filepath.ToSlash(strings.TrimRight(workspace, `/\`))
+		if slashRel == "src/main/java" || strings.HasSuffix(slashRel, "/src/main/java") ||
+			(rel == "." && (slashWorkspace == "src/main/java" || strings.HasSuffix(slashWorkspace, "/src/main/java"))) {
 			if !seen[path] {
 				seen[path] = true
 				roots = append(roots, path)

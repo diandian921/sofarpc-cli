@@ -219,7 +219,7 @@ type FieldDecl struct {
 	Pos         Position
 }
 
-// EnumValue 一个 enum 常量。 ArgsRaw 留空(C.2 不解析 enum constant arguments)。
+// EnumValue 一个 enum 常量。 constant arguments 不解析,只保留常量名/注解/javadoc。
 type EnumValue struct {
 	Annotations []Annotation
 	Javadoc     string
