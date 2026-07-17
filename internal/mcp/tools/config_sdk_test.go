@@ -25,12 +25,12 @@ func registerConfigTools(writeEnabled bool) func(srv *mcpsdk.Server) {
 	}
 }
 
-// TestConfigFailureResultPreservesConfigErrorCode pins the ConfigError passthrough
+// TestFailureResultPreservesConfigErrorCode pins the ConfigError passthrough
 // at the unit level: a *appconfig.ConfigError keeps its stable code and surfaces the
 // config path in details, while a plain error falls back to BAD_REQUEST.
-func TestConfigFailureResultPreservesConfigErrorCode(t *testing.T) {
+func TestFailureResultPreservesConfigErrorCode(t *testing.T) {
 	cfgErr := &appconfig.ConfigError{Code: appconfig.CodeConfigInvalid, Path: "/home/x/config.json", Err: errors.New("bad json")}
-	r := configFailureResult(cfgErr)
+	r := failureResult(cfgErr, app.CodeInternalError)
 	if r.OK || r.Code != appconfig.CodeConfigInvalid {
 		t.Errorf("ConfigError code not preserved: %+v", r)
 	}
@@ -38,7 +38,7 @@ func TestConfigFailureResultPreservesConfigErrorCode(t *testing.T) {
 		t.Errorf("ConfigError path not surfaced in details: %+v", r.Error)
 	}
 
-	plain := configFailureResult(errors.New("boom"))
+	plain := failureResult(errors.New("boom"), app.CodeBadRequest)
 	if plain.OK || plain.Code != app.CodeBadRequest {
 		t.Errorf("plain error should map to BAD_REQUEST: %+v", plain)
 	}

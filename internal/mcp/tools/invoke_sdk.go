@@ -29,7 +29,7 @@ func AddInvoke(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 		notifyProgress(ctx, req, "resolving plan", 0)
 		plan, err := appSvc.PlanInvocation(ctx, a.toInput())
 		if err != nil {
-			return app.RenderFailure(app.CodeBadRequest, err.Error(), app.DomainErrorDetails(err)), ""
+			return failureResult(err, app.CodeBadRequest), ""
 		}
 		notifyProgress(ctx, req, "plan resolved", 0.25)
 		notifyProgress(ctx, req, "invoking remote method", 0.5)
@@ -58,7 +58,7 @@ func AddInvokePlan(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 		}
 		plan, err := appSvc.PlanInvocation(ctx, a.toInput())
 		if err != nil {
-			return app.RenderFailure(app.CodeBadRequest, err.Error(), app.DomainErrorDetails(err)), ""
+			return failureResult(err, app.CodeBadRequest), ""
 		}
 		planData := publicPlanDisplay(plan)
 		planData["requestId"] = app.NewRequestID("invoke")

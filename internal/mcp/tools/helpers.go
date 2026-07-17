@@ -1,12 +1,24 @@
 package tools
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/diandian921/sofarpc-mcp/internal/app"
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 	"github.com/diandian921/sofarpc-mcp/internal/schema"
 )
+
+// failureResult is the single ordinary-tool error route. Configuration errors
+// retain their stable code and configPath regardless of which tool encountered
+// them; every other error keeps the caller's domain-appropriate fallback code.
+func failureResult(err error, fallbackCode string) app.Result {
+	var cfgErr *appconfig.ConfigError
+	if errors.As(err, &cfgErr) {
+		return app.RenderConfigFailure(err)
+	}
+	return app.RenderFailure(fallbackCode, err.Error(), app.DomainErrorDetails(err))
+}
 
 func loadConfig() (appconfig.Config, error) {
 	path, err := appconfig.DefaultPath()

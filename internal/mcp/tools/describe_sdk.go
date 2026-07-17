@@ -31,11 +31,11 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 		}
 		cfg, err := loadConfig()
 		if err != nil {
-			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
+			return failureResult(err, app.CodeInternalError), ""
 		}
 		projectSelection, err := app.SelectProject(cfg, app.ProjectSelector{Project: a.Project, Server: a.Server})
 		if err != nil {
-			return app.RenderFailure(app.CodeBadRequest, err.Error(), nil), ""
+			return failureResult(err, app.CodeBadRequest), ""
 		}
 		notifyProgress(ctx, req, "building source index", 0)
 		idx, err := schema.LoadOrBuildIndex(schema.Project{
@@ -44,7 +44,7 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 			ServicePrefixes: projectSelection.Project.ServicePrefixes,
 		})
 		if err != nil {
-			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
+			return failureResult(err, app.CodeInternalError), ""
 		}
 		notifyProgress(ctx, req, "source index ready", 0.5)
 		data := map[string]interface{}{"project": projectSelection.Name}
@@ -66,7 +66,7 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 		if a.Service != "" {
 			desc, err := schema.Describe(idx, a.Service, a.Method)
 			if err != nil {
-				return app.RenderFailure(app.CodeBadRequest, err.Error(), nil), ""
+				return failureResult(err, app.CodeBadRequest), ""
 			}
 			data["description"] = publicDescription(desc)
 			summary = append(summary, fmt.Sprintf("%d method(s) described", len(desc.Methods)))

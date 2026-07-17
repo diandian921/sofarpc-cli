@@ -11,12 +11,6 @@ import (
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
-// configFailureResult preserves an appconfig error's stable code and path so
-// the agent gets a consistent recovery hint; shared with the CLI via app.
-func configFailureResult(err error) app.Result {
-	return app.RenderConfigFailure(err)
-}
-
 // saveServerData assembles the save_server payload, surfacing activeProfile so
 // a save can never silently decide project-level routing (the first saved
 // profile becomes active per the config contract).
@@ -55,11 +49,11 @@ func AddConfigList(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
 	}, adaptTool(stderr, func(_ context.Context, _ *mcpsdk.CallToolRequest, a ConfigListArgs) (app.Result, string) {
 		cfg, err := loadConfig()
 		if err != nil {
-			return configFailureResult(err), ""
+			return failureResult(err, app.CodeBadRequest), ""
 		}
 		path, err := appconfig.DefaultPath()
 		if err != nil {
-			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
+			return failureResult(err, app.CodeInternalError), ""
 		}
 		projects := make([]map[string]interface{}, 0, len(cfg.Projects))
 		for _, name := range cfg.ProjectNames() {
@@ -104,17 +98,17 @@ func AddConfigSaveProject(srv *mcpsdk.Server, stderr io.Writer) {
 		if a.DryRun {
 			cfg, err := loadConfig()
 			if err != nil {
-				return configFailureResult(err), ""
+				return failureResult(err, app.CodeBadRequest), ""
 			}
 			project, err := cfg.AddProject(a.Name, a.WorkspaceRoot, a.ServicePrefixes, a.Overwrite)
 			if err != nil {
-				return configFailureResult(err), ""
+				return failureResult(err, app.CodeBadRequest), ""
 			}
 			return okResult(map[string]interface{}{"dryRun": true, "name": a.Name, "project": project}), "Dry run; config.json not modified."
 		}
 		path, lock, err := configPaths()
 		if err != nil {
-			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
+			return failureResult(err, app.CodeInternalError), ""
 		}
 		var project appconfig.Project
 		if _, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
@@ -122,7 +116,7 @@ func AddConfigSaveProject(srv *mcpsdk.Server, stderr io.Writer) {
 			project, addErr = cfg.AddProject(a.Name, a.WorkspaceRoot, a.ServicePrefixes, a.Overwrite)
 			return addErr
 		}); err != nil {
-			return configFailureResult(err), ""
+			return failureResult(err, app.CodeBadRequest), ""
 		}
 		return okResult(map[string]interface{}{"name": a.Name, "project": project}), "Project saved to config.json."
 	}))
@@ -155,26 +149,26 @@ func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
 		if a.DryRun {
 			cfg, err := loadConfig()
 			if err != nil {
-				return configFailureResult(err), ""
+				return failureResult(err, app.CodeBadRequest), ""
 			}
 			prevActive := cfg.Projects[a.Project].ActiveProfile
 			saved, err := cfg.AddServer(a.Name, srv, a.Overwrite)
 			if err != nil {
-				return configFailureResult(err), ""
+				return failureResult(err, app.CodeBadRequest), ""
 			}
 			if a.SetActive {
 				if saved.Profile == "" {
-					return configFailureResult(errSetActiveNeedsProfile(a.Name, a.Project)), ""
+					return failureResult(errSetActiveNeedsProfile(a.Name, a.Project), app.CodeBadRequest), ""
 				}
 				if _, err := cfg.SetActiveProfile(saved.Project, saved.Profile); err != nil {
-					return configFailureResult(err), ""
+					return failureResult(err, app.CodeBadRequest), ""
 				}
 			}
 			return okResult(saveServerData(cfg, a.Name, saved, prevActive, true)), "Dry run; config.json not modified."
 		}
 		path, lock, err := configPaths()
 		if err != nil {
-			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
+			return failureResult(err, app.CodeInternalError), ""
 		}
 		var saved appconfig.Server
 		var prevActive string
@@ -195,7 +189,7 @@ func AddConfigSaveServer(srv *mcpsdk.Server, stderr io.Writer) {
 			return nil
 		})
 		if err != nil {
-			return configFailureResult(err), ""
+			return failureResult(err, app.CodeBadRequest), ""
 		}
 		return okResult(saveServerData(updated, a.Name, saved, prevActive, false)), "Server saved to config.json."
 	}))
@@ -218,12 +212,12 @@ func AddConfigRemoveProject(srv *mcpsdk.Server, stderr io.Writer) {
 		}
 		path, lock, err := configPaths()
 		if err != nil {
-			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
+			return failureResult(err, app.CodeInternalError), ""
 		}
 		if _, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
 			return cfg.RemoveProject(a.Name, a.Confirm, a.Cascade)
 		}); err != nil {
-			return configFailureResult(err), ""
+			return failureResult(err, app.CodeBadRequest), ""
 		}
 		return okResult(map[string]interface{}{"removed": a.Name}), "Project removed from config.json."
 	}))
@@ -246,12 +240,12 @@ func AddConfigRemoveServer(srv *mcpsdk.Server, stderr io.Writer) {
 		}
 		path, lock, err := configPaths()
 		if err != nil {
-			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
+			return failureResult(err, app.CodeInternalError), ""
 		}
 		if _, err = appconfig.Update(path, lock, func(cfg *appconfig.Config) error {
 			return cfg.RemoveServer(a.Name, a.Confirm)
 		}); err != nil {
-			return configFailureResult(err), ""
+			return failureResult(err, app.CodeBadRequest), ""
 		}
 		return okResult(map[string]interface{}{"removed": a.Name}), "Server removed from config.json."
 	}))

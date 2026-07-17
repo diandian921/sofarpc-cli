@@ -27,7 +27,7 @@ func AddResolve(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 			TimeoutMS: a.TimeoutMS,
 		})
 		if err != nil {
-			return app.RenderFailure(app.CodeBadRequest, err.Error(), app.DomainErrorDetails(err)), ""
+			return failureResult(err, app.CodeBadRequest), ""
 		}
 		// network is a constant "not_probed" and diagnostics.resolution repeats the
 		// top-level fields verbatim; both are omitted from the tool payload to keep
