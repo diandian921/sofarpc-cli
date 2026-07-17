@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strings"
 	"sync/atomic"
@@ -230,6 +231,8 @@ func targetServiceName(service, version, uniqueID string) string {
 	return out
 }
 
+// requestHeader builds the BOLT request headers. Keys here must stay a subset of
+// boltHeaderOrder so their on-wire order is deterministic.
 func requestHeader(method, targetService, appName string) map[string]string {
 	h := map[string]string{
 		"service":                  targetService,
@@ -248,6 +251,18 @@ func requestHeader(method, targetService, appName string) map[string]string {
 func encodeBoltRequest(id uint32, timeout time.Duration, headers map[string]string, content []byte) ([]byte, error) {
 	headerBytes := encodeSimpleMap(headers)
 	classBytes := []byte(requestClass)
+	// The BOLT frame stores class/header lengths as uint16 and content length as
+	// uint32; reject oversize inputs instead of silently truncating them into a
+	// malformed frame.
+	if len(classBytes) > math.MaxUint16 {
+		return nil, fmt.Errorf("request class length %d exceeds uint16", len(classBytes))
+	}
+	if len(headerBytes) > math.MaxUint16 {
+		return nil, fmt.Errorf("request header length %d exceeds uint16", len(headerBytes))
+	}
+	if int64(len(content)) > math.MaxUint32 {
+		return nil, fmt.Errorf("request content length %d exceeds uint32", len(content))
+	}
 	frame := make([]byte, requestHeaderLen+len(classBytes)+len(headerBytes)+len(content))
 	frame[0] = protocolCodeV1
 	frame[1] = requestType
@@ -363,7 +378,14 @@ func encodeSimpleMap(values map[string]string) []byte {
 	return out
 }
 
+// decodeSimpleMap parses the best-effort BOLT header map. Headers are diagnostic
+// only, so a truncated/garbled tail stops parsing and returns whatever prefix was
+// well-formed rather than failing the whole response. Empty input returns nil to
+// mirror encodeSimpleMap's empty-input encoding.
 func decodeSimpleMap(data []byte) map[string]string {
+	if len(data) == 0 {
+		return nil
+	}
 	out := map[string]string{}
 	for offset := 0; offset+4 <= len(data); {
 		k, next, ok := readSizedString(data, offset)
@@ -400,16 +422,21 @@ func readSizedString(data []byte, offset int) (string, int, bool) {
 	return string(data[offset : offset+size]), offset + size, true
 }
 
+// boltHeaderOrder is the single source of truth for BOLT request-header key
+// order on the wire. requestHeader populates a subset of these keys; keep the two
+// in sync when adding a header.
+var boltHeaderOrder = []string{
+	"service",
+	"sofa_head_method_name",
+	"sofa_head_target_service",
+	"sofa_head_generic_type",
+	"type",
+	"generic.revise",
+	"sofa_head_target_app",
+}
+
 func orderedHeaderKeys(values map[string]string) []string {
-	preferred := []string{
-		"service",
-		"sofa_head_method_name",
-		"sofa_head_target_service",
-		"sofa_head_generic_type",
-		"type",
-		"generic.revise",
-		"sofa_head_target_app",
-	}
+	preferred := boltHeaderOrder
 	seen := map[string]bool{}
 	out := make([]string, 0, len(values))
 	for _, k := range preferred {

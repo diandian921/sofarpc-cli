@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf16"
-	"unicode/utf8"
 
 	"github.com/diandian921/sofarpc-mcp/internal/javavalue"
 )
@@ -463,7 +462,8 @@ func numberValue(n json.Number) interface{} {
 func utf16Length(s string) int {
 	n := 0
 	for _, r := range s {
-		if r > utf8.RuneSelf && r > 0xffff {
+		// Runes above the BMP encode as a UTF-16 surrogate pair (two units).
+		if r > 0xffff {
 			n += 2
 		} else {
 			n++

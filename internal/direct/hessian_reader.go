@@ -79,7 +79,7 @@ func decodeSofaResponse(data []byte) (decodedResponse, error) {
 func (r *reader) readValue() (interface{}, error) {
 	r.depth++
 	defer func() { r.depth-- }()
-	if r.depth > 128 {
+	if r.depth > maxHessianDepth {
 		return nil, fmt.Errorf("hessian nesting too deep")
 	}
 	tag, err := r.byte()
