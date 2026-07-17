@@ -61,6 +61,39 @@ func TestDescribeRequiresQueryOrService(t *testing.T) {
 	}
 }
 
+func TestDescribeSurfacesRecoveredMemberWarning(t *testing.T) {
+	ws := t.TempDir()
+	src := filepath.Join(ws, "src", "main", "java", "com", "example", "RecoverFacade.java")
+	if err := os.MkdirAll(filepath.Dir(src), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	java := `package com.example;
+public interface RecoverFacade {
+	Outer<String>.Inner<Integer> unsupported();
+	String good(String id);
+}`
+	if err := os.WriteFile(src, []byte(java), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	seedConfig(t, func(cfg *appconfig.Config) error {
+		_, err := cfg.AddProject("recover", ws, []string{"com.example."}, false)
+		return err
+	})
+
+	cs := newToolClient(t, registerDescribe)
+	env := decodeEnvelope(t, callTool(t, cs, "sofarpc_describe", map[string]any{
+		"project": "recover", "service": "com.example.RecoverFacade", "method": "good",
+	}))
+	if !env.OK {
+		t.Fatalf("describe recovered source failed: %+v", env)
+	}
+	description, _ := env.Data["description"].(map[string]any)
+	warnings, _ := description["warnings"].([]any)
+	if len(warnings) != 1 || !strings.Contains(warnings[0].(string), "recover ") {
+		t.Fatalf("description warnings = %+v", warnings)
+	}
+}
+
 // TestDescribeQueryLimitHandling pins the limit policy in query mode: omitted
 // limit falls back to the default of 5, an in-range limit is honored, and any
 // value above 20 is capped to 20 instead of rejected.

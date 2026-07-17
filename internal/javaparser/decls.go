@@ -152,10 +152,68 @@ func parseClassBodyMembers(c *cursor, decl *TypeDecl) error {
 		if c.peek().Kind == TokenRBrace || c.eof() {
 			return nil
 		}
+		checkpoint := c.checkpoint()
+		startPos := c.pos()
 		if err := parseMember(c, decl); err != nil {
-			return err
+			c.restore(checkpoint)
+			if !recoverTypeMember(c) {
+				return err
+			}
+			c.warnings = append(c.warnings, ParseWarning{Pos: startPos, Message: err.Error()})
 		}
 	}
+}
+
+// recoverTypeMember synchronizes from a failed member's original checkpoint.
+// It only accepts boundaries that cannot belong to a following member: a
+// top-level semicolon, a balanced member body, or the owner's closing brace.
+// Parentheses/brackets are tracked so annotation arguments and array syntax do
+// not make an inner brace look like a member body. EOF/unbalanced bodies remain
+// fatal and return false.
+func recoverTypeMember(c *cursor) bool {
+	parenDepth := 0
+	bracketDepth := 0
+	for !c.eof() {
+		tok := c.peek()
+		if parenDepth == 0 && bracketDepth == 0 {
+			switch tok.Kind {
+			case TokenSemicolon:
+				c.consume()
+				return true
+			case TokenRBrace:
+				return true
+			case TokenLBrace:
+				if err := c.skipBalanced(TokenLBrace, TokenRBrace); err != nil {
+					return false
+				}
+				if c.match(TokenSemicolon) {
+					return true
+				}
+				// Anonymous-class and multi-field initializers may continue after
+				// their body. Method/nested-type bodies end at the brace.
+				if next := c.peek(); next.Kind == TokenDot || next.Kind == TokenComma {
+					continue
+				}
+				return true
+			}
+		}
+		tok = c.consume()
+		switch tok.Kind {
+		case TokenLParen:
+			parenDepth++
+		case TokenRParen:
+			if parenDepth > 0 {
+				parenDepth--
+			}
+		case TokenLBracket:
+			bracketDepth++
+		case TokenRBracket:
+			if bracketDepth > 0 {
+				bracketDepth--
+			}
+		}
+	}
+	return false
 }
 
 // parseEnumBody 解析 enum body:

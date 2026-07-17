@@ -688,6 +688,34 @@ public class Broken {
 	}
 }
 
+func TestBuildIndexKeepsPartialFileAfterRecoverableMember(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "src/main/java/com/x/RecoverFacade.java")
+	mustWriteFile(t, path, `package com.x;
+public interface RecoverFacade {
+	Outer<String>.Inner<Integer> unsupported();
+	String good(String id);
+}`)
+
+	idx, err := BuildIndex(Project{Name: "recover", WorkspaceRoot: tmp, ServicePrefixes: []string{"com.x."}})
+	if err != nil {
+		t.Fatalf("BuildIndex: %v", err)
+	}
+	if len(idx.Methods) != 1 || idx.Methods[0].Service != "com.x.RecoverFacade" || idx.Methods[0].Method != "good" {
+		t.Fatalf("partial methods = %+v, want trailing good method", idx.Methods)
+	}
+	if len(idx.Warnings) != 1 || !strings.Contains(idx.Warnings[0], "recover "+path) || !strings.Contains(idx.Warnings[0], "at 3:") {
+		t.Fatalf("warnings = %#v, want positioned recover warning", idx.Warnings)
+	}
+	desc, err := Describe(idx, "com.x.RecoverFacade", "good")
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if len(desc.Warnings) != 1 || desc.Stats["warningCount"] != 1 {
+		t.Fatalf("describe warnings/stats = %#v / %#v", desc.Warnings, desc.Stats)
+	}
+}
+
 func TestBuildIndexKeepsFieldAfterComparisonInitializer(t *testing.T) {
 	tmp := t.TempDir()
 	mustWriteFile(t, filepath.Join(tmp, "src/main/java/com/x/CompareDTO.java"), `package com.x;

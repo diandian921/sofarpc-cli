@@ -59,6 +59,49 @@ func TestLoadOrBuildIndexRebuildsStaleV4Cache(t *testing.T) {
 	}
 }
 
+func TestLoadOrBuildIndexRebuildsStaleV6CacheForMemberRecovery(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	workspace := t.TempDir()
+	mustWriteFile(t, filepath.Join(workspace, "src/main/java/com/x/RecoverFacade.java"), `package com.x;
+public interface RecoverFacade {
+	Outer<String>.Inner<Integer> unsupported();
+	String good();
+}`)
+	project := Project{Name: "recover-v6", WorkspaceRoot: workspace, ServicePrefixes: []string{"com.x."}}
+	path, err := CachePath(project)
+	if err != nil {
+		t.Fatalf("CachePath: %v", err)
+	}
+	fingerprint, err := SourceFingerprint(workspace)
+	if err != nil {
+		t.Fatalf("SourceFingerprint: %v", err)
+	}
+	if err := writeCache(path, cacheFile{
+		Project:           project,
+		SchemaVersion:     "6",
+		SourceFingerprint: fingerprint,
+		Index:             &Index{Project: project, Types: map[string]TypeSchema{}},
+		LastAccessedAt:    time.Now().Unix(),
+	}); err != nil {
+		t.Fatalf("writeCache: %v", err)
+	}
+
+	idx, err := LoadOrBuildIndex(project)
+	if err != nil {
+		t.Fatalf("LoadOrBuildIndex: %v", err)
+	}
+	if len(idx.Methods) != 1 || idx.Methods[0].Method != "good" || len(idx.Warnings) != 1 {
+		t.Fatalf("v6 cache was not rebuilt with member recovery: methods=%+v warnings=%+v", idx.Methods, idx.Warnings)
+	}
+	reread, err := readCache(path)
+	if err != nil {
+		t.Fatalf("readCache: %v", err)
+	}
+	if reread.SchemaVersion != "7" {
+		t.Fatalf("rewritten cache version = %q, want 7", reread.SchemaVersion)
+	}
+}
+
 func TestLoadOrBuildIndexConcurrentWritersKeepValidCache(t *testing.T) {
 	t.Setenv("SOFARPC_HOME", t.TempDir())
 	project := Project{

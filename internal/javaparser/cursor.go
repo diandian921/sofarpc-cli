@@ -9,12 +9,24 @@ package javaparser
 //   - EOF 一定存在(C.1 lexer 保证):pos 越界时 peek 返回 TokenEOF token。
 //   - 不做 lookahead 缓存,实测足够快;需要时直接 idx+N peek。
 type cursor struct {
-	tokens []Token
-	idx    int
+	tokens   []Token
+	idx      int
+	warnings []ParseWarning
 }
 
 func newCursor(tokens []Token) *cursor {
 	return &cursor{tokens: tokens, idx: 0}
+}
+
+// checkpoint returns a trivia-normalized cursor position suitable for rolling
+// back a failed member parse before synchronization.
+func (c *cursor) checkpoint() int {
+	c.skipTrivia()
+	return c.idx
+}
+
+func (c *cursor) restore(checkpoint int) {
+	c.idx = checkpoint
 }
 
 // skipTrivia 推进 idx 跳过注释 token。 javadoc 也跳 —— preamble 解析时

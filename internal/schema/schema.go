@@ -166,6 +166,9 @@ func gatherCompilationUnits(roots []string) ([]parsedFile, map[string]bool, []st
 				warnings = append(warnings, fmt.Sprintf("skip %s: %v", path, parseErr))
 				return nil
 			}
+			for _, warning := range cu.Warnings {
+				warnings = append(warnings, fmt.Sprintf("recover %s at %d:%d: %s", path, warning.Pos.Line, warning.Pos.Col, warning.Message))
+			}
 			if cu.Package != nil {
 				// dstAll = nil: BuildIndex 只需要 topLevel 给 wildcard 用,nested 已通过
 				// 各文件 adapter 路径单独 emit 进 idx.Types

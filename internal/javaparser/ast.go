@@ -18,6 +18,15 @@ type CompilationUnit struct {
 	Package    *PackageDecl
 	Imports    []ImportDecl
 	Types      []TypeDecl
+	Warnings   []ParseWarning `json:"Warnings,omitempty"`
+}
+
+// ParseWarning records one type-body member that was discarded after a
+// recoverable parse error. Pos is the member's start; Message retains the
+// original parse error (which may point farther inside the member).
+type ParseWarning struct {
+	Pos     Position
+	Message string
 }
 
 // PackageDecl `package a.b.c;`

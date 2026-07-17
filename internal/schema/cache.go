@@ -24,8 +24,9 @@ type cacheFile struct {
 
 // indexCacheVersion 注意:每次 Method / TypeSchema struct 字段变化都要 bump,
 // 旧 cache 反序列化时无法填充新字段,LoadOrBuildIndex 会强制重建。
-// "5":TypeSchema 加 Extends(继承字段链接),旧 v4 cache 无此字段须重建。
-const indexCacheVersion = "6"
+// "7":javaparser member recovery 让旧版会整文件跳过的源码产生 partial schema,
+// 即使 source fingerprint 不变也必须重建 v6 cache。
+const indexCacheVersion = "7"
 
 func LoadOrBuildIndex(project Project) (*Index, error) {
 	fingerprint, err := SourceFingerprint(project.WorkspaceRoot)

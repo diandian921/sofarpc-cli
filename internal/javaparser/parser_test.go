@@ -658,9 +658,91 @@ func TestParseNestedAnnotationDeclarationUsesStrictKeyword(t *testing.T) {
 func TestParseMalformedNestedAtKeywordIsNotAnnotationDeclaration(t *testing.T) {
 	for _, keyword := range []string{"class", "record"} {
 		src := "class Outer { public @" + keyword + " Nope {} }"
-		if _, err := Parse([]byte(src), "T.java"); err == nil {
-			t.Errorf("@%s must not be consumed as an annotation declaration", keyword)
+		cu, err := Parse([]byte(src), "T.java")
+		if err != nil {
+			t.Errorf("@%s should be recoverable as a bad member: %v", keyword, err)
+			continue
 		}
+		if len(cu.Types[0].NestedTypes) != 0 || len(cu.Warnings) != 1 {
+			t.Errorf("@%s must not become an annotation declaration: types=%+v warnings=%+v", keyword, cu.Types[0].NestedTypes, cu.Warnings)
+		}
+	}
+}
+
+func TestParseRecoversUnsupportedMembersAcrossTypeKinds(t *testing.T) {
+	tests := []struct {
+		name  string
+		src   string
+		check func(t *testing.T, typ TypeDecl)
+	}{
+		{
+			name: "class field",
+			src: `class Sample {
+				Outer<String>.Inner<Integer> broken;
+				String good;
+				void ok() {}
+			}`,
+			check: func(t *testing.T, typ TypeDecl) {
+				if len(typ.Fields) != 1 || typ.Fields[0].Name != "good" || len(typ.Methods) != 1 || typ.Methods[0].Name != "ok" {
+					t.Fatalf("recovered class members = fields:%+v methods:%+v", typ.Fields, typ.Methods)
+				}
+			},
+		},
+		{
+			name: "interface method",
+			src: `interface Sample {
+				Outer<String>.Inner<Integer> broken();
+				String good();
+			}`,
+			check: func(t *testing.T, typ TypeDecl) {
+				if len(typ.Methods) != 1 || typ.Methods[0].Name != "good" {
+					t.Fatalf("recovered interface methods = %+v", typ.Methods)
+				}
+			},
+		},
+		{
+			name: "annotation method",
+			src: `@interface Sample {
+				Outer<String>.Inner<Integer> broken();
+				String good();
+			}`,
+			check: func(t *testing.T, typ TypeDecl) {
+				if len(typ.Methods) != 1 || typ.Methods[0].Name != "good" {
+					t.Fatalf("recovered annotation methods = %+v", typ.Methods)
+				}
+			},
+		},
+		{
+			name: "nested type",
+			src: `class Sample {
+				class Broken extends Outer<String>.Inner<Integer> { String leaked; }
+				String good;
+			}`,
+			check: func(t *testing.T, typ TypeDecl) {
+				if len(typ.NestedTypes) != 0 || len(typ.Fields) != 1 || typ.Fields[0].Name != "good" {
+					t.Fatalf("recovered nested members = nested:%+v fields:%+v", typ.NestedTypes, typ.Fields)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cu, err := Parse([]byte(tt.src), "T.java")
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if len(cu.Warnings) != 1 || cu.Warnings[0].Pos.Line != 2 || cu.Warnings[0].Message == "" {
+				t.Fatalf("warnings = %+v, want one positioned recovery warning", cu.Warnings)
+			}
+			tt.check(t, cu.Types[0])
+		})
+	}
+}
+
+func TestParseUnbalancedMemberBodyRemainsFatal(t *testing.T) {
+	src := `class Broken { void bad() {`
+	if cu, err := Parse([]byte(src), "T.java"); err == nil || cu != nil {
+		t.Fatalf("unbalanced body must remain fatal, cu=%+v err=%v", cu, err)
 	}
 }
 

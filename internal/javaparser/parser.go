@@ -62,6 +62,7 @@ func parseCompilationUnit(c *cursor, sourceFile string) (*CompilationUnit, error
 		}
 		cu.Types = append(cu.Types, decl)
 	}
+	cu.Warnings = append([]ParseWarning(nil), c.warnings...)
 	return cu, nil
 }
 
