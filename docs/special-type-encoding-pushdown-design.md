@@ -3,7 +3,13 @@
 > 输入:`docs/deep-analysis-2026-07.md` 第一档剩余项 —— special 类型的 Hessian
 > wire 形态知识错位在 app 层。
 > 基线:`fix/complete-deferred-resilience-work`。
-> 本文只做设计,不改代码。落地按第 7 节的提交边界单独立项。
+>
+> **状态:已落地(2026-07)。** 按第 7 节步骤 1–3 完成:app 改产中立 scalar、
+> direct 接管 caucho *Handle / signum-mag 构造并新增 `CanonicalizeSpecialScalar`
+> 供 app 做 plan 期校验;app 不再 import `math/big`/`time`(special 相关)。
+> 字节不变由 CI 的 `TestSpecialTypeEncodingGolden`(object==scalar==冻结 hex)+
+> BOLT oracle + 全量 race 套件验证;Hessian JVM oracle(步骤 5)留发布前门禁,
+> 其 BigInteger 用例已改为新行为并 `go vet -tags hessian_oracle` 编译通过。
 
 ## 1. 背景与现状
 
