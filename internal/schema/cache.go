@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -35,23 +36,31 @@ func LoadOrBuildIndex(project Project) (*Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cached, err := readCache(path); err == nil && cached.SchemaVersion == indexCacheVersion && cached.SourceFingerprint == fingerprint && cached.Index != nil {
-		cached.LastAccessedAt = time.Now().Unix()
-		_ = writeCache(path, cached)
-		return cached.Index, nil
-	}
-	idx, err := BuildIndex(project)
-	if err != nil {
-		return nil, err
-	}
-	_ = writeCache(path, cacheFile{
-		Project:           project,
-		SchemaVersion:     indexCacheVersion,
-		SourceFingerprint: fingerprint,
-		Index:             idx,
-		LastAccessedAt:    time.Now().Unix(),
+	var result *Index
+	err = appconfig.WithFileLock(cacheLockPath(path), func() error {
+		if cached, readErr := readCache(path); readErr == nil && cached.SchemaVersion == indexCacheVersion && cached.SourceFingerprint == fingerprint && cached.Index != nil {
+			now := time.Now()
+			_ = os.Chtimes(path, now, now)
+			result = cached.Index
+			return nil
+		}
+		idx, buildErr := BuildIndex(project)
+		if buildErr != nil {
+			return buildErr
+		}
+		if writeErr := writeCache(path, cacheFile{
+			Project:           project,
+			SchemaVersion:     indexCacheVersion,
+			SourceFingerprint: fingerprint,
+			Index:             idx,
+			LastAccessedAt:    time.Now().Unix(),
+		}); writeErr != nil {
+			return writeErr
+		}
+		result = idx
+		return nil
 	})
-	return idx, nil
+	return result, err
 }
 
 func CleanupUnused(maxAge time.Duration) error {
@@ -60,7 +69,7 @@ func CleanupUnused(maxAge time.Duration) error {
 		return err
 	}
 	root := filepath.Join(home, "cache", "schema", "projects")
-	cutoff := time.Now().Add(-maxAge).Unix()
+	cutoff := time.Now().Add(-maxAge)
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -73,12 +82,20 @@ func CleanupUnused(maxAge time.Duration) error {
 			continue
 		}
 		path := filepath.Join(root, entry.Name(), "index.json")
-		cached, err := readCache(path)
-		if err != nil {
-			continue
-		}
-		if cached.LastAccessedAt > 0 && cached.LastAccessedAt < cutoff {
-			_ = os.RemoveAll(filepath.Dir(path))
+		if err := appconfig.WithFileLock(cacheLockPath(path), func() error {
+			info, statErr := os.Stat(path)
+			if os.IsNotExist(statErr) {
+				return nil
+			}
+			if statErr != nil {
+				return statErr
+			}
+			if info.ModTime().Before(cutoff) {
+				return os.RemoveAll(filepath.Dir(path))
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -155,5 +172,38 @@ func writeCache(path string, cached cacheFile) error {
 		return err
 	}
 	body = append(body, '\n')
-	return os.WriteFile(path, body, 0o644)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".index-*.json")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := func() { _ = os.Remove(tmpName) }
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		_ = os.Remove(path)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		cleanup()
+		return err
+	}
+	return nil
+}
+
+func cacheLockPath(indexPath string) string {
+	projectDir := filepath.Dir(indexPath)
+	projectsRoot := filepath.Dir(projectDir)
+	return filepath.Join(projectsRoot, ".locks", filepath.Base(projectDir)+".lock")
 }

@@ -132,10 +132,9 @@ func ensureScaffold(env Env, root, binDir string) error {
 		}
 	}
 	configPath := filepath.Join(root, "config.json")
-	if !fileExists(configPath) {
-		if err := appconfig.Save(configPath, appconfig.DefaultConfig()); err != nil {
-			return fmt.Errorf("create config.json: %w", err)
-		}
+	lockPath := filepath.Join(root, "state", "config.lock")
+	if err := appconfig.EnsureExists(configPath, lockPath); err != nil {
+		return fmt.Errorf("create config.json: %w", err)
 	}
 	_ = env
 	return nil

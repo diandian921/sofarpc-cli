@@ -3,6 +3,7 @@
 package appconfig
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -133,14 +134,25 @@ func DefaultEndpointDefaults() EndpointDefaults {
 
 func Load(path string) (Config, error) {
 	cfg := DefaultConfig()
-	f, err := os.Open(path)
+	body, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return cfg, nil
 		}
 		return cfg, err
 	}
-	defer f.Close()
+	if len(bytes.TrimSpace(body)) == 0 {
+		body = []byte("{}")
+	}
+	var header struct {
+		Version int `json:"version,omitempty"`
+	}
+	if err := json.Unmarshal(body, &header); err != nil {
+		return cfg, &ConfigError{Code: CodeConfigInvalid, Path: path, Err: err}
+	}
+	if header.Version > CurrentConfigVersion {
+		return cfg, &ConfigError{Code: CodeConfigUnsupported, Path: path, Err: fmt.Errorf("config version %d is newer than supported version %d", header.Version, CurrentConfigVersion)}
+	}
 
 	var disk struct {
 		Version          int                `json:"version,omitempty"`
@@ -149,7 +161,7 @@ func Load(path string) (Config, error) {
 		Servers          map[string]Server  `json:"servers"`
 		DeprecatedEngine json.RawMessage    `json:"engine,omitempty"`
 	}
-	dec := json.NewDecoder(f)
+	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&disk); err != nil && !errors.Is(err, io.EOF) {
 		return cfg, &ConfigError{Code: CodeConfigInvalid, Path: path, Err: err}
@@ -172,6 +184,10 @@ func Load(path string) (Config, error) {
 		cfg.Servers = disk.Servers
 	}
 	applyDefaults(&cfg)
+	if cfg.Version <= LegacyConfigVersion {
+		materializeLegacyProfiles(&cfg)
+		applyDefaults(&cfg)
+	}
 	if err := validateLoadedConfig(cfg); err != nil {
 		return cfg, &ConfigError{Code: CodeConfigInvalid, Path: path, Err: err}
 	}
@@ -206,23 +222,46 @@ func Save(path string, cfg Config) error {
 }
 
 func Update(path, lockPath string, mutate func(*Config) error) (Config, error) {
-	lock, err := lockConfig(lockPath)
-	if err != nil {
-		return Config{}, err
-	}
-	defer lock()
+	var out Config
+	err := WithFileLock(lockPath, func() error {
+		cfg, err := Load(path)
+		if err != nil {
+			return err
+		}
+		if err := mutate(&cfg); err != nil {
+			return err
+		}
+		if err := Save(path, cfg); err != nil {
+			return err
+		}
+		out, err = Load(path)
+		return err
+	})
+	return out, err
+}
 
-	cfg, err := Load(path)
+// WithFileLock serializes a filesystem mutation across processes using the same
+// platform lock implementation as config updates.
+func WithFileLock(lockPath string, fn func() error) error {
+	unlock, err := lockConfig(lockPath)
 	if err != nil {
-		return Config{}, err
+		return err
 	}
-	if err := mutate(&cfg); err != nil {
-		return Config{}, err
-	}
-	if err := Save(path, cfg); err != nil {
-		return Config{}, err
-	}
-	return cfg, nil
+	defer unlock()
+	return fn()
+}
+
+// EnsureExists creates a default config only when the path is absent, with the
+// existence check and write protected by the config lock.
+func EnsureExists(path, lockPath string) error {
+	return WithFileLock(lockPath, func() error {
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return Save(path, DefaultConfig())
+	})
 }
 
 func (c *Config) AddProject(name, workspaceRoot string, prefixes []string, overwrite bool) (Project, error) {
@@ -365,6 +404,9 @@ func (c *Config) AddProfile(projectName, profileName string, profile Profile, ov
 	}
 	if project.Profiles == nil {
 		project.Profiles = map[string]Profile{}
+	}
+	if err := validateDerivedServerOwner(*c, projectName, profileName); err != nil {
+		return Server{}, err
 	}
 	if _, exists := project.Profiles[profileName]; exists && !overwrite {
 		return Server{}, fmt.Errorf("profile %q already exists for project %q", profileName, projectName)
@@ -567,8 +609,36 @@ func applyDefaults(c *Config) {
 	}
 }
 
+func materializeLegacyProfiles(c *Config) {
+	for _, serverName := range sortedKeys(c.Servers) {
+		server := c.Servers[serverName]
+		if server.Project == "" || server.Profile == "" {
+			continue
+		}
+		project, ok := c.Projects[server.Project]
+		if !ok {
+			continue
+		}
+		if project.Profiles == nil {
+			project.Profiles = map[string]Profile{}
+		}
+		if _, exists := project.Profiles[server.Profile]; !exists {
+			project.Profiles[server.Profile] = Profile{
+				Address: server.Address, Protocol: server.Protocol, TimeoutMS: server.TimeoutMS,
+				AppName: server.AppName, Attachments: copyStringMap(server.Attachments),
+			}
+		}
+		if project.ActiveProfile == "" {
+			project.ActiveProfile = server.Profile
+		}
+		c.Projects[server.Project] = project
+	}
+}
+
 func validateLoadedConfig(c Config) error {
-	for projectName, project := range c.Projects {
+	derivedOwners := map[string]string{}
+	for _, projectName := range sortedKeys(c.Projects) {
+		project := c.Projects[projectName]
 		if err := validateName("project", projectName); err != nil {
 			return err
 		}
@@ -580,7 +650,14 @@ func validateLoadedConfig(c Config) error {
 		if len(project.Profiles) > 1 && project.ActiveProfile == "" {
 			return fmt.Errorf("activeProfile is required when project %q has multiple profiles", projectName)
 		}
-		for profileName, profile := range project.Profiles {
+		for _, profileName := range sortedKeys(project.Profiles) {
+			profile := project.Profiles[profileName]
+			derived := ServerNameForProfile(projectName, profileName)
+			owner := projectName + "/" + profileName
+			if previous, exists := derivedOwners[derived]; exists && previous != owner {
+				return fmt.Errorf("derived server name %q conflicts between %s and %s", derived, previous, owner)
+			}
+			derivedOwners[derived] = owner
 			if err := validateName("profile", profileName); err != nil {
 				return err
 			}
@@ -601,6 +678,7 @@ func validateLoadedConfig(c Config) error {
 }
 
 func configForSave(cfg Config) Config {
+	cfg = cloneConfig(cfg)
 	if cfg.Version < CurrentConfigVersion {
 		cfg.Version = CurrentConfigVersion
 	}
@@ -620,6 +698,43 @@ func configForSave(cfg Config) Config {
 		}
 	}
 	return cfg
+}
+
+func cloneConfig(cfg Config) Config {
+	out := cfg
+	out.Defaults.Attachments = copyStringMap(cfg.Defaults.Attachments)
+	out.Projects = make(map[string]Project, len(cfg.Projects))
+	for name, project := range cfg.Projects {
+		project.ServicePrefixes = append([]string(nil), project.ServicePrefixes...)
+		project.Profiles = make(map[string]Profile, len(project.Profiles))
+		for profileName, profile := range cfg.Projects[name].Profiles {
+			profile.Attachments = copyStringMap(profile.Attachments)
+			project.Profiles[profileName] = profile
+		}
+		out.Projects[name] = project
+	}
+	out.Servers = make(map[string]Server, len(cfg.Servers))
+	for name, server := range cfg.Servers {
+		server.Attachments = copyStringMap(server.Attachments)
+		out.Servers[name] = server
+	}
+	return out
+}
+
+func validateDerivedServerOwner(c Config, projectName, profileName string) error {
+	derived := ServerNameForProfile(projectName, profileName)
+	wantOwner := projectName + "/" + profileName
+	for _, otherProject := range sortedKeys(c.Projects) {
+		for _, otherProfile := range sortedKeys(c.Projects[otherProject].Profiles) {
+			if ServerNameForProfile(otherProject, otherProfile) == derived && (otherProject != projectName || otherProfile != profileName) {
+				return fmt.Errorf("derived server name %q conflicts between %s and %s/%s", derived, wantOwner, otherProject, otherProfile)
+			}
+		}
+	}
+	if server, exists := c.Servers[derived]; exists && (server.Project != projectName || server.Profile != profileName) {
+		return fmt.Errorf("derived server name %q conflicts with configured server for project %q profile %q", derived, server.Project, server.Profile)
+	}
+	return nil
 }
 
 func isDerivedProfileServer(cfg Config, name string, server Server) bool {

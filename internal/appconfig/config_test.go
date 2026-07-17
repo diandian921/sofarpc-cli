@@ -3,8 +3,12 @@ package appconfig
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -50,6 +54,18 @@ func TestLoadRejectsUnsupportedFutureVersion(t *testing.T) {
 	}
 	if cfgErr.Code != CodeConfigUnsupported {
 		t.Fatalf("code = %q, want %q", cfgErr.Code, CodeConfigUnsupported)
+	}
+}
+
+func TestLoadFutureVersionWinsOverUnknownFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"version":999,"futureField":{"x":1}}`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_, err := Load(path)
+	var cfgErr *ConfigError
+	if !errors.As(err, &cfgErr) || cfgErr.Code != CodeConfigUnsupported {
+		t.Fatalf("err = %v, want unsupported-version before strict field validation", err)
 	}
 }
 
@@ -251,5 +267,117 @@ func TestUpdateWritesAtomically(t *testing.T) {
 	}
 	if loaded.Version != CurrentConfigVersion {
 		t.Fatalf("version = %d, want %d", loaded.Version, CurrentConfigVersion)
+	}
+}
+
+func TestUpdateMigratesLegacyServerIntoUsableProfile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	lock := filepath.Join(dir, "state", "config.lock")
+	body := `{
+  "projects": {"user": {"workspaceRoot":"/tmp/user","servicePrefixes":[]}},
+  "servers": {"user-test": {"address":"127.0.0.1:12200","project":"user","protocol":"bolt","timeoutMs":5000,"appName":"test","attachments":{}}}
+}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	updated, err := Update(path, lock, func(*Config) error { return nil })
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	project := updated.Projects["user"]
+	if updated.Version != CurrentConfigVersion || project.ActiveProfile != "test" {
+		t.Fatalf("migrated config = %#v", updated)
+	}
+	if profile, ok := project.Profiles["test"]; !ok || profile.Address != "127.0.0.1:12200" {
+		t.Fatalf("migrated profile = %#v", project.Profiles)
+	}
+}
+
+func TestSaveDoesNotMutateCallerMaps(t *testing.T) {
+	dir := t.TempDir()
+	cfg := DefaultConfig()
+	cfg.Defaults.Attachments["tenant"] = "blue"
+	cfg.Projects["user"] = Project{
+		WorkspaceRoot: "/tmp/user", ServicePrefixes: []string{"com.example"}, ActiveProfile: "test",
+		Profiles: map[string]Profile{"test": {Address: "127.0.0.1:12200", Attachments: map[string]string{"trace": "one"}}},
+	}
+	cfg.Servers["user-test"] = cfg.ServerFromProfile("user", "test", cfg.Projects["user"].Profiles["test"])
+	before := cloneConfig(cfg)
+	if err := Save(filepath.Join(dir, "config.json"), cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if !reflect.DeepEqual(cfg, before) {
+		t.Fatalf("Save mutated caller:\n got  %#v\n want %#v", cfg, before)
+	}
+}
+
+func TestAddProfileRejectsDerivedServerNameCollision(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Projects["a"] = Project{Profiles: map[string]Profile{"b-c": {Address: "127.0.0.1:1"}}}
+	cfg.Projects["a-b"] = Project{}
+	_, err := cfg.AddProfile("a-b", "c", Profile{Address: "127.0.0.1:2"}, false)
+	if err == nil || !strings.Contains(err.Error(), "derived server name") {
+		t.Fatalf("err = %v, want deterministic collision", err)
+	}
+}
+
+func TestEnsureExistsPreservesExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	lock := filepath.Join(dir, "state", "config.lock")
+	want := []byte(`{"version":2,"defaults":{},"projects":{}}`)
+	if err := os.WriteFile(path, want, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := EnsureExists(path, lock); err != nil {
+		t.Fatalf("EnsureExists: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("existing config changed: %q", got)
+	}
+}
+
+func TestConcurrentUpdatesDoNotLoseChanges(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	lock := filepath.Join(dir, "state", "config.lock")
+	if err := EnsureExists(path, lock); err != nil {
+		t.Fatalf("EnsureExists: %v", err)
+	}
+
+	const workers = 12
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, err := Update(path, lock, func(cfg *Config) error {
+				name := fmt.Sprintf("project-%02d", i)
+				cfg.Projects[name] = Project{WorkspaceRoot: "/tmp/" + name}
+				return nil
+			})
+			errs <- err
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent Update: %v", err)
+		}
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Projects) != workers {
+		t.Fatalf("projects = %d, want %d", len(cfg.Projects), workers)
 	}
 }

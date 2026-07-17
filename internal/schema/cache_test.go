@@ -1,7 +1,10 @@
 package schema
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -53,5 +56,61 @@ func TestLoadOrBuildIndexRebuildsStaleV4Cache(t *testing.T) {
 	}
 	if reread.SchemaVersion != indexCacheVersion {
 		t.Fatalf("rewritten cache version = %q, want %q", reread.SchemaVersion, indexCacheVersion)
+	}
+}
+
+func TestLoadOrBuildIndexConcurrentWritersKeepValidCache(t *testing.T) {
+	t.Setenv("SOFARPC_HOME", t.TempDir())
+	project := Project{
+		Name: "concurrent", WorkspaceRoot: filepath.Join("testdata", "golden", "inherit"),
+		ServicePrefixes: []string{"com.acme.inherit.facade."},
+	}
+	const workers = 12
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			idx, err := LoadOrBuildIndex(project)
+			if err == nil && len(idx.Methods) == 0 {
+				err = fmt.Errorf("empty index")
+			}
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent cache: %v", err)
+		}
+	}
+	path, _ := CachePath(project)
+	if _, err := readCache(path); err != nil {
+		t.Fatalf("final cache invalid: %v", err)
+	}
+}
+
+func TestCleanupUnusedUsesCacheModTime(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SOFARPC_HOME", home)
+	project := Project{Name: "stale", WorkspaceRoot: filepath.Join("testdata", "golden", "inherit")}
+	path, err := CachePath(project)
+	if err != nil {
+		t.Fatalf("CachePath: %v", err)
+	}
+	if err := writeCache(path, cacheFile{Project: project, SchemaVersion: indexCacheVersion, Index: &Index{Project: project}}); err != nil {
+		t.Fatalf("writeCache: %v", err)
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	if err := CleanupUnused(24 * time.Hour); err != nil {
+		t.Fatalf("CleanupUnused: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("stale cache still exists: %v", err)
 	}
 }
