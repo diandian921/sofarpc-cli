@@ -22,8 +22,9 @@ import (
 //
 // 返回:
 //   - methods: 只有 service type 是 interface 时才有(对齐既有 parseJavaFile 行为)
-//   - types: 顶层 + 所有 nested type 的 TypeSchema,key 是 pkg + "." + Name(flat keying,与既有
-//     resolveType 兼容,真正 nested FQN 留 follow-up)
+//   - types: 顶层 + 所有 nested type 的 TypeSchema。主键是真实 FQN(顶层 `pkg.Name`,
+//     嵌套 `pkg.Outer.Inner`),嵌套类型再带一个短名别名 `pkg.Name`(仅在未占用时)——
+//     详见 emitTypeSchemas
 //
 // 形态保证:
 //   - Method.TypeParams 来自 service.TypeParams + MethodDecl.TypeParams 拼接(`interface Facade<T>`
@@ -51,8 +52,8 @@ func adaptCompilationUnit(cu *javaparser.CompilationUnit, sourcePath string, bod
 
 	out := map[string]TypeSchema{}
 
-	// 顶层 + 嵌套全部产 TypeSchema(flat keying)
-	emitTypeSchemas(cu.Types, pkg, sourcePath, imports, out)
+	// 顶层 + 嵌套全部产 TypeSchema(真实 FQN 主键 + 短名别名)
+	emitTypeSchemas(cu.Types, pkg, pkg, sourcePath, imports, out)
 
 	// 没有显式 service type schema 时补一个(对齐既有 parseTypes 末尾的兜底)
 	if _, ok := out[fqn]; !ok {
@@ -200,20 +201,29 @@ func findNestedInterface(types []javaparser.TypeDecl) *javaparser.TypeDecl {
 }
 
 // emitTypeSchemas 把 types(含递归 NestedTypes)全部转成 TypeSchema 写进 out。
-// Flat keying:pkg + "." + Name(沿用既有 parseTypes 行为,跟 resolveType 兼容)。
-// Task 5:除 Type / Kind / SourceFile / Imports / TypeParams 外,填 Fields / EnumValues / RecordComponents。
-func emitTypeSchemas(types []javaparser.TypeDecl, pkg, sourcePath string, imports map[string]string, out map[string]TypeSchema) {
+//
+// Keying:每个类型以其**真实 FQN**(`enclosingFQN + "." + Name`,顶层即 `pkg.Name`,
+// 嵌套即 `pkg.Outer.Inner`)为主键;嵌套类型再额外注册一个短名别名 `pkg.Name`,
+// 但**仅当该别名尚未被占用**时——于是同包顶层同名类稳拿短名键(不再被嵌套类静默覆盖),
+// 而 `import a.b.Outer.Inner` 也能命中真实 FQN 主键。别名保留了同包内 unqualified
+// 引用(如 outer 内的方法引用其 nested DTO)沿用短名解析的既有行为。
+//
+// 注意:`TypeSchema.Type` 仍保持短名形态(`pkg.Name`),不改 Describe 输出契约、
+// packageFromType 推导与 wire class 名——本次只修索引解析(键),不动类型身份(字段)。
+// enclosingFQN 是外层类型链的 FQN(顶层调用传 pkg)。
+func emitTypeSchemas(types []javaparser.TypeDecl, enclosingFQN, pkg, sourcePath string, imports map[string]string, out map[string]TypeSchema) {
 	for _, t := range types {
 		// annotation declaration 不产 TypeSchema(老 parser 用 typeKindRE 不匹配 @interface,跟齐)
 		if t.Kind == javaparser.TypeKindAnnotation {
 			if len(t.NestedTypes) > 0 {
-				emitTypeSchemas(t.NestedTypes, pkg, sourcePath, imports, out)
+				emitTypeSchemas(t.NestedTypes, enclosingFQN+"."+t.Name, pkg, sourcePath, imports, out)
 			}
 			continue
 		}
-		fqn := pkg + "." + t.Name
+		realFQN := enclosingFQN + "." + t.Name // 顶层: pkg.Name;嵌套: pkg.Outer.Inner
+		shortFQN := pkg + "." + t.Name         // 短名别名(顶层与 realFQN 相同)
 		schema := TypeSchema{
-			Type:       fqn,
+			Type:       shortFQN,
 			Kind:       typeKindName(t.Kind),
 			SourceFile: sourcePath,
 			Imports:    imports,
@@ -237,9 +247,16 @@ func emitTypeSchemas(types []javaparser.TypeDecl, pkg, sourcePath string, import
 		default:
 			schema.Fields = buildFieldsForType(t)
 		}
-		out[fqn] = schema
+		out[realFQN] = schema
+		// 短名别名:仅在未被占用时注册。顶层类型对 shortFQN 的无条件写入保证同包
+		// 顶层同名类稳赢短名键(无论发射顺序)。
+		if shortFQN != realFQN {
+			if _, taken := out[shortFQN]; !taken {
+				out[shortFQN] = schema
+			}
+		}
 		if len(t.NestedTypes) > 0 {
-			emitTypeSchemas(t.NestedTypes, pkg, sourcePath, imports, out)
+			emitTypeSchemas(t.NestedTypes, realFQN, pkg, sourcePath, imports, out)
 		}
 	}
 }

@@ -257,6 +257,73 @@ class Outer {
 	}
 }
 
+// TestAdaptNestedTypeRealFQNAndAlias: a nested type is reachable by its real FQN
+// (pkg.Outer.Inner) — which is what an explicit `import a.b.Outer.Inner` maps to —
+// and also by the short alias (pkg.Inner) for same-package unqualified references.
+func TestAdaptNestedTypeRealFQNAndAlias(t *testing.T) {
+	src := []byte(`package p;
+class Outer {
+	class Inner { public String v; }
+}`)
+	cu, _ := javaparser.Parse(src, "T.java")
+	_, types := adaptCompilationUnit(cu, "T.java", src, nil, nil)
+	if _, ok := types["p.Outer.Inner"]; !ok {
+		t.Errorf("nested type must be keyed by real FQN p.Outer.Inner; got %v", keysOf(types))
+	}
+	if _, ok := types["p.Inner"]; !ok {
+		t.Errorf("nested type must also carry the short alias p.Inner; got %v", keysOf(types))
+	}
+}
+
+// TestAdaptNestedTypeCollisionKeepsTopLevel: when a package has both a top-level
+// Inner and a nested Outer.Inner, the top-level owns the short key p.Inner (no
+// silent overwrite) and the nested stays reachable by its real FQN.
+func TestAdaptNestedTypeCollisionKeepsTopLevel(t *testing.T) {
+	src := []byte(`package p;
+class Inner { public long topLevelField; }
+class Outer {
+	class Inner { public String nestedField; }
+}`)
+	cu, _ := javaparser.Parse(src, "T.java")
+	_, types := adaptCompilationUnit(cu, "T.java", src, nil, nil)
+	top, ok := types["p.Inner"]
+	if !ok {
+		t.Fatalf("top-level Inner must own p.Inner; got %v", keysOf(types))
+	}
+	if len(top.Fields) != 1 || top.Fields[0].Name != "topLevelField" {
+		t.Errorf("p.Inner should be the TOP-LEVEL Inner (topLevelField), not clobbered by nested; got %+v", top.Fields)
+	}
+	nested, ok := types["p.Outer.Inner"]
+	if !ok {
+		t.Fatalf("nested Inner must be reachable at p.Outer.Inner; got %v", keysOf(types))
+	}
+	if len(nested.Fields) != 1 || nested.Fields[0].Name != "nestedField" {
+		t.Errorf("p.Outer.Inner should be the NESTED Inner (nestedField); got %+v", nested.Fields)
+	}
+}
+
+// TestResolveTypeQualifiedNestedImport: an explicit `import a.b.Outer.Inner`
+// (which extractImports maps short name Inner -> a.b.Outer.Inner) now resolves,
+// because the nested type is keyed by that real FQN.
+func TestResolveTypeQualifiedNestedImport(t *testing.T) {
+	idx := &Index{Types: map[string]TypeSchema{
+		"a.b.Outer.Inner": {Type: "a.b.Inner", Kind: "class"},
+	}}
+	imports := map[string]string{"Inner": "a.b.Outer.Inner"}
+	got, ok := resolveType(idx, "Inner", "consumer.pkg", imports)
+	if !ok || got.Kind != "class" {
+		t.Fatalf("import a.b.Outer.Inner should resolve the nested type; got %+v ok=%v", got, ok)
+	}
+}
+
+func keysOf(m map[string]TypeSchema) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 func TestAdaptAnnotationDeclarationSkipped(t *testing.T) {
 	src := []byte(`package p;
 public @interface Marker {}
