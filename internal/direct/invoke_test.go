@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"strings"
@@ -416,7 +417,42 @@ func TestInvokeRejectsMismatchedResponseRequestID(t *testing.T) {
 	}
 }
 
+func TestInvokeRejectsNonSuccessBoltStatusBeforeHessianDecode(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		id, err := readRequestID(conn)
+		if err != nil {
+			return
+		}
+		_ = writeTestResponseStatus(conn, id, 2, nil)
+	}()
+
+	_, err = Invoke(context.Background(), Request{
+		Address: ln.Addr().String(),
+		Service: "com.example.Facade",
+		Method:  "query",
+		Timeout: 2 * time.Second,
+	})
+	var remote *RemoteError
+	if !errors.As(err, &remote) || !strings.Contains(err.Error(), "status 2") {
+		t.Fatalf("err = %v, want typed non-success BOLT status", err)
+	}
+}
+
 func writeTestResponse(w io.Writer, id uint32, content []byte) error {
+	return writeTestResponseStatus(w, id, statusSuccess, content)
+}
+
+func writeTestResponseStatus(w io.Writer, id uint32, status uint16, content []byte) error {
 	classBytes := []byte(responseClass)
 	fixed := make([]byte, responseHeaderLen)
 	fixed[0] = protocolCodeV1
@@ -425,6 +461,7 @@ func writeTestResponse(w io.Writer, id uint32, content []byte) error {
 	fixed[4] = cmdVersion
 	binary.BigEndian.PutUint32(fixed[5:9], id)
 	fixed[9] = codecHessian2
+	binary.BigEndian.PutUint16(fixed[10:12], status)
 	binary.BigEndian.PutUint16(fixed[12:14], uint16(len(classBytes)))
 	binary.BigEndian.PutUint32(fixed[16:20], uint32(len(content)))
 	if _, err := w.Write(fixed); err != nil {

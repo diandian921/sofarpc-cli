@@ -26,6 +26,7 @@ const (
 	cmdRPCResponse uint16 = 2
 	cmdVersion     byte   = 1
 	codecHessian2  byte   = 1
+	statusSuccess  uint16 = 0
 
 	requestHeaderLen  = 22
 	responseHeaderLen = 20
@@ -129,6 +130,10 @@ func Invoke(ctx context.Context, req Request) (Outcome, error) {
 	if resp.RequestID != id {
 		return Outcome{Elapsed: elapsed, Diagnostics: responseDiagnostics(resp, targetService, id)},
 			fmt.Errorf("response request id %d does not match request id %d", resp.RequestID, id)
+	}
+	if resp.Status != statusSuccess {
+		return Outcome{Elapsed: elapsed, Diagnostics: responseDiagnostics(resp, targetService, id)},
+			&RemoteError{Message: fmt.Sprintf("BOLT response status %d (%s)", resp.Status, resp.Class)}
 	}
 	decoded, err := decodeSofaResponse(resp.Content)
 	if err != nil {

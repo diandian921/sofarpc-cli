@@ -19,6 +19,12 @@ const (
 	typeRef       = 0x75
 	refByte       = 0x4a
 	refShort      = 0x4b
+
+	// A BOLT response is capped at 16 MiB, but compact Hessian values can encode
+	// millions of logical items in that space. Bound both a single container and
+	// the aggregate number of container slots before allocating Go slices/maps.
+	maxHessianContainerItems = 1 << 20
+	maxHessianTotalItems     = 1 << 20
 )
 
 type decodedResponse struct {
@@ -40,6 +46,7 @@ type reader struct {
 	classes []classDef
 	types   []string
 	depth   int
+	items   int
 }
 
 func decodeSofaResponse(data []byte) (decodedResponse, error) {
@@ -195,6 +202,9 @@ func (r *reader) list() (interface{}, error) {
 	}
 	var items []interface{}
 	if n >= 0 {
+		if err := r.reserveContainerItems("list", n, 1); err != nil {
+			return nil, err
+		}
 		items = make([]interface{}, 0, n)
 		for i := 0; i < n; i++ {
 			v, err := r.readValue()
@@ -215,6 +225,9 @@ func (r *reader) list() (interface{}, error) {
 			if b == 'z' {
 				r.offset++
 				break
+			}
+			if err := r.reserveContainerItems("list", 1, 1); err != nil {
+				return nil, err
 			}
 			v, err := r.readValue()
 			if err != nil {
@@ -243,6 +256,9 @@ func (r *reader) fixedList() (interface{}, error) {
 	}
 	if ref < 0 || ref >= len(r.types) {
 		return nil, fmt.Errorf("bad type ref %d", ref)
+	}
+	if err := r.reserveContainerItems("fixed list", n, 1); err != nil {
+		return nil, err
 	}
 	items := make([]interface{}, 0, n)
 	for i := 0; i < n; i++ {
@@ -277,6 +293,9 @@ func (r *reader) mapValue() (interface{}, error) {
 			r.offset++
 			break
 		}
+		if err := r.reserveContainerItems("map", 1, 2); err != nil {
+			return nil, err
+		}
 		k, err := r.readValue()
 		if err != nil {
 			return nil, err
@@ -297,6 +316,9 @@ func (r *reader) classDef() error {
 	}
 	n, err := r.intValue()
 	if err != nil {
+		return err
+	}
+	if err := r.reserveContainerItems("class definition", n, 1); err != nil {
 		return err
 	}
 	fields := make([]string, n)
@@ -320,6 +342,9 @@ func (r *reader) object() (interface{}, error) {
 		return nil, fmt.Errorf("bad class ref %d", ref)
 	}
 	def := r.classes[ref]
+	if err := r.reserveContainerItems("object", len(def.Fields), 1); err != nil {
+		return nil, err
+	}
 	fields := map[string]interface{}{}
 	obj := map[string]interface{}{
 		"type":       def.Name,
@@ -493,6 +518,28 @@ func (r *reader) ref(n int) (interface{}, error) {
 
 func (r *reader) addRef(v interface{}) {
 	r.refs = append(r.refs, v)
+}
+
+// reserveContainerItems validates a logical container size before it can drive
+// a make or append. minBytes is the minimum encoded bytes required per logical
+// item from the reader's current offset (one for a value/field, two for a map
+// key/value pair). The division form avoids integer multiplication overflow.
+func (r *reader) reserveContainerItems(kind string, n, minBytes int) error {
+	if n < 0 {
+		return fmt.Errorf("invalid %s length %d", kind, n)
+	}
+	if n > maxHessianContainerItems {
+		return fmt.Errorf("%s length %d exceeds limit %d", kind, n, maxHessianContainerItems)
+	}
+	remaining := len(r.data) - r.offset
+	if minBytes <= 0 || n > remaining/minBytes {
+		return fmt.Errorf("%s length %d exceeds remaining input %d", kind, n, remaining)
+	}
+	if n > maxHessianTotalItems-r.items {
+		return fmt.Errorf("hessian container item budget exceeded")
+	}
+	r.items += n
+	return nil
 }
 
 func (r *reader) peek() (byte, bool) {
