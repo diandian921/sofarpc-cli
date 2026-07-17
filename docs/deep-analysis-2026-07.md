@@ -313,5 +313,13 @@ errorCode 表驱动、v1→v2 迁移后 `project use` 可用性、windows-latest
    三套类型解析链参数化、parseTypeDecl 委托、config 错误码统一路由。可维护性，非紧急但持续付息。
 8. 剩余 P2 打磨 + 测试补洞 + 文档腐化清扫。
 
-> 说明：本报告只做分析、未改动任何代码。具体范围、阶段、验收命令与完成定义见
-> `docs/deep-analysis-implementation-plan.md`。
+## 整改状态（2026-07-17）
+
+本报告描述的是 `main@ccabc60` 的审计快照，以上问题定位和行号保留为历史证据，不代表当前实施分支状态。
+高优先级整改已在 `fix/deep-analysis-release-blockers` 完成：B、C、A、E、G、F 六个阶段均已落地并增加
+回归测试；D 类结构收敛、通用 Java 声明级错误恢复器及其余 P2 项仍按计划留待后续独立迭代。
+
+最终验证已通过 `go vet ./...`、`go test ./...`、`go test -race ./...`、Windows amd64 交叉构建、
+Windows amd64/arm64 归档布局与校验和，以及真实 Hessian JVM / sofa-bolt-go BOLT oracle gate。
+本机未安装 PowerShell，`install.ps1 -h` 的真实 Windows 冒烟已加入 CI 矩阵，需由 Windows runner 执行。
+具体提交、命令和剩余风险见 `docs/deep-analysis-implementation-plan.md` 的“实施结果”。

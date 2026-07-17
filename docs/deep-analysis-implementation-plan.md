@@ -141,3 +141,33 @@ Hessian JVM oracle 依赖本地 Java/内部 jar；环境不具备时明确记录
 - 未引入新的 stdout 协议污染、wire shape 漂移或配置文件权限回归；
 - 报告与本计划更新最终状态、已跑验证和剩余风险；
 - 工作区原有未跟踪文件未被误提交。
+
+## 8. 实施结果（2026-07-17）
+
+Goal 已按计划完成，实施分支为 `fix/deep-analysis-release-blockers`。各阶段提交如下：
+
+| 阶段 | 提交 | 状态 |
+| --- | --- | --- |
+| 文档与计划 | `bac0258` | 完成 |
+| Phase 1：direct 安全与 BOLT 状态 | `5cf74d5` | 完成 |
+| Phase 2：Windows 与发布链路 | `80b8421` | 完成 |
+| Phase 3：Java parser/schema | `a9a7251` | 完成 |
+| Phase 4：RPC wire 类型 | `7bde3be` | 完成 |
+| Phase 5：MCP 结果与断言 | `572d02e` | 完成 |
+| Phase 6：配置迁移与并发 | `b7f0a2a` | 完成 |
+
+最终验证结果：
+
+- `gofmt -l .` 无输出，`git diff --check` 通过；
+- `go vet ./...`、`go test ./...`、`go test -race ./...` 全部通过；
+- `GOOS=windows GOARCH=amd64 go build ./...` 通过；
+- `go -C oracletest test -race -tags bolt_oracle ./...` 通过；
+- `bash scripts/oracle-gate.sh` 通过，真实 Hessian JVM 与 sofa-bolt-go BOLT oracle 均未跳过；
+- `bash -n scripts/install.sh scripts/package.sh` 通过；
+- CI/Release workflow YAML 可解析；
+- Windows amd64/arm64 测试 zip 均包含 `<base>/sofarpc.exe`，`SHA256SUMS` 校验通过。
+
+剩余风险：本机未安装 `pwsh`，因此没有在本机执行 `scripts/install.ps1 -h`；该冒烟已加入
+`windows-latest` CI，合并前应以 Windows runner 结果作为最终平台证据。明确排除的 D 类重构、通用 Java
+声明级错误恢复和其余 P2 项仍保留在本报告中，未被误标为已解决。工作区原有六份未跟踪文档保持未修改、
+未提交。
