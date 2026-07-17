@@ -58,10 +58,16 @@ release 门禁补 gofmt+vet；`package.sh` 加 `CGO_ENABLED=0`；install.ps1 强
 - `\f` 换页符、BOM、Unicode 标识符、`eraseGeneric` 多维、`lookupPath` 数组下标、阈值 200 prose 常量化：
   分别在 Phase 3/4/5 与收敛分支已修。
 
-## 本轮有意未做（价值低或需更大改动，留后续）
+## 后续补做（本轮之后单独立项完成）
 
-- **javaparser 嵌套类 flat-key 冲突 + `import a.b.Outer.Inner` 失效**：需改 keying 方案为 `Outer.Inner`
-  全键 + 短名别名，属语义change，非纯打磨，单独立项更稳。
+- ✅ **writer 标量 tag 编码收敛**：加共享 `writeBool`，抽出文档化的 `writeUntypedScalar`
+  作为 `writeJavaScalar` 的无类型兄弟,两条路径归一到同一组底层 primitive。纯内部重构,
+  BOLT oracle + Hessian golden 字节级不变。
+- ✅ **javaparser 嵌套类 keying**：`emitTypeSchemas` 改真实 FQN 主键(`pkg.Outer.Inner`)
+  + 短名别名(仅未占用时)。修掉同包顶层被嵌套类静默覆盖、以及 `import a.b.Outer.Inner`
+  不可解析两个 bug;`TypeSchema.Type` 保持短名,不动 Describe/wire 契约。带三条回归测试。
+
+## 本轮有意未做（价值低或需更大改动，留后续）
 - **search.go 跨调用 token 预索引**：真正的跨调用缓存需在 Index 上加可变状态（并发 + cache schema 版本），
   收益（小型 in-memory 方法列表）不抵风险；本轮只做了查询内的清晰化。
 - **prompt/resource handler panic 兜底**：两 handler 只 marshal 包级静态数据，实测不可 panic；加兜底需
