@@ -80,6 +80,55 @@ func Flatten(v interface{}) interface{} {
 	return flatten(v, map[uintptr]bool{}, 0)
 }
 
+// JSONSafe copies a decoded value without applying presentation flattening while
+// replacing cyclic back-edges with an explicit marker. It preserves the raw
+// type/fields/items shape used for serialization diagnostics.
+func JSONSafe(v interface{}) interface{} {
+	return jsonSafe(v, map[jsonVisit]bool{}, 0)
+}
+
+type jsonVisit struct {
+	kind byte
+	ptr  uintptr
+}
+
+func jsonSafe(v interface{}, seen map[jsonVisit]bool, depth int) interface{} {
+	if depth > flattenMaxDepth {
+		return map[string]interface{}{"$truncated": "max depth exceeded"}
+	}
+	switch x := v.(type) {
+	case map[string]interface{}:
+		visit := jsonVisit{kind: 'm', ptr: reflect.ValueOf(x).Pointer()}
+		if seen[visit] {
+			return map[string]interface{}{"$circularRef": true}
+		}
+		seen[visit] = true
+		defer delete(seen, visit)
+		out := make(map[string]interface{}, len(x))
+		for key, value := range x {
+			out[key] = jsonSafe(value, seen, depth+1)
+		}
+		return out
+	case []interface{}:
+		ptr := reflect.ValueOf(x).Pointer()
+		visit := jsonVisit{kind: 's', ptr: ptr}
+		if ptr != 0 && seen[visit] {
+			return map[string]interface{}{"$circularRef": true}
+		}
+		if ptr != 0 {
+			seen[visit] = true
+			defer delete(seen, visit)
+		}
+		out := make([]interface{}, len(x))
+		for i, value := range x {
+			out[i] = jsonSafe(value, seen, depth+1)
+		}
+		return out
+	default:
+		return x
+	}
+}
+
 // flatten renders a decoded value for presentation. seen tracks the map nodes on
 // the current path: the reader resolves Hessian back-references into shared maps,
 // so a cyclic object graph would otherwise recurse until the stack overflows.
@@ -517,12 +566,20 @@ func lookupPath(root interface{}, path string) (interface{}, bool) {
 		if part == "" {
 			return nil, false
 		}
-		m, ok := current.(map[string]interface{})
-		if !ok {
-			return nil, false
-		}
-		current, ok = m[part]
-		if !ok {
+		switch node := current.(type) {
+		case map[string]interface{}:
+			var ok bool
+			current, ok = node[part]
+			if !ok {
+				return nil, false
+			}
+		case []interface{}:
+			idx, err := strconv.Atoi(part)
+			if err != nil || idx < 0 || idx >= len(node) {
+				return nil, false
+			}
+			current = node[idx]
+		default:
 			return nil, false
 		}
 	}
@@ -538,7 +595,17 @@ func LookupPath(root interface{}, path string) (interface{}, bool) {
 func valuesEqual(left, right interface{}) bool {
 	left = cloneJSONValue(left)
 	right = cloneJSONValue(right)
-	return reflect.DeepEqual(left, right) || fmt.Sprint(left) == fmt.Sprint(right)
+	if reflect.DeepEqual(left, right) {
+		return true
+	}
+	leftNumber, leftOK := left.(json.Number)
+	rightNumber, rightOK := right.(json.Number)
+	if !leftOK || !rightOK {
+		return false
+	}
+	leftRat, leftOK := new(big.Rat).SetString(leftNumber.String())
+	rightRat, rightOK := new(big.Rat).SetString(rightNumber.String())
+	return leftOK && rightOK && leftRat.Cmp(rightRat) == 0
 }
 
 func cloneJSONValue(v interface{}) interface{} {

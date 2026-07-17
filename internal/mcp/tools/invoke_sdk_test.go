@@ -2,6 +2,8 @@ package tools
 
 import (
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -114,5 +116,35 @@ func TestDecodeStrictParsesInvocationAttachments(t *testing.T) {
 	}
 	if err := decodeStrict(json.RawMessage(`{"service":"S","method":"m","Attachments":{"tenant":"blue"}}`), &a); err == nil {
 		t.Error("expected case-variant Attachments to be rejected")
+	}
+}
+
+func TestInvokeSchemasMirrorSharedArgs(t *testing.T) {
+	properties := func(raw json.RawMessage) map[string]json.RawMessage {
+		t.Helper()
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatalf("schema decode: %v", err)
+		}
+		return schema.Properties
+	}
+	want := map[string]bool{}
+	typ := reflect.TypeOf(InvokeArgs{})
+	for i := 0; i < typ.NumField(); i++ {
+		name := strings.Split(typ.Field(i).Tag.Get("json"), ",")[0]
+		want[name] = true
+	}
+	for name, raw := range map[string]json.RawMessage{"invoke": invokeInputSchema, "plan": invokePlanInputSchema} {
+		got := properties(raw)
+		if len(got) != len(want) {
+			t.Fatalf("%s schema fields = %v, want %v", name, got, want)
+		}
+		for field := range want {
+			if _, ok := got[field]; !ok {
+				t.Errorf("%s schema missing %q", name, field)
+			}
+		}
 	}
 }

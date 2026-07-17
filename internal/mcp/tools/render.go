@@ -4,7 +4,12 @@
 // appconfig packages, returning the unified app.Result envelope.
 package tools
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/diandian921/sofarpc-mcp/internal/presentation"
+)
 
 // errorSchema is the shared error sub-object of the app.Result envelope.
 var errorSchema = json.RawMessage(`{
@@ -105,19 +110,19 @@ var (
   }
 }`)
 
-	invokeDataSchema = json.RawMessage(`{
+	invokeDataSchema = json.RawMessage(fmt.Sprintf(`{
   "type": "object",
   "properties": {
     "result": {},
     "rawResult": {},
     "resultPathMatched": {"type": "boolean"},
-    "resultTruncated": {"type": "boolean", "description": "True when arrays in result were cut to the first 200 items (see $truncated markers); use resultPath to narrow."},
+    "resultTruncated": {"type": "boolean", "description": "True when arrays in result were cut to the first %d items (see $truncated markers); use resultPath to narrow."},
     "assertions": {"type": "array"},
     "warnings": {"type": "array"},
     "diagnostics": {"type": "object"},
     "elapsedMs": {"type": "number"}
   }
-}`)
+}`, presentation.MaxArrayItems))
 
 	invokePlanDataSchema = json.RawMessage(`{
   "type": "object",

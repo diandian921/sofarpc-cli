@@ -118,6 +118,46 @@ func TestFlattenCyclicObjectGraphTerminates(t *testing.T) {
 	}
 }
 
+func TestJSONSafePreservesRawShapeAndCutsCycles(t *testing.T) {
+	raw := map[string]interface{}{"type": "Node", "fields": map[string]interface{}{"name": "root"}}
+	raw["fields"].(map[string]interface{})["self"] = raw
+	safe := JSONSafe(raw).(map[string]interface{})
+	if safe["type"] != "Node" {
+		t.Fatalf("raw type lost: %#v", safe)
+	}
+	cut := safe["fields"].(map[string]interface{})["self"].(map[string]interface{})
+	if cut["$circularRef"] != true {
+		t.Fatalf("cycle not cut: %#v", cut)
+	}
+	if _, err := json.Marshal(safe); err != nil {
+		t.Fatalf("JSONSafe result must marshal: %v", err)
+	}
+}
+
+func TestAssertionsAreTypeStrictButNumericallyEquivalent(t *testing.T) {
+	result := map[string]interface{}{"number": json.Number("1.0"), "text": "1", "truth": true}
+	out, failed := EvaluateAssertions(result, []Assertion{
+		{Path: "$.number", Equals: json.Number("1")},
+		{Path: "$.number", Equals: "1"},
+		{Path: "$.truth", Equals: "true"},
+	})
+	if failed != 2 || !out[0].Passed || out[1].Passed || out[2].Passed {
+		t.Fatalf("type-strict outcomes = %#v, failed=%d", out, failed)
+	}
+}
+
+func TestLookupPathSupportsArrayIndexes(t *testing.T) {
+	root := map[string]interface{}{"items": []interface{}{"zero", map[string]interface{}{"name": "one"}}}
+	if got, ok := LookupPath(root, "$.items.1.name"); !ok || got != "one" {
+		t.Fatalf("lookup = %#v, %v", got, ok)
+	}
+	for _, path := range []string{"$.items.-1", "$.items.2", "$.items.nope"} {
+		if got, ok := LookupPath(root, path); ok {
+			t.Fatalf("%s unexpectedly matched %#v", path, got)
+		}
+	}
+}
+
 func TestFlattenMapKeysAndBigIntegerKnownGap(t *testing.T) {
 	out := Flatten(map[string]interface{}{
 		"type": "java.util.LinkedHashMap",

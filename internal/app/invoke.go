@@ -222,9 +222,9 @@ func buildInvokeData(flattened, raw interface{}, rawResult bool, elapsedMs int64
 		data["resultTruncated"] = true
 	}
 	if rawResult {
-		// rawResult stays untruncated: it is the explicit escape hatch, and unlike
-		// the flattened tree it may contain shared substructure unsafe to rewrite.
-		data["rawResult"] = raw
+		// rawResult stays untruncated but must be JSON-safe: Hessian references can
+		// produce cycles that encoding/json cannot marshal.
+		data["rawResult"] = presentation.JSONSafe(raw)
 	}
 	if diagnostics != nil && (rawResult || failCount > 0) {
 		data["diagnostics"] = diagnostics

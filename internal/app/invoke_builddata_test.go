@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/diandian921/sofarpc-mcp/internal/presentation"
@@ -165,5 +166,14 @@ func TestBuildInvokeDataOmitsOptionalKeys(t *testing.T) {
 	data, _ = buildInvokeData(flattened, raw, false, 0, nil, nil, "")
 	if _, ok := data["rawResult"]; ok {
 		t.Error("rawResult=false should omit data.rawResult")
+	}
+}
+
+func TestBuildInvokeDataRawResultCutsCycles(t *testing.T) {
+	raw := map[string]interface{}{"type": "Node", "fields": map[string]interface{}{}}
+	raw["fields"].(map[string]interface{})["self"] = raw
+	data, _ := buildInvokeData(map[string]interface{}{"self": map[string]interface{}{"$circularRef": true}}, raw, true, 0, nil, nil, "")
+	if _, err := json.Marshal(data); err != nil {
+		t.Fatalf("rawResult must remain marshalable: %v", err)
 	}
 }

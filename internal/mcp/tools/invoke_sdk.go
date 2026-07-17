@@ -18,7 +18,7 @@ func AddInvoke(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_invoke",
 		Title:        "SofaRPC Invoke",
-		Description:  "Invoke a SofaRPC method over direct BOLT/Hessian2. Prefer named arguments (parameter names from sofarpc_describe); use paramTypes + orderedArguments only when the source schema is unavailable or the method is overloaded — never both forms. For complex payloads run sofarpc_invoke_plan first with the same arguments. To keep large results small, pass resultPath ($.path subtree) and assertions instead of reading the whole result; arrays longer than 200 items are truncated with a $truncated marker. Note: ok=true means the RPC completed — business success lives inside data.result (e.g. success/errorMsg fields).",
+		Description:  invokeDescription,
 		Annotations:  &mcpsdk.ToolAnnotations{DestructiveHint: boolPtr(true), OpenWorldHint: boolPtr(true)},
 		InputSchema:  invokeInputSchema,
 		OutputSchema: invokeOutputSchema,

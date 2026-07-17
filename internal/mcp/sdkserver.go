@@ -1,21 +1,23 @@
 package mcp
 
 import (
+	"fmt"
 	"io"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/diandian921/sofarpc-mcp/internal/app"
 	"github.com/diandian921/sofarpc-mcp/internal/mcp/tools"
+	"github.com/diandian921/sofarpc-mcp/internal/presentation"
 )
 
 // serverInstructions is the server-level guidance returned to the client at
 // initialize.
-const serverInstructions = "Run sofarpc_resolve before sofarpc_invoke. When multiple servers exist, always pass `server`. " +
+var serverInstructions = "Run sofarpc_resolve before sofarpc_invoke. When multiple servers exist, always pass `server`. " +
 	"Use sofarpc_describe with query=... to find a service FQN before invoking, and sofarpc_invoke_plan to validate arguments without sending a request. " +
 	"On failure, read structuredContent.error.nextTool and error.recovery, then follow that tool. " +
 	"Use sofarpc_doctor or sofarpc_probe to diagnose config/connectivity issues. " +
-	"For large invoke results pass resultPath ($.path) to return only a subtree; arrays are truncated at 200 items with a $truncated marker."
+	fmt.Sprintf("For large invoke results pass resultPath ($.path) to return only a subtree; arrays are truncated at %d items with a $truncated marker.", presentation.MaxArrayItems)
 
 // newSDKServer builds the MCP server backed by the official modelcontextprotocol
 // go-sdk: the migration target that replaces the self-written proto / server

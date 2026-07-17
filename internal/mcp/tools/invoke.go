@@ -2,10 +2,13 @@ package tools
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/diandian921/sofarpc-mcp/internal/app"
 	"github.com/diandian921/sofarpc-mcp/internal/presentation"
 )
+
+var invokeDescription = fmt.Sprintf("Invoke a SofaRPC method over direct BOLT/Hessian2. Prefer named arguments (parameter names from sofarpc_describe); use paramTypes + orderedArguments only when the source schema is unavailable or the method is overloaded — never both forms. For complex payloads run sofarpc_invoke_plan first with the same arguments. To keep large results small, pass resultPath ($.path subtree) and assertions instead of reading the whole result; arrays longer than %d items are truncated with a $truncated marker. Note: ok=true means the RPC completed — business success lives inside data.result (e.g. success/errorMsg fields).", presentation.MaxArrayItems)
 
 // InvokeArgs are the arguments shared by sofarpc_invoke and sofarpc_invoke_plan.
 // Only the schema-advertised names are accepted: the undocumented types/args aliases
@@ -99,21 +102,4 @@ var invokeInputSchema = json.RawMessage(`{
   }
 }`)
 
-var invokePlanInputSchema = json.RawMessage(`{
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["service", "method"],
-  "not": {"required": ["arguments", "orderedArguments"]},
-  "properties": {
-    "server": {"type": "string", "description": "Configured server name. Optional only when exactly one matching server can be inferred."},
-    "project": {"type": "string", "description": "Optional project name used to infer a single bound server."},
-    "profile": {"type": "string", "description": "Optional project profile name. Requires project when server is omitted."},
-    "service": {"type": "string", "description": "Service interface FQN."},
-    "method": {"type": "string", "description": "Method name."},
-    "paramTypes": {"type": "array", "items": {"type": "string"}, "description": "Optional Java parameter type FQNs for overload disambiguation."},
-    "orderedArguments": {"type": "array", "description": "Arguments in method parameter order. Requires paramTypes when the source schema is unavailable. Mutually exclusive with arguments."},
-    "arguments": {"type": "object", "additionalProperties": true, "description": "Named arguments keyed by Java parameter name (from sofarpc_describe), or a single DTO object when the method has one parameter. Preferred form; mutually exclusive with orderedArguments."},
-    "attachments": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional per-call SofaRPC request baggage. Merged with configured server/profile attachments; per-call values override configured defaults."},
-    "timeoutMs": {"type": "integer", "minimum": 1, "description": "Optional total timeout in milliseconds."}
-  }
-}`)
+var invokePlanInputSchema = append(json.RawMessage(nil), invokeInputSchema...)
