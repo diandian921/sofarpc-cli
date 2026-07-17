@@ -160,12 +160,11 @@ func (v *repeatedString) Set(s string) error {
 }
 
 func printProjectTable(w io.Writer, cfg appconfig.Config) {
-	names := cfg.ProjectNames()
+	names := cfg.ProjectNames() // already sorted
 	if len(names) == 0 {
 		fmt.Fprintln(w, "(no projects configured)")
 		return
 	}
-	sort.Strings(names)
 	maxName, maxRoot, maxActive, maxProfiles := len("PROJECT"), len("WORKSPACE"), len("ACTIVE_PROFILE"), len("PROFILES")
 	for _, name := range names {
 		project := cfg.Projects[name]

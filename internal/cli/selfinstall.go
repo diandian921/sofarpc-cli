@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
@@ -21,7 +23,11 @@ var executablePath = os.Executable
 // binVersion runs "<path> <versionArg>" and returns the trimmed output. It is a
 // package var so tests can stub external version probing.
 var binVersion = func(path string, versionArg string) (string, error) {
-	out, err := exec.Command(path, versionArg).Output()
+	// Bound the probe: a corrupt/hung installed binary must not stall self-install
+	// forever. On timeout the caller treats the version as unknown and proceeds.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, versionArg).Output()
 	if err != nil {
 		return "", err
 	}
@@ -49,8 +55,16 @@ func runSelfInstall(args []string, env Env) int {
 	ext := exeExt()
 
 	if *uninstall {
+		var failures []string
 		for _, name := range installedBinaryNames() {
-			_ = os.Remove(filepath.Join(binDir, name+ext))
+			p := filepath.Join(binDir, name+ext)
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				failures = append(failures, fmt.Sprintf("%s: %v", p, err))
+			}
+		}
+		if len(failures) > 0 {
+			fmt.Fprintf(env.Stderr, "self-install: failed to remove: %s\n", strings.Join(failures, "; "))
+			return 1
 		}
 		fmt.Fprintf(env.Stdout, "Uninstalled binaries. Kept config and cache under %s\n", root)
 		return 0
@@ -68,7 +82,7 @@ func runSelfInstall(args []string, env Env) int {
 	target := filepath.Join(binDir, "sofarpc"+ext)
 	switch decideInstall(env.BuildVersion, target, *allowDowngrade || *force) {
 	case installNoop:
-		if err := ensureScaffold(env, root, binDir); err != nil {
+		if err := ensureScaffold(root, binDir); err != nil {
 			fmt.Fprintf(env.Stderr, "self-install: %v\n", err)
 			return 1
 		}
@@ -80,7 +94,7 @@ func runSelfInstall(args []string, env Env) int {
 		return 1
 	}
 
-	if err := ensureScaffold(env, root, binDir); err != nil {
+	if err := ensureScaffold(root, binDir); err != nil {
 		fmt.Fprintf(env.Stderr, "self-install: %v\n", err)
 		return 1
 	}
@@ -125,7 +139,7 @@ func decideInstall(srcVersion, sofarpcTarget string, downgradeAllowed bool) inst
 	return installProceed
 }
 
-func ensureScaffold(env Env, root, binDir string) error {
+func ensureScaffold(root, binDir string) error {
 	for _, dir := range []string{binDir, filepath.Join(root, "cache", "schema")} {
 		if err := mkdirAll(dir, 0o755); err != nil {
 			return err
@@ -136,7 +150,6 @@ func ensureScaffold(env Env, root, binDir string) error {
 	if err := appconfig.EnsureExists(configPath, lockPath); err != nil {
 		return fmt.Errorf("create config.json: %w", err)
 	}
-	_ = env
 	return nil
 }
 
@@ -178,9 +191,22 @@ func copyExecutable(src, dst string) error {
 		return err
 	}
 	if err := os.Rename(tmpName, dst); err != nil {
-		// Windows rename cannot replace an existing (or briefly locked) file as
-		// reliably as POSIX; remove the destination and retry once.
+		// Windows cannot rename over (or delete) a running .exe, but it CAN rename
+		// the running file aside. Move the old binary to .old, then move the new
+		// one in; this is what lets an upgrade land while a host still runs it.
 		if runtime.GOOS == "windows" {
+			old := dst + ".old"
+			_ = os.Remove(old)
+			if rerr := os.Rename(dst, old); rerr == nil {
+				if rerr2 := os.Rename(tmpName, dst); rerr2 != nil {
+					_ = os.Rename(old, dst) // roll back
+					_ = os.Remove(tmpName)
+					return rerr2
+				}
+				_ = os.Remove(old) // best-effort; may still be locked while running
+				return nil
+			}
+			// Old file absent or un-renamable: fall back to remove + retry.
 			_ = os.Remove(dst)
 			if rerr := os.Rename(tmpName, dst); rerr != nil {
 				_ = os.Remove(tmpName)

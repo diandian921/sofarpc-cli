@@ -61,6 +61,13 @@ func parseMixed(fs *flag.FlagSet, args []string) ([]string, error) {
 	var positional []string
 	rest := args
 	for len(rest) > 0 {
+		// A "--" terminator means every following token is positional, verbatim.
+		// Handle it here because the per-iteration re-Parse below would otherwise
+		// only honor "--" on the first pass and re-interpret later "-x" as flags.
+		if rest[0] == "--" {
+			positional = append(positional, rest[1:]...)
+			break
+		}
 		if err := fs.Parse(rest); err != nil {
 			return nil, err
 		}

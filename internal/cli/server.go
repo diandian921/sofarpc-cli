@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
 	"github.com/diandian921/sofarpc-mcp/internal/app"
@@ -164,12 +163,11 @@ func runServerRemove(args []string, env Env) int {
 }
 
 func printServerTable(w io.Writer, cfg appconfig.Config) {
-	names := cfg.ServerNames()
+	names := cfg.ServerNames() // already sorted
 	if len(names) == 0 {
 		fmt.Fprintln(w, "(no servers configured)")
 		return
 	}
-	sort.Strings(names)
 	maxName, maxAddr, maxProject := len("SERVER"), len("ADDRESS"), len("PROJECT")
 	maxProfile := len("PROFILE")
 	for _, n := range names {
