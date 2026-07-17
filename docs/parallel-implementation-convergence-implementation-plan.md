@@ -93,3 +93,27 @@ bash scripts/oracle-gate.sh
 - 全量、race、Windows build、BOLT oracle、Hessian JVM oracle 全部通过；
 - 设计文档、实施计划和决策记录一致；
 - Goal 标记完成，未跟踪用户文档保持原状。
+
+## 9. 实施记录
+
+| Phase | 提交 | 状态 |
+| --- | --- | --- |
+| 设计与计划 | `ef680b1` | 完成 |
+| 配置选择 seam | `8d9c82a` | 完成，聚焦测试通过 |
+| Java 类型语义与 RPC resolver | `6ab5af9` | 完成，app/direct/javavalue 聚焦测试通过 |
+| Java 声明主体 | `e986690` | 完成，javaparser 聚焦测试通过 |
+| 配置错误路由 | `e676203` | 完成，tools 聚焦及 corrupt/future config 矩阵通过 |
+
+最终验证（2026-07-17）：
+
+| 命令 | 结果 |
+| --- | --- |
+| `git diff --check` | 通过 |
+| `go vet ./...` | 通过 |
+| `go test ./...` | 通过 |
+| `go test -race ./...` | 通过 |
+| `GOOS=windows GOARCH=amd64 go build ./...` | 通过 |
+| `go -C oracletest test -race -tags bolt_oracle ./...` | 通过 |
+| `bash scripts/oracle-gate.sh` | 通过；Hessian JVM 与 BOLT real oracle 均验证成功 |
+
+原有六份未跟踪历史文档始终排除在修改、暂存与提交范围之外。

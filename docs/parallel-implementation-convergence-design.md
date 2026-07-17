@@ -223,3 +223,21 @@ resolve、invoke/invoke_plan、describe 及其它普通配置读取出口统一�
 - `go vet ./...`、`go test ./...`、`go test -race ./...`、Windows 交叉构建通过；
 - Hessian JVM 与 BOLT oracle gate 通过；
 - `docs/decisions.md` 更新 backlog 状态，工作区原有未跟踪文档不被纳入。
+
+## 11. 实施结果
+
+五项收敛均按本设计落地，未触发停止条件：
+
+| 范围 | 实施提交 | 结果 |
+| --- | --- | --- |
+| 配置选择 seam | `8d9c82a` | app、describe、doctor 共用 `SelectProject`/`SelectServer`，tools 私有副本删除 |
+| Java 类型语义与 RPC resolver | `6ab5af9` | app/direct 共用 javavalue seam，method/field/value 共用 `rpcTypeResolver` |
+| Java 声明解析 | `e986690` | 顶层/嵌套声明共用解析主体，`@interface` 严格识别 |
+| 配置错误路由 | `e676203` | 普通工具共用 `failureResult`，corrupt/future config 矩阵固定恢复契约 |
+
+边界保持不变：Parser 成员级通用恢复、Hessian item budget 调参、完整 SourceIndex 注入和其它 P2 仍不在
+本 Goal 内。
+
+最终门禁全部通过：`go vet ./...`、`go test ./...`、`go test -race ./...`、Windows amd64 交叉构建、
+BOLT race oracle，以及 `scripts/oracle-gate.sh` 的 Hessian JVM/BOLT 真实兼容性校验。工作区原有六份
+未跟踪历史文档未被修改或提交。
