@@ -34,7 +34,7 @@ func parseTypeRef(c *cursor) (TypeRef, error) {
 	// A type name is an identifier, a contextual keyword (record/var/...), or a
 	// primitive/void. Hard reserved words (if/for/class/...) are rejected so
 	// malformed input does not silently parse as a bogus type.
-	if !isIdentLike(tok) && !(tok.Kind == TokenKeyword && isPrimitiveTypeKeyword(tok.Value)) {
+	if !(isIdentLike(tok) || (tok.Kind == TokenKeyword && isPrimitiveTypeKeyword(tok.Value))) {
 		return TypeRef{}, parseError(startPos, "expected type, got %s %q", tok.Kind, tok.Value)
 	}
 	c.consume()

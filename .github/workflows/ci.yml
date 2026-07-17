@@ -9,6 +9,25 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: golangci-lint
+    # Linting is platform-independent, so run it once on Linux rather than across
+    # the build-test OS matrix. Pinned to the golangci-lint version validated
+    # locally (see .golangci.yml) so CI and local `golangci-lint run` agree.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          # golangci-lint-action keeps its own build/analysis cache; disabling
+          # setup-go's cache avoids the two contending for the same keys.
+          cache: false
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+
   build-test:
     name: build + vet + test (${{ matrix.os }})
     # Test every advertised desktop platform for real. Windows owns installer,

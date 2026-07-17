@@ -188,7 +188,7 @@ func rejectInexactKeys(raw json.RawMessage, out interface{}) error {
 // field's json tag name, or the field name when untagged. It returns nil for
 // non-struct targets, leaving their decoding unchanged.
 func exactJSONFieldNames(t reflect.Type) map[string]bool {
-	for t != nil && t.Kind() == reflect.Ptr {
+	for t != nil && t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t == nil || t.Kind() != reflect.Struct {
@@ -202,7 +202,7 @@ func exactJSONFieldNames(t reflect.Type) map[string]bool {
 		// object, so recurse to collect those promoted names.
 		if field.Anonymous && tag == "" {
 			ft := field.Type
-			for ft.Kind() == reflect.Ptr {
+			for ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
 			if ft.Kind() == reflect.Struct {

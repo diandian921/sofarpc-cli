@@ -1,0 +1,33 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+# The standard linter set — errcheck, govet, ineffassign, staticcheck, unused —
+# with two deliberate carve-outs (below). staticcheck runs at its golangci-lint
+# default, which already omits the opinionated stylecheck rules (package-comment,
+# naming, doc-comment format); we do not re-enable them, so the gate stays focused
+# on correctness rather than style churn.
+linters:
+  default: standard
+  settings:
+    errcheck:
+      # Diagnostic writes to stderr and best-effort Close() in defers are
+      # intentionally unchecked across this codebase.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+  exclusions:
+    rules:
+      # Best-effort Close() (net.Conn / net.Listener / *os.File / client sessions,
+      # mostly in defers) is idiomatically unchecked.
+      - linters:
+          - errcheck
+        text: '\.Close` is not checked'
+      # QF1001 ("could apply De Morgan's law") is a refactoring suggestion, not a
+      # correctness check, and fires on the clearest reading of a negated
+      # disjunction (typeref.go). Suppress it rather than obfuscate the source.
+      - linters:
+          - staticcheck
+        text: 'QF1001'

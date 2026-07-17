@@ -228,10 +228,7 @@ func recoverTypeMember(c *cursor) bool {
 // 每个 enum constant:可选 annotation,然后 Ident,然后可选 `(...)`(ctor args,skip),
 // 然后可选 `{...}`(anonymous class body,skip)。
 func parseEnumBody(c *cursor, decl *TypeDecl) error {
-	for {
-		if c.peek().Kind == TokenRBrace || c.peek().Kind == TokenSemicolon || c.eof() {
-			break
-		}
+	for c.peek().Kind != TokenRBrace && c.peek().Kind != TokenSemicolon && !c.eof() {
 		// codex review #5:必须先 capture javadoc,后消费 annotation。
 		// 否则 `/** doc */ @A RED` 会丢 doc(annotation token 挡住 peekJavadoc 回溯)。
 		jdoc := cleanJavadocText(c.peekJavadoc())
@@ -731,7 +728,7 @@ func finishFieldDecl(c *cursor, pre preamble, typ TypeRef, firstName string, sta
 // 但 facade / DTO 类几乎不出现此形态,接受 trade-off。
 func skipFieldInitializer(c *cursor) error {
 	angleDepth := 0
-	var prevKind TokenKind = TokenError
+	prevKind := TokenError
 	for !c.eof() {
 		tok := c.peek()
 		switch tok.Kind {
