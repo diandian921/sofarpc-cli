@@ -75,14 +75,16 @@ func typedValueForJavaType(value interface{}, javaType string, types map[string]
 			}
 			return javavalue.Object(eraseRPCGeneric(javaType), fields)
 		}
+		keyType := "java.lang.String"
 		valueType := ""
 		if args := extractGenericArgs(javaType); len(args) >= 2 {
+			keyType = args[0]
 			valueType = args[1]
 		}
 		entries := make([]javavalue.MapEntry, 0, len(raw))
 		for name, child := range raw {
 			entries = append(entries, javavalue.MapEntry{
-				Key:   javavalue.Scalar("java.lang.String", name),
+				Key:   typedValueForJavaType(name, keyType, types, depth+1),
 				Value: typedValueForJavaType(child, valueType, types, depth+1),
 			})
 		}

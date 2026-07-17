@@ -193,6 +193,61 @@ func TestPlanNamedArgumentsUsesSourceIndexPort(t *testing.T) {
 	}
 }
 
+func TestPlanSingleScalarRejectsMisspelledNamedArgument(t *testing.T) {
+	cfg := appconfig.Config{
+		Projects: map[string]appconfig.Project{"user": {WorkspaceRoot: "/unused"}},
+		Servers: map[string]appconfig.Server{"user-test": {
+			Address: "127.0.0.1:12200", Project: "user", Protocol: "bolt", TimeoutMS: 5000,
+		}},
+	}
+	desc := schema.Description{Methods: []schema.Method{{
+		Service: "com.example.UserFacade", Method: "getUser", Package: "com.example",
+		Parameters: []schema.Parameter{{Name: "id", Type: "String"}},
+	}}}
+	service := New(fakeStore{cfg: cfg})
+	service.Source = fakeSource{desc: desc}
+	_, err := service.PlanInvocation(context.Background(), InvocationInput{
+		Server: "user-test", Service: "com.example.UserFacade", Method: "getUser",
+		NamedArguments: map[string]interface{}{"userId": "u1"},
+	})
+	var de *DomainError
+	if !errors.As(err, &de) || de.Kind != ErrArgumentTypeMismatch || !strings.Contains(err.Error(), "missing argument \"id\"") {
+		t.Fatalf("err = %v, want missing scalar argument", err)
+	}
+}
+
+func TestPlanOrderedSchemaMatchNormalizesShortParamTypes(t *testing.T) {
+	cfg := appconfig.Config{
+		Projects: map[string]appconfig.Project{"user": {WorkspaceRoot: "/unused"}},
+		Servers: map[string]appconfig.Server{"user-test": {
+			Address: "127.0.0.1:12200", Project: "user", Protocol: "bolt", TimeoutMS: 5000,
+		}},
+	}
+	method := schema.Method{
+		Service: "com.example.UserFacade", Method: "save", Package: "com.example",
+		Parameters: []schema.Parameter{{Name: "request", Type: "UserRequest"}},
+		Imports:    map[string]string{"UserRequest": "com.example.dto.UserRequest"},
+	}
+	desc := schema.Description{
+		Methods: []schema.Method{method},
+		Types: map[string]schema.TypeSchema{"com.example.dto.UserRequest": {
+			Type: "com.example.dto.UserRequest", Kind: "class",
+		}},
+	}
+	service := New(fakeStore{cfg: cfg})
+	service.Source = fakeSource{desc: desc}
+	plan, err := service.PlanInvocation(context.Background(), InvocationInput{
+		Server: "user-test", Service: method.Service, Method: method.Method,
+		ParamTypes: []string{"UserRequest"}, OrderedArguments: []interface{}{map[string]interface{}{}}, HasOrderedArguments: true,
+	})
+	if err != nil {
+		t.Fatalf("PlanInvocation: %v", err)
+	}
+	if got := plan.Method.ParamTypes; len(got) != 1 || got[0] != "com.example.dto.UserRequest" {
+		t.Fatalf("paramTypes = %#v, want resolved FQN", got)
+	}
+}
+
 func TestPlanInvocationMergesCallAttachmentsOverEndpointDefaults(t *testing.T) {
 	cfg := appconfig.Config{
 		Projects: map[string]appconfig.Project{

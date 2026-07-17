@@ -91,6 +91,10 @@ func resolveTypeTokensToFQN(ref string, owner schema.TypeSchema, types map[strin
 		name := ident.String()
 		ident.Reset()
 		if !strings.Contains(name, ".") {
+			if imported, ok := owner.Imports[name]; ok {
+				b.WriteString(imported)
+				return
+			}
 			if t, ok := resolveExtendsType(name, owner, types); ok && t.Type != "" {
 				b.WriteString(t.Type)
 				return

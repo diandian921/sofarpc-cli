@@ -283,7 +283,7 @@ func (s *Service) planArguments(ctx context.Context, projectName string, project
 	}
 	if len(methodSchema.Parameters) == 1 {
 		param := methodSchema.Parameters[0]
-		if _, ok := input.NamedArguments[param.Name]; !ok {
+		if _, ok := input.NamedArguments[param.Name]; !ok && acceptsWholeDTO(param.Type, methodSchema, desc.Types) {
 			typed := []javavalue.TypedValue{typedValueForParam(input.NamedArguments, param.Type, methodSchema, desc)}
 			if err := validateSpecialArgs(typed); err != nil {
 				return nil, nil, nil, err
@@ -330,6 +330,7 @@ func (s *Service) planOrderedArguments(ctx context.Context, projectName string, 
 			methodSchema = resolved
 			desc = resolvedDesc
 			hasSchema = true
+			paramTypes = rpcParamTypesForMethod(methodSchema)
 		} else {
 			warnings = append(warnings, PlanWarning{
 				Code:    "SCHEMA_ANNOTATION_SKIPPED",
@@ -352,6 +353,12 @@ func (s *Service) planOrderedArguments(ctx context.Context, projectName string, 
 		return nil, nil, warnings, err
 	}
 	return untyped, paramTypes, warnings, nil
+}
+
+func acceptsWholeDTO(paramType string, method schema.Method, types map[string]schema.TypeSchema) bool {
+	resolved := eraseRPCGeneric(rpcValueTypeForMethod(paramType, method, types))
+	typ, ok := types[resolved]
+	return ok && typ.Kind == "class"
 }
 
 func (s *Service) resolveMethodDescription(ctx context.Context, projectName string, project appconfig.Project, service, method string, paramTypes []string) (schema.Method, schema.Description, error) {

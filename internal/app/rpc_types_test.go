@@ -76,6 +76,27 @@ func TestTypedArgumentsListOfDTOPreservesElementType(t *testing.T) {
 	}
 }
 
+func TestTypedMapUsesAndValidatesDeclaredKeyType(t *testing.T) {
+	valid := typedValueForJavaType(
+		map[string]interface{}{"7": "seven"},
+		"java.util.Map<java.lang.Long, java.lang.String>", nil, 0,
+	)
+	if len(valid.Entries) != 1 || valid.Entries[0].Key.JavaType != "java.lang.Long" || valid.Entries[0].Key.Scalar != "7" {
+		t.Fatalf("map key = %#v, want declared Long", valid.Entries)
+	}
+	if err := validateSpecialArgs([]javavalue.TypedValue{valid}); err != nil {
+		t.Fatalf("valid Long key rejected: %v", err)
+	}
+	invalid := typedValueForJavaType(
+		map[string]interface{}{"not-a-long": "bad"},
+		"java.util.Map<java.lang.Long, java.lang.String>", nil, 0,
+	)
+	var de *DomainError
+	if err := validateSpecialArgs([]javavalue.TypedValue{invalid}); !errors.As(err, &de) || de.Kind != ErrArgumentTypeMismatch {
+		t.Fatalf("invalid Long key must fail planning, got %v", err)
+	}
+}
+
 func TestTypedArgumentsMergesInheritedFieldTypes(t *testing.T) {
 	method := schema.Method{
 		Service:    "com.x.facade.OrderFacade",
@@ -357,6 +378,10 @@ func TestResolveTypeTokensToFQNPreservesGenerics(t *testing.T) {
 	// builtins / type variables / unknown tokens are kept as written
 	if got := resolveTypeTokensToFQN("List<T>", owner, types); got != "List<T>" {
 		t.Fatalf("got %q, want List<T> unchanged", got)
+	}
+	owner.Imports["ForeignDto"] = "com.external.ForeignDto"
+	if got := resolveTypeTokensToFQN("ForeignDto", owner, types); got != "com.external.ForeignDto" {
+		t.Fatalf("got %q, want imported external type", got)
 	}
 }
 

@@ -134,7 +134,9 @@ func bigIntegerHandle(n *big.Int) javavalue.TypedValue {
 // leftover scalar of that type means the input (a malformed ISO date or
 // non-integer BigInteger) could not be parsed. Catching it at plan time yields a
 // clear ARGUMENT_TYPE_MISMATCH instead of a server-side deserialization error.
-// Recurses into DTO fields, list items, and map values. Both the schema-coerced
+// It also validates scalar map keys against their declared generic key type so a
+// JSON object key cannot silently remain String when the provider expects Long.
+// Recurses into DTO fields, list items, and map entries. Both the schema-coerced
 // and the paramTypes / explicit-address paths run their args through the same
 // java.time/BigInteger coercion (typedValueForJavaType), so this is correct for
 // all of them.
@@ -147,8 +149,78 @@ func validateSpecialArgs(args []javavalue.TypedValue) error {
 				Details: map[string]interface{}{"index": i, "type": t},
 			}
 		}
+		if typ, value, ok := firstInvalidMapKey(a); ok {
+			return &DomainError{
+				Kind:    ErrArgumentTypeMismatch,
+				Message: fmt.Sprintf("argument %d map key %q is not a valid %s value", i, value, typ),
+				Details: map[string]interface{}{"index": i, "type": typ, "key": value},
+			}
+		}
 	}
 	return nil
+}
+
+func firstInvalidMapKey(v javavalue.TypedValue) (string, string, bool) {
+	switch v.Kind {
+	case javavalue.KindObject:
+		for _, field := range v.Fields {
+			if typ, value, bad := firstInvalidMapKey(field); bad {
+				return typ, value, true
+			}
+		}
+	case javavalue.KindList:
+		for _, item := range v.Items {
+			if typ, value, bad := firstInvalidMapKey(item); bad {
+				return typ, value, true
+			}
+		}
+	case javavalue.KindMap:
+		for _, entry := range v.Entries {
+			if entry.Key.Kind == javavalue.KindScalar && !validMapKeyScalar(entry.Key.JavaType, entry.Key.Scalar) {
+				return entry.Key.JavaType, fmt.Sprint(entry.Key.Scalar), true
+			}
+			if typ, value, bad := firstInvalidMapKey(entry.Value); bad {
+				return typ, value, true
+			}
+		}
+	}
+	return "", "", false
+}
+
+func validMapKeyScalar(javaType string, value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	s := strings.TrimSpace(fmt.Sprint(value))
+	switch rpcParamType(eraseRPCGeneric(javaType)) {
+	case "byte", "java.lang.Byte":
+		_, err := strconv.ParseInt(s, 10, 8)
+		return err == nil
+	case "short", "java.lang.Short":
+		_, err := strconv.ParseInt(s, 10, 16)
+		return err == nil
+	case "int", "java.lang.Integer":
+		_, err := strconv.ParseInt(s, 10, 32)
+		return err == nil
+	case "long", "java.lang.Long":
+		_, err := strconv.ParseInt(s, 10, 64)
+		return err == nil
+	case "float", "java.lang.Float":
+		_, err := strconv.ParseFloat(s, 32)
+		return err == nil
+	case "double", "java.lang.Double":
+		_, err := strconv.ParseFloat(s, 64)
+		return err == nil
+	case "boolean", "java.lang.Boolean":
+		_, err := strconv.ParseBool(s)
+		return err == nil
+	case "char", "java.lang.Character":
+		return len([]rune(s)) == 1
+	case "java.util.Date":
+		return isEpochMillisScalar(value)
+	default:
+		return true
+	}
 }
 
 // firstMalformedSpecial returns the java type of the first un-coerced special
