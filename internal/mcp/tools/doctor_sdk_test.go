@@ -92,13 +92,15 @@ func TestDoctorResultSDKShapes(t *testing.T) {
 		t.Errorf("all-ok checks should be SUCCESS, got %+v / %q", ok, summary)
 	}
 
+	// server failing first → BAD_REQUEST (a user config/argument problem), with the
+	// nextTool taken from that first failed check.
 	failed, _ := doctorResultSDK([]map[string]interface{}{
 		{"name": "config", "status": "ok"},
 		{"name": "server", "status": "failed"},
 		{"name": "source_schema", "status": "failed"},
 	})
-	if failed.OK || failed.Code != app.CodeInternalError {
-		t.Fatalf("failed checks should be an INTERNAL_ERROR envelope, got %+v", failed)
+	if failed.OK || failed.Code != app.CodeBadRequest {
+		t.Fatalf("server-first failure should be a BAD_REQUEST envelope, got %+v", failed)
 	}
 	if failed.Error == nil || failed.Error.NextTool != "sofarpc_resolve" {
 		t.Errorf("nextTool must come from the first failed check, got %+v", failed.Error)
@@ -109,6 +111,14 @@ func TestDoctorResultSDKShapes(t *testing.T) {
 	got, _ := failed.Error.Details["failedChecks"].([]string)
 	if len(got) != 2 || got[0] != "server" || got[1] != "source_schema" {
 		t.Errorf("failedChecks = %v", got)
+	}
+
+	// source_schema failing first → INTERNAL_ERROR (an environment problem).
+	envFail, _ := doctorResultSDK([]map[string]interface{}{
+		{"name": "source_schema", "status": "failed"},
+	})
+	if envFail.Code != app.CodeInternalError {
+		t.Fatalf("source_schema-first failure should be INTERNAL_ERROR, got %+v", envFail)
 	}
 }
 

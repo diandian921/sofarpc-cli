@@ -197,11 +197,26 @@ func exactJSONFieldNames(t reflect.Type) map[string]bool {
 	names := make(map[string]bool, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
+		tag := field.Tag.Get("json")
+		// An untagged embedded struct promotes its fields to the parent JSON
+		// object, so recurse to collect those promoted names.
+		if field.Anonymous && tag == "" {
+			ft := field.Type
+			for ft.Kind() == reflect.Ptr {
+				ft = ft.Elem()
+			}
+			if ft.Kind() == reflect.Struct {
+				for k := range exactJSONFieldNames(ft) {
+					names[k] = true
+				}
+				continue
+			}
+		}
 		if field.PkgPath != "" {
 			continue
 		}
 		name := field.Name
-		if tag := field.Tag.Get("json"); tag != "" {
+		if tag != "" {
 			if comma := strings.IndexByte(tag, ','); comma >= 0 {
 				tag = tag[:comma]
 			}

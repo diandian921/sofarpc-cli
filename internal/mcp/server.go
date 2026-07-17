@@ -15,6 +15,10 @@ import (
 	"github.com/diandian921/sofarpc-mcp/internal/schema"
 )
 
+// schemaCacheTTL is how long an unused schema cache entry survives before
+// startup cleanup removes it (see schema.CleanupUnused).
+const schemaCacheTTL = 7 * 24 * time.Hour
+
 // Server is the stdio MCP server facade. Its public surface (fields, Run, SelfTest)
 // is unchanged so cli/mcp.go and callers do not churn; internally it is backed by the
 // official modelcontextprotocol go-sdk (see newSDKServer).
@@ -48,7 +52,7 @@ func (s *Server) Run() int {
 	if stderr == nil {
 		stderr = io.Discard
 	}
-	if err := schema.CleanupUnused(7 * 24 * time.Hour); err != nil {
+	if err := schema.CleanupUnused(schemaCacheTTL); err != nil {
 		fmt.Fprintln(stderr, "mcp: schema cache cleanup:", err)
 	}
 
@@ -78,9 +82,6 @@ func (nopWriteCloser) Close() error { return nil }
 func (s *Server) SelfTest() error {
 	if _, err := appconfig.DefaultPath(); err != nil {
 		return fmt.Errorf("config path: %w", err)
-	}
-	if s.application() == nil {
-		return errors.New("app service is nil")
 	}
 	stderr := s.Stderr
 	if stderr == nil {

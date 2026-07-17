@@ -49,28 +49,50 @@ func TruncateArrays(v interface{}, maxItems int) (interface{}, bool) {
 			kept = x[:maxItems]
 			omitted = len(x) - maxItems
 		}
-		out := make([]interface{}, len(kept), len(kept)+1)
-		cut := omitted > 0
+		// Allocate a copy only once a truncation is actually seen; an untouched
+		// subtree returns the original node with no allocation.
+		var out []interface{}
+		if omitted > 0 {
+			out = make([]interface{}, len(kept), len(kept)+1)
+			copy(out, kept)
+		}
 		for i, item := range kept {
 			child, childCut := TruncateArrays(item, maxItems)
-			out[i] = child
-			cut = cut || childCut
+			if childCut && out == nil {
+				out = make([]interface{}, len(kept), len(kept)+1)
+				copy(out, kept)
+			}
+			if out != nil {
+				out[i] = child
+			}
+		}
+		if out == nil {
+			return x, false
 		}
 		if omitted > 0 {
 			out = append(out, map[string]interface{}{
 				"$truncated": map[string]interface{}{"omittedItems": omitted, "totalItems": len(x)},
 			})
 		}
-		return out, cut
+		return out, true
 	case map[string]interface{}:
-		out := make(map[string]interface{}, len(x))
-		cut := false
+		var out map[string]interface{}
 		for k, item := range x {
 			child, childCut := TruncateArrays(item, maxItems)
-			out[k] = child
-			cut = cut || childCut
+			if childCut && out == nil {
+				out = make(map[string]interface{}, len(x))
+				for ok, ov := range x {
+					out[ok] = ov
+				}
+			}
+			if out != nil {
+				out[k] = child
+			}
 		}
-		return out, cut
+		if out == nil {
+			return x, false
+		}
+		return out, true
 	default:
 		return v, false
 	}

@@ -78,6 +78,7 @@ func AddDoctor(srv *mcpsdk.Server, appSvc *app.Service, writeEnabled bool, stder
 				}
 			}
 		}
+		notifyProgress(ctx, req, "doctor complete", 1)
 		return doctorResultSDK(checks)
 	}))
 }
@@ -103,7 +104,7 @@ func doctorResultSDK(checks []map[string]interface{}) (app.Result, string) {
 	// itself, so the recovery tool is chosen from the first failed check instead.
 	return app.Result{
 		OK:   false,
-		Code: app.CodeInternalError,
+		Code: doctorFailureCode(failed[0]),
 		Data: body,
 		Error: &app.ResultError{
 			Message:  "doctor found failing checks: " + strings.Join(failed, ", "),
@@ -112,6 +113,19 @@ func doctorResultSDK(checks []map[string]interface{}) (app.Result, string) {
 			Details:  map[string]interface{}{"failedChecks": failed},
 		},
 	}, "Doctor found issues."
+}
+
+// doctorFailureCode maps the first failed check to a stable code so a client
+// branching on code is not misled: server/project/describe failures are user
+// config/argument problems (BAD_REQUEST), while config/source_schema failures are
+// environment/internal problems (INTERNAL_ERROR).
+func doctorFailureCode(check string) string {
+	switch check {
+	case "server", "project", "describe":
+		return app.CodeBadRequest
+	default:
+		return app.CodeInternalError
+	}
 }
 
 // doctorRecoveryTool maps the first failed doctor check to the tool that best helps fix
