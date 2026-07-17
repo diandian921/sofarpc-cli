@@ -38,15 +38,17 @@ func typedValueForJavaType(value interface{}, javaType string, types map[string]
 	if javavalue.IsByteArrayType(javaType) {
 		return javavalue.Scalar(javaType, value)
 	}
-	if base := javavalue.BaseJavaType(javaType); isSpecialEncodedType(base) {
+	if base := javavalue.BaseJavaType(javaType); base != "" {
 		// Emit a type-neutral scalar; the direct writer owns the Hessian wire
 		// shape (caucho *Handle / signum-mag). Canonicalize when the input is a
 		// valid instance so the wire value is stable; otherwise keep the raw value
 		// so validateSpecialArgs rejects it at plan time.
-		if canon, ok := direct.CanonicalizeSpecialScalar(base, value); ok {
-			return javavalue.Scalar(base, canon)
+		if canon, supported, valid := direct.CanonicalizeSpecialScalar(base, value); supported {
+			if valid {
+				return javavalue.Scalar(base, canon)
+			}
+			return javavalue.Scalar(base, value)
 		}
-		return javavalue.Scalar(base, value)
 	}
 	if typ, ok := types[javavalue.BaseJavaType(javaType)]; ok && typ.Kind == "enum" {
 		return enumTypedValue(value, typ.Type)

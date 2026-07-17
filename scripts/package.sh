@@ -22,6 +22,18 @@ case " $PLATFORMS " in
     *" windows/"*) command -v zip >/dev/null || { echo "error: zip not found in PATH" >&2; exit 1; } ;;
 esac
 
+create_tar_archive() {
+    local archive="$1" base="$2" tar_version
+    tar_version="$(tar --version 2>&1 || true)"
+    if [[ "$tar_version" == *bsdtar* || "$tar_version" == *libarchive* ]]; then
+        COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --uname root --gname root \
+            -czf "$archive" -C "$DIST_DIR" "$base"
+    else
+        COPYFILE_DISABLE=1 tar --owner=0 --group=0 --numeric-owner --sort=name \
+            -czf "$archive" -C "$DIST_DIR" "$base"
+    fi
+}
+
 mkdir -p "$DIST_DIR"
 ARCHIVES=()
 
@@ -51,7 +63,7 @@ for platform in $PLATFORMS; do
     else
         archive="$DIST_DIR/$base.tar.gz"
         rm -f "$archive"
-        tar -czf "$archive" -C "$DIST_DIR" "$base"
+        create_tar_archive "$archive" "$base"
     fi
     ARCHIVES+=("$archive")
     echo "[pack]  $archive"

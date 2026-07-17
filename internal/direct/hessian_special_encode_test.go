@@ -39,6 +39,18 @@ func specialLong(n int64) javavalue.TypedValue {
 	return javavalue.Scalar("java.lang.Long", json.Number(strconv.FormatInt(n, 10)))
 }
 
+func TestCanonicalizeSpecialScalarReportsSupportAndValidity(t *testing.T) {
+	if got, supported, valid := CanonicalizeSpecialScalar("java.time.LocalDate", " 2024-01-15 "); got != "2024-01-15" || !supported || !valid {
+		t.Fatalf("valid LocalDate = (%q, %t, %t)", got, supported, valid)
+	}
+	if _, supported, valid := CanonicalizeSpecialScalar("java.time.LocalDate", "not-a-date"); !supported || valid {
+		t.Fatalf("invalid LocalDate support/valid = %t/%t", supported, valid)
+	}
+	if _, supported, valid := CanonicalizeSpecialScalar("java.lang.String", "value"); supported || valid {
+		t.Fatalf("ordinary String support/valid = %t/%t", supported, valid)
+	}
+}
+
 // objectFormLocalDate etc. mirror the app layer's historical handle construction
 // so this test is the pre-refactor baseline of the object representation.
 func objectFormLocalDate(year, month, day int) javavalue.TypedValue {

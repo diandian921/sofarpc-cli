@@ -20,12 +20,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # package.sh derives VERSION from `git describe --tags`.
+          # Keep full history for generated release notes and tag verification.
           fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+      - name: Validate release SemVer
+        id: version
+        shell: bash
+        run: |
+          source scripts/semver.sh
+          tag="${GITHUB_REF_NAME}"
+          if ! is_release_tag "$tag"; then
+            echo "release tag must be strict SemVer with a v prefix, got: $tag" >&2
+            exit 1
+          fi
+          version="${tag#v}"
+          prerelease=false
+          if semver_is_prerelease "$version"; then
+            prerelease=true
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
       - name: Gate — gofmt + vet + pure-Go suite + BOLT oracle
         run: |
           files=$(gofmt -l .)
@@ -37,17 +55,23 @@ jobs:
           go -C oracletest vet -tags bolt_oracle ./...
           go -C oracletest test -race -tags bolt_oracle ./...
       - name: Package release archives
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
         run: bash scripts/package.sh
       - name: Build MCPB bundles
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
+          MCPB_VERSION: ${{ steps.version.outputs.version }}
         run: bash scripts/build-mcpb.sh
       - name: Create GitHub Release and upload assets
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
-          tag="${GITHUB_REF_NAME}"
           args=()
-          case "$tag" in
-            *-*) args+=(--prerelease) ;;
-          esac
-          gh release create "$tag" --verify-tag --title "$tag" --generate-notes "${args[@]}" \
+          if [ "$RELEASE_PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --generate-notes "${args[@]}" \
             dist/sofarpc-*.tar.gz dist/sofarpc-*.zip dist/SHA256SUMS dist/mcpb/*.mcpb

@@ -18,14 +18,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/semver.sh"
 
 # VERSION stamps the binary (full git describe). MCPB_VERSION is the manifest
 # "version" and must be plain semver, so it defaults to the nearest vX.Y.Z tag.
 VERSION="${VERSION:-$(git -C "$REPO_ROOT" describe --tags --match 'v*' --always 2>/dev/null || echo dev)}"
 DEFAULT_MCPB_VERSION="$(git -C "$REPO_ROOT" describe --tags --match 'v*' --abbrev=0 2>/dev/null || echo 0.0.0)"
 MCPB_VERSION="${MCPB_VERSION:-${DEFAULT_MCPB_VERSION#v}}"
+if ! is_semver "$MCPB_VERSION"; then
+    echo "error: MCPB_VERSION must be strict SemVer without a v prefix, got: $MCPB_VERSION" >&2
+    exit 1
+fi
 
-DIST_DIR="$REPO_ROOT/dist/mcpb"
+DIST_ROOT="${DIST_ROOT:-$REPO_ROOT/dist}"
+DIST_DIR="$DIST_ROOT/mcpb"
 PLATFORMS="${PLATFORMS:-darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64}"
 
 command -v go >/dev/null || { echo "error: go not found in PATH" >&2; exit 1; }
@@ -142,13 +148,23 @@ for platform in $PLATFORMS; do
     echo "[pack]  $artifact"
 done
 
-echo "[sums]  $DIST_DIR/SHA256SUMS"
+SUMS_PATH="$DIST_ROOT/SHA256SUMS"
+echo "[sums]  $SUMS_PATH (including MCPB bundles)"
+mkdir -p "$(dirname "$SUMS_PATH")"
+if [ -f "$SUMS_PATH" ]; then
+    # Make reruns idempotent: preserve archive sums and replace previous MCPB
+    # entries rather than appending duplicates.
+    awk '$2 !~ /^sofarpc-mcp-.*\.mcpb$/ { print }' "$SUMS_PATH" > "$SUMS_PATH.tmp"
+    mv "$SUMS_PATH.tmp" "$SUMS_PATH"
+else
+    : > "$SUMS_PATH"
+fi
 (
     cd "$DIST_DIR"
     if command -v shasum >/dev/null 2>&1; then
-        shasum -a 256 *.mcpb > SHA256SUMS
+        shasum -a 256 *.mcpb >> "$SUMS_PATH"
     else
-        sha256sum *.mcpb > SHA256SUMS
+        sha256sum *.mcpb >> "$SUMS_PATH"
     fi
 )
 

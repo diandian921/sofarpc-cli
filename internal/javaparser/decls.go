@@ -171,6 +171,7 @@ func parseClassBodyMembers(c *cursor, decl *TypeDecl) error {
 // not make an inner brace look like a member body. EOF/unbalanced bodies remain
 // fatal and return false.
 func recoverTypeMember(c *cursor) bool {
+	canOwnBody := recoveryBodyIsUnambiguous(c)
 	parenDepth := 0
 	bracketDepth := 0
 	for !c.eof() {
@@ -183,6 +184,13 @@ func recoverTypeMember(c *cursor) bool {
 			case TokenRBrace:
 				return true
 			case TokenLBrace:
+				// A brace reached while scanning an ordinary declaration is
+				// ambiguous: it may be the body of the next valid method after a
+				// missing semicolon. Recovering through it could silently discard
+				// that method, so keep the whole file fatal instead.
+				if !canOwnBody {
+					return false
+				}
 				if err := c.skipBalanced(TokenLBrace, TokenRBrace); err != nil {
 					return false
 				}
@@ -212,6 +220,42 @@ func recoverTypeMember(c *cursor) bool {
 				bracketDepth--
 			}
 		}
+	}
+	return false
+}
+
+// recoveryBodyIsUnambiguous reports whether the failed member's prefix proves
+// that a top-level brace belongs to that member: an initializer block or a
+// nested type declaration. Method-like prefixes are intentionally excluded;
+// after a missing semicolon, the first such brace may belong to the next method.
+func recoveryBodyIsUnambiguous(c *cursor) bool {
+	probe := &cursor{tokens: c.tokens, idx: c.idx}
+	pre, err := parsePreamble(probe)
+	if err == nil {
+		if probe.peek().Kind == TokenLBrace || peekIsNestedTypeStart(probe) {
+			return true
+		}
+		// Contextual keywords are accepted as annotation names. Preserve the
+		// existing recovery for malformed `@class Name {}` / `@record Name {}`:
+		// these cannot introduce a legal following member, so the brace is owned
+		// by the malformed declaration.
+		for _, ann := range pre.Annotations {
+			switch ann.Name {
+			case "class", "interface", "enum", "record":
+				return isIdentLike(probe.peek()) && probe.peekN(1).Kind == TokenLBrace
+			}
+		}
+		return false
+	}
+	// Malformed @class/@record-style declarations are not legal starts for a
+	// following member, but their body is still an unambiguous recovery unit.
+	tok := probe.peek()
+	if tok.Kind != TokenKeyword {
+		return false
+	}
+	switch tok.Value {
+	case "class", "interface", "enum", "record":
+		return true
 	}
 	return false
 }

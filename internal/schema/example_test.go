@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -92,5 +93,33 @@ func TestExampleArgumentsMutualRecursionTerminates(t *testing.T) {
 func TestExampleArgumentsNoParams(t *testing.T) {
 	if got := ExampleArgumentsFor(&Index{Types: map[string]TypeSchema{}}, Method{}); got != nil {
 		t.Fatalf("no-param method should have nil example, got %#v", got)
+	}
+}
+
+func TestExampleArgumentsWideTreeHonorsGlobalNodeBudget(t *testing.T) {
+	fields := make([]Field, exampleMaxNodes+32)
+	for i := range fields {
+		fields[i] = Field{Name: fmt.Sprintf("field%04d", i), Type: "java.lang.String"}
+	}
+	idx := &Index{Types: map[string]TypeSchema{
+		"com.x.Wide": classType("com.x.Wide", fields...),
+	}}
+
+	got := ExampleArgumentsFor(idx, Method{
+		Package: "com.x",
+		Parameters: []Parameter{
+			{Name: "first", Type: "com.x.Wide"},
+			{Name: "second", Type: "com.x.Wide"},
+		},
+	})
+	first, ok := got["first"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("first wide example = %#v, want object", got["first"])
+	}
+	if len(first) != exampleMaxNodes-1 {
+		t.Fatalf("first wide fields = %d, want %d within global budget", len(first), exampleMaxNodes-1)
+	}
+	if got["second"] != nil {
+		t.Fatalf("second parameter must share exhausted global budget, got %#v", got["second"])
 	}
 }

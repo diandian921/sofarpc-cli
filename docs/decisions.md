@@ -5,7 +5,7 @@
 > agent-first-mcp-followup.md、mcp-best-practices-audit.md 等）只作过程记录，
 > 其中与本文件冲突的结论一律以本文件为准。改决策 = 只改这一个文件。
 >
-> 最后更新：2026-07-17
+> 最后更新：2026-07-18
 
 ## 已定决策
 
@@ -26,12 +26,13 @@
 | D13 | 错误码体系维持现状 | `errorCode` 兜底仍为 INVOKE_FAILED，保留字符串嗅探 | 未知传输错误标 INTERNAL_ERROR 会误导（多数确属调用失败）；嗅探兜住丢失类型的包装错误。收敛为 DomainError 自带 code 属大改，收益不明,暂缓 |
 | D14 | CLI 与 MCP 共用 Result 信封 | `sofarpc project/server` 子命令与 ping 全部输出统一 envelope（表格模式除外）；地址解析统一走 `app.ProbeEndpoint`/`app.Resolve` | 2026-07-06 落地；agent 可用同一套解析逻辑处理 CLI 与 MCP 输出 |
 | D15 | BOLT oracle 常驻 CI，Hessian oracle 留本地 | BOLT oracle 在独立 `oracletest/` 模块（自带 go.mod，隔离 sofastack 依赖树）并进 CI；Hessian oracle 需内网 JVM+jar，仍走 `scripts/oracle-gate.sh` 发布前门禁 | 2026-07-06 落地 |
-| D16 | 发布走 tag 触发流水线 | `.github/workflows/release.yml` 复用 package.sh/build-mcpb.sh 自动建 Release 上传产物；含 `-` 的 tag 标 prerelease | 消除人工上传的 checksum 出错面 |
+| D16 | 发布走严格 SemVer tag 触发流水线 | `.github/workflows/release.yml` 仅接受严格 `vX.Y.Z[-prerelease][+build]`；校验后显式传递二进制/MCPB 版本，按 SemVer prerelease 段判断预发布；统一 SHA256SUMS 覆盖归档和 MCPB，tar 固定 root 所有权 | 消除 `git describe` 推断、宽泛 `v*`、漏传 MCPB checksum 与构建机 uid/gid 带来的发布漂移 |
 | D17 | activeProfile 显式化 | 保留"首个 profile 自动成为 activeProfile"（配置契约要求多 profile 必有 active，且删掉就无法自举）；但 save_server（MCP/CLI）回显 `activeProfile`/`activeProfileChanged`，非 active 的保存带 `warning`；显式切换入口：`setActive=true`（MCP）/ `--set-active`、`sofarpc project use <project> <profile>`（CLI），底层 `appconfig.SetActiveProfile` | 2026-07-06 落地；消除"保存第二个 server 时路由已被首个 profile 静默决定"的陷阱 |
 | D18 | 平行实现采用单一所有者 | 项目/服务端选择由 `internal/app` 的 `SelectProject`/`SelectServer` 所有；Java base type/byte array 语义由 `internal/javavalue` 所有；app 内 RPC source type 解析由 `rpcTypeResolver` 所有；顶层/嵌套声明共享 `parseTypeDeclWithPreamble`；普通 MCP 工具错误统一经 `failureResult` 路由 | 2026-07-17 落地；规则跨层复制已经产生错误类型、数组、type-variable、`@interface` 和配置错误码漂移，单一 seam 让修改与回归测试落在同一位置 |
 | D19 | MCP 工具数据源统一经过 app.Service | `SourceIndex` 的 interface 为项目级 `Load`；invoke、describe、doctor 均通过同一个 `app.Service` 的 ConfigStore/SourceIndex adapter，tools 不直接打开全局 config 或 schema cache | 2026-07-17 落地；避免同一 MCP server 内注入 store/source 与默认磁盘数据源分叉 |
 | D20 | Hessian item budget 采用 2M/4M 分层上限 | 单容器最多 `2<<20` 项，单次解码累计最多 `4<<20` 项；仍叠加 16 MiB response、remaining-input、depth/ref 校验，不开放关闭预算的配置项 | 允许超过旧 100 万项阈值的合法大批量响应；按 64 位 interface slot 粗算，将单 slice/累计 slot 控制在约 32/64 MiB 起步范围，继续阻断小包诱导数十 GiB 分配 |
 | D21 | Parser 在 type-body member seam 做可观测恢复 | 成员解析失败后回滚到 checkpoint；仅能同步到顶层 `;`、平衡 member body 或 owner `}` 时继续，丢弃整个坏成员并产生 `ParseWarning`；结构不闭合和 lexer 错误仍为文件级 fatal；schema cache bump 到 v7 | 让单个不支持成员不再导致整文件消失，同时避免不安全同步生成半 AST；warning 经 Index/Describe 暴露 |
+| D22 | describe exampleArguments 使用全局节点预算 | 参数骨架保持 8 层深度上限，并对一次方法的全部顶层参数和递归分支共享 1024 节点预算；预算耗尽后停止展开宽 DTO，保留已生成的确定性前缀 | 深度限制不能约束浅层宽树；共享预算避免多参数分别重置后再次放大 |
 
 ## 未做事项（backlog，按价值排序）
 
@@ -40,12 +41,12 @@
 3. ~~mcp/tools 与 javavalue 补测~~：已完成（2026-07-06，tools 92.7%、javavalue 100%）。
 3a. ~~save_server 静默设置 activeProfile 的提示~~：已完成（2026-07-06，见 D17）。
 3b. ~~tools/helpers.go 与 app/resolve.go 的 resolveProject/resolveServer 双份实现~~：已完成（2026-07-17，扩展收敛 Java 类型语义、RPC 类型解析、声明解析与普通工具配置错误路由，见 D18）。
-4. **正式 `vX.Y.Z` Release**：目前全是 `v0.1.0-beta.X` 预发布 tag；install.sh 的 `releases/latest` 路径需要一个正式 Release 验证（release.yml 已就绪）。
-5. **golangci-lint**：本机未安装，暂未引入；引入时需先本地跑通再上 CI 门禁。
-6. probe 升级 BOLT 心跳（feature review #2）、describe `exampleArguments` 参数骨架（#4）、describe 跨项目搜索（#7）：C/D 档按需。
+4. ~~正式 `vX.Y.Z` Release~~：已完成；`v0.1.0`、`v0.1.1` 均为非 draft、非 prerelease 的正式 GitHub Release，`v0.1.1` 当前为 latest（2026-07-06）。
+5. ~~golangci-lint~~：已完成；`.golangci.yml` 与 CI 的 golangci-lint v2.12.2 门禁已落地，本地同版本验证为 0 issues（2026-07-18）。
+6. probe 升级 BOLT 心跳（feature review #2）、describe 跨项目搜索（#7）：C/D 档按需。describe `exampleArguments` 参数骨架及全局节点预算已完成（见 D22）。
 7. `sofarpc://projects` / `sofarpc://schema/{...}` resources：等宿主对 resources 的消费成熟再说。
 8. config_save_* 的 `IdempotentHint=true`（audit 可选项）。
-9. Windows 真实 CI（当前仅交叉编译 + macOS/ubuntu 矩阵）；install.ps1 无自动化测试。
+9. ~~Windows 真实 CI~~：已完成；CI 使用 ubuntu/macOS/Windows 三平台真实矩阵，Windows 运行 install.ps1 smoke，三平台均执行 build/vet/race test 与 BOLT oracle。
 10. 类型兼容矩阵长尾（Enum 无 schema、provider 扩展、远端异常展开）：见 compatibility-matrix.md。
 
 ## 历史文档状态

@@ -746,6 +746,16 @@ func TestParseUnbalancedMemberBodyRemainsFatal(t *testing.T) {
 	}
 }
 
+func TestParseRecoveryDoesNotSwallowFollowingMemberAfterMissingSemicolon(t *testing.T) {
+	src := `class Sample {
+		Outer<String>.Inner<Integer> broken
+		void good() {}
+	}`
+	if cu, err := Parse([]byte(src), "T.java"); err == nil || cu != nil {
+		t.Fatalf("ambiguous recovery must remain fatal instead of swallowing good(), cu=%+v err=%v", cu, err)
+	}
+}
+
 func TestParseTypeBodyEnumStubSkips(t *testing.T) {
 	cu, err := Parse([]byte("enum Color { RED, GREEN, BLUE; public String code() { return name(); } }"), "T.java")
 	if err != nil {

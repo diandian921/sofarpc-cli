@@ -26,31 +26,31 @@ import (
 // CanonicalizeSpecialScalar validates a java.time / BigInteger value and returns
 // its canonical string form — the exact form the writer re-parses when encoding
 // (java.time: the trimmed ISO-8601 string; BigInteger: the decimal string). It
-// returns ok=false if value is not a valid instance of javaType. The app layer
-// calls this for plan-time validation so a malformed value is rejected before any
-// request is sent, without the app layer needing any java.time / big.Int parsing
-// of its own. Reusing the writer's own parse guarantees "canonicalize ok" implies
-// "the writer will encode it".
-func CanonicalizeSpecialScalar(javaType string, value interface{}) (string, bool) {
+// returns supported=false for an ordinary Java type, and supported=true with
+// valid=false when javaType is special but value is malformed. The explicit
+// three-state result lets callers discover support without maintaining a second
+// type list. Reusing the writer's own parse guarantees "valid" implies "the
+// writer will encode it".
+func CanonicalizeSpecialScalar(javaType string, value interface{}) (canonical string, supported, valid bool) {
 	switch javaType {
 	case "java.time.LocalDate", "java.time.LocalDateTime", "java.time.LocalTime", "java.time.Instant":
 		s, ok := value.(string)
 		if !ok {
-			return "", false
+			return "", true, false
 		}
 		s = strings.TrimSpace(s)
 		if _, ok := javaTimeHandleValue(javaType, s); ok {
-			return s, true
+			return s, true, true
 		}
-		return "", false
+		return "", true, false
 	case "java.math.BigInteger":
 		n, ok := parseBigInt(value)
 		if !ok {
-			return "", false
+			return "", true, false
 		}
-		return n.String(), true
+		return n.String(), true, true
 	}
-	return "", false
+	return "", false, false
 }
 
 func hessianIntField(n int) javavalue.TypedValue {

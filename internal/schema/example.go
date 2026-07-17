@@ -5,7 +5,27 @@ import "strings"
 // exampleMaxDepth is a final backstop against pathological DTO nesting; the
 // path-scoped seen set (below) already cuts real cycles, this only guards against
 // anything the seen set misses.
-const exampleMaxDepth = 8
+const (
+	exampleMaxDepth = 8
+	// exampleMaxNodes bounds the complete skeleton, across every top-level
+	// parameter and recursive branch. Depth alone does not protect against a
+	// shallow DTO with thousands of fields.
+	exampleMaxNodes = 1024
+)
+
+type exampleTraversal struct {
+	idx       *Index
+	remaining int
+	seen      map[string]bool
+}
+
+func (t *exampleTraversal) takeNode() bool {
+	if t.remaining <= 0 {
+		return false
+	}
+	t.remaining--
+	return true
+}
 
 // ExampleArgumentsFor builds a named example-argument skeleton for a method:
 // { paramName: <placeholder shaped like the parameter type> }. Placeholders are
@@ -21,43 +41,46 @@ func ExampleArgumentsFor(idx *Index, method Method) map[string]interface{} {
 	if len(method.Parameters) == 0 {
 		return nil
 	}
+	traversal := &exampleTraversal{
+		idx:       idx,
+		remaining: exampleMaxNodes,
+		seen:      map[string]bool{},
+	}
 	out := make(map[string]interface{}, len(method.Parameters))
 	for _, p := range method.Parameters {
-		// Each top-level parameter gets a fresh seen set: two params of the same
-		// DTO type must both expand.
-		out[p.Name] = exampleValue(idx, p.Type, method.Package, method.Imports, map[string]bool{}, 0)
+		out[p.Name] = traversal.value(p.Type, method.Package, method.Imports, 0)
 	}
 	return out
 }
 
-func exampleValue(idx *Index, typ, pkg string, imports map[string]string, seen map[string]bool, depth int) interface{} {
-	if depth > exampleMaxDepth {
+func (t *exampleTraversal) value(typ, pkg string, imports map[string]string, depth int) interface{} {
+	if depth > exampleMaxDepth || !t.takeNode() {
 		return nil
 	}
-	t := cleanType(typ)
-	if t == "" {
+	javaType := cleanType(typ)
+	if javaType == "" {
 		return nil
 	}
 	// Arrays: byte[] is Hessian binary (a string placeholder); other X[] -> [X].
-	if strings.HasSuffix(t, "[]") {
-		elem := strings.TrimSpace(strings.TrimSuffix(t, "[]"))
+	if strings.HasSuffix(javaType, "[]") {
+		elem := strings.TrimSpace(strings.TrimSuffix(javaType, "[]"))
 		if shortName(elem) == "byte" || shortName(elem) == "Byte" {
 			return ""
 		}
-		return []interface{}{exampleValue(idx, elem, pkg, imports, seen, depth+1)}
+		return []interface{}{t.value(elem, pkg, imports, depth+1)}
 	}
-	base := eraseGeneric(t)
+	base := eraseGeneric(javaType)
 	// Collections -> [element]; maps -> {} (keys are runtime-specific, leave empty).
 	if isCollectionType(base) {
-		if args := genericArgs(t); len(args) >= 1 {
-			return []interface{}{exampleValue(idx, args[len(args)-1], pkg, imports, seen, depth+1)}
+		if args := genericArgs(javaType); len(args) >= 1 {
+			return []interface{}{t.value(args[len(args)-1], pkg, imports, depth+1)}
 		}
 		return []interface{}{}
 	}
 	if isMapType(base) {
 		return map[string]interface{}{}
 	}
-	resolved, ok := resolveType(idx, base, pkg, imports)
+	resolved, ok := resolveType(t.idx, base, pkg, imports)
 	if !ok {
 		return nil
 	}
@@ -76,17 +99,20 @@ func exampleValue(idx *Index, typ, pkg string, imports map[string]string, seen m
 		return ""
 	case "class":
 		fqn := resolved.Type
-		if seen[fqn] {
+		if t.seen[fqn] {
 			return nil // ancestor cycle: cut with null
 		}
-		seen[fqn] = true
-		defer delete(seen, fqn)
+		t.seen[fqn] = true
+		defer delete(t.seen, fqn)
 		obj := make(map[string]interface{})
-		for _, of := range exampleFields(idx, resolved, map[string]bool{}) {
+		for _, of := range exampleFields(t.idx, resolved, map[string]bool{}) {
+			if t.remaining <= 0 {
+				break
+			}
 			if _, dup := obj[of.field.Name]; dup {
 				continue
 			}
-			obj[of.field.Name] = exampleValue(idx, of.field.Type, of.pkg, of.imports, seen, depth+1)
+			obj[of.field.Name] = t.value(of.field.Type, of.pkg, of.imports, depth+1)
 		}
 		return obj
 	default: // external / unresolved DTO — cannot expand

@@ -112,15 +112,16 @@ func validMapKeyScalar(javaType string, value interface{}) bool {
 // firstMalformedSpecial returns the java type of the first special-typed scalar
 // that fails validation (recursing into DTO fields, list items, and map entries),
 // or "". A special value is now carried as a neutral scalar, so "malformed" means
-// direct.CanonicalizeSpecialScalar rejects it; a valid one canonicalizes cleanly.
+// direct.CanonicalizeSpecialScalar reports it as supported but invalid; a valid
+// one canonicalizes cleanly. Ordinary scalar types report supported=false.
 func firstMalformedSpecial(v javavalue.TypedValue) string {
 	switch v.Kind {
 	case javavalue.KindScalar:
 		if v.Scalar == nil {
 			return ""
 		}
-		if isSpecialEncodedType(v.JavaType) {
-			if _, ok := direct.CanonicalizeSpecialScalar(v.JavaType, v.Scalar); !ok {
+		if _, supported, valid := direct.CanonicalizeSpecialScalar(v.JavaType, v.Scalar); supported {
+			if !valid {
 				return v.JavaType
 			}
 			return ""
@@ -152,17 +153,6 @@ func firstMalformedSpecial(v javavalue.TypedValue) string {
 		}
 	}
 	return ""
-}
-
-// isSpecialEncodedType lists the types the direct writer shapes specially. It
-// must stay in sync with direct.CanonicalizeSpecialScalar's switch.
-func isSpecialEncodedType(javaType string) bool {
-	switch javaType {
-	case "java.time.LocalDate", "java.time.LocalDateTime", "java.time.LocalTime",
-		"java.time.Instant", "java.math.BigInteger":
-		return true
-	}
-	return false
 }
 
 func isEpochMillisScalar(value interface{}) bool {
