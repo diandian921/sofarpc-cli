@@ -82,3 +82,26 @@ bash scripts/oracle-gate.sh
 - 全量、race、Windows、双 oracle 通过；
 - Goal 完成并推送当前分支；
 - 用户原有未跟踪文档保持原状。
+
+## 8. 实施记录
+
+| Phase | 提交 | 状态 |
+| --- | --- | --- |
+| 设计与计划 | `853c714` | 完成 |
+| app.Service 数据源一致性 | `51b587a` | 完成；app/mcp/tools 聚焦测试与注入端到端测试通过 |
+| Hessian 大批量预算 | `b073493` | 完成；direct 普通/race 与跨旧阈值实际解码通过 |
+| Parser 成员恢复 | `31cfeec` | 完成；parser/schema/tools 普通与 race 测试通过 |
+
+最终验证（2026-07-17）：
+
+| 命令 | 结果 |
+| --- | --- |
+| `git diff --check` | 通过 |
+| `go vet ./...` | 通过 |
+| `go test ./...` | 通过 |
+| `go test -race ./...` | 通过 |
+| `GOOS=windows GOARCH=amd64 go build ./...` | 通过 |
+| `go -C oracletest test -race -tags bolt_oracle ./...` | 通过 |
+| `bash scripts/oracle-gate.sh` | 通过；Hessian JVM 与 BOLT real oracle 均验证成功 |
+
+原有六份未跟踪历史文档未修改、未暂存、未提交。

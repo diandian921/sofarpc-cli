@@ -241,3 +241,6 @@ resolve、invoke/invoke_plan、describe 及其它普通配置读取出口统一�
 最终门禁全部通过：`go vet ./...`、`go test ./...`、`go test -race ./...`、Windows amd64 交叉构建、
 BOLT race oracle，以及 `scripts/oracle-gate.sh` 的 Hessian JVM/BOLT 真实兼容性校验。工作区原有六份
 未跟踪历史文档未被修改或提交。
+
+> 后续状态（2026-07-17）：本设计第 9 节延后的 Parser member recovery、Hessian item budget 和
+> describe/doctor SourceIndex 注入已在 `docs/deferred-resilience-completion-design.md` 对应 Goal 中完成。

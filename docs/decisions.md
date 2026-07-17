@@ -29,6 +29,9 @@
 | D16 | 发布走 tag 触发流水线 | `.github/workflows/release.yml` 复用 package.sh/build-mcpb.sh 自动建 Release 上传产物；含 `-` 的 tag 标 prerelease | 消除人工上传的 checksum 出错面 |
 | D17 | activeProfile 显式化 | 保留"首个 profile 自动成为 activeProfile"（配置契约要求多 profile 必有 active，且删掉就无法自举）；但 save_server（MCP/CLI）回显 `activeProfile`/`activeProfileChanged`，非 active 的保存带 `warning`；显式切换入口：`setActive=true`（MCP）/ `--set-active`、`sofarpc project use <project> <profile>`（CLI），底层 `appconfig.SetActiveProfile` | 2026-07-06 落地；消除"保存第二个 server 时路由已被首个 profile 静默决定"的陷阱 |
 | D18 | 平行实现采用单一所有者 | 项目/服务端选择由 `internal/app` 的 `SelectProject`/`SelectServer` 所有；Java base type/byte array 语义由 `internal/javavalue` 所有；app 内 RPC source type 解析由 `rpcTypeResolver` 所有；顶层/嵌套声明共享 `parseTypeDeclWithPreamble`；普通 MCP 工具错误统一经 `failureResult` 路由 | 2026-07-17 落地；规则跨层复制已经产生错误类型、数组、type-variable、`@interface` 和配置错误码漂移，单一 seam 让修改与回归测试落在同一位置 |
+| D19 | MCP 工具数据源统一经过 app.Service | `SourceIndex` 的 interface 为项目级 `Load`；invoke、describe、doctor 均通过同一个 `app.Service` 的 ConfigStore/SourceIndex adapter，tools 不直接打开全局 config 或 schema cache | 2026-07-17 落地；避免同一 MCP server 内注入 store/source 与默认磁盘数据源分叉 |
+| D20 | Hessian item budget 采用 2M/4M 分层上限 | 单容器最多 `2<<20` 项，单次解码累计最多 `4<<20` 项；仍叠加 16 MiB response、remaining-input、depth/ref 校验，不开放关闭预算的配置项 | 允许超过旧 100 万项阈值的合法大批量响应；按 64 位 interface slot 粗算，将单 slice/累计 slot 控制在约 32/64 MiB 起步范围，继续阻断小包诱导数十 GiB 分配 |
+| D21 | Parser 在 type-body member seam 做可观测恢复 | 成员解析失败后回滚到 checkpoint；仅能同步到顶层 `;`、平衡 member body 或 owner `}` 时继续，丢弃整个坏成员并产生 `ParseWarning`；结构不闭合和 lexer 错误仍为文件级 fatal；schema cache bump 到 v7 | 让单个不支持成员不再导致整文件消失，同时避免不安全同步生成半 AST；warning 经 Index/Describe 暴露 |
 
 ## 未做事项（backlog，按价值排序）
 

@@ -171,3 +171,16 @@ Parser 恢复会让过去被整个跳过的文件产生新 schema，因此 `inde
 - cache version 已 bump，正常 AST/schema/MCP wire 契约无漂移。
 - `go vet ./...`、全量、race、Windows build、BOLT oracle、Hessian JVM oracle 全部通过。
 - 原有六份未跟踪历史文档不被修改或提交。
+
+## 9. 实施结果
+
+| 范围 | 提交 | 结果 |
+| --- | --- | --- |
+| app.Service 数据源注入 | `51b587a` | describe/doctor 与 invoke 共用 ConfigStore/SourceIndex；损坏磁盘配置 + 内存 adapter 的 MCP 测试通过 |
+| Hessian item budget | `b073493` | 单容器/累计上限调整为 2M/4M；1,048,577 项实际 compact list 解码通过，新累计上限继续拒绝 |
+| Parser member recovery | `31cfeec` | class/interface/annotation/nested type 可安全同步；warning 贯通 schema/MCP describe；cache v7 重建 |
+
+全部停止条件均未触发。Parser 恢复保持在 type-body member seam；lexer 错误和结构不闭合仍 fatal。
+
+最终门禁全部通过：`git diff --check`、`go vet ./...`、`go test ./...`、`go test -race ./...`、Windows
+amd64 交叉构建、BOLT race oracle，以及 Hessian JVM/BOLT real oracle gate。
