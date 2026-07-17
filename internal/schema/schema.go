@@ -74,9 +74,11 @@ type Description struct {
 }
 
 type Index struct {
-	Project Project
-	Methods []Method
-	Types   map[string]TypeSchema
+	Project     Project
+	Methods     []Method
+	Types       map[string]TypeSchema
+	Warnings    []string
+	SourceRoots []string
 }
 
 // BuildIndex 走 2 pass:
@@ -91,12 +93,13 @@ func BuildIndex(project Project) (*Index, error) {
 	if err != nil {
 		return nil, err
 	}
-	idx := &Index{Project: project, Types: map[string]TypeSchema{}}
+	idx := &Index{Project: project, Types: map[string]TypeSchema{}, SourceRoots: append([]string(nil), roots...)}
 
-	parsed, topLevelFQNs, err := gatherCompilationUnits(roots)
+	parsed, topLevelFQNs, warnings, err := gatherCompilationUnits(roots)
 	if err != nil {
 		return nil, err
 	}
+	idx.Warnings = warnings
 
 	for _, p := range parsed {
 		methods, types := adaptCompilationUnit(p.cu, p.path, p.body, project.ServicePrefixes, topLevelFQNs)
@@ -127,17 +130,18 @@ type parsedFile struct {
 }
 
 // gatherCompilationUnits 是 BuildIndex 的 Pass 1。
-// 遍历所有 source root,parse 每个 .java 文件;失败 file 静默跳过(对齐老 parseJavaFile
-// 在 os.ReadFile 错误时 return nil, nil 行为 —— codex review #3:syntax 错误也静默跳过,
-// **不向 caller 报告**;若未来要 logging 加观测,在这一层加 callback,本 plan 暂不引入)。
+// 遍历所有 source root 并 parse 每个 .java 文件。单文件读取/解析失败不阻断其余
+// 文件，但会作为 warning 返回并最终通过 Index/Description 暴露给调用方。
 //
 // 收集顶层 type FQN 进 topLevelFQNs(用于 wildcard import 展开);nested 不在 topLevel。
-func gatherCompilationUnits(roots []string) ([]parsedFile, map[string]bool, error) {
+func gatherCompilationUnits(roots []string) ([]parsedFile, map[string]bool, []string, error) {
 	var parsed []parsedFile
+	var warnings []string
 	topLevelFQNs := map[string]bool{}
 	for _, root := range roots {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("skip %s: %v", path, err))
 				return nil
 			}
 			if d.IsDir() {
@@ -151,10 +155,15 @@ func gatherCompilationUnits(roots []string) ([]parsedFile, map[string]bool, erro
 			}
 			body, readErr := os.ReadFile(path)
 			if readErr != nil {
+				warnings = append(warnings, fmt.Sprintf("skip %s: %v", path, readErr))
 				return nil
 			}
 			cu, parseErr := javaparser.Parse(body, path)
 			if parseErr != nil || cu == nil {
+				if parseErr == nil {
+					parseErr = fmt.Errorf("parser returned no compilation unit")
+				}
+				warnings = append(warnings, fmt.Sprintf("skip %s: %v", path, parseErr))
 				return nil
 			}
 			if cu.Package != nil {
@@ -166,10 +175,10 @@ func gatherCompilationUnits(roots []string) ([]parsedFile, map[string]bool, erro
 			return nil
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
-	return parsed, topLevelFQNs, nil
+	return parsed, topLevelFQNs, warnings, nil
 }
 
 func DiscoverSourceRoots(workspace string) ([]string, error) {
@@ -213,22 +222,27 @@ func DiscoverSourceRoots(workspace string) ([]string, error) {
 }
 
 func Describe(idx *Index, service string, methodFilter string) (Description, error) {
-	desc := Description{Service: service, Types: map[string]TypeSchema{}, Stats: map[string]interface{}{}}
+	desc := Description{
+		Service: service, Types: map[string]TypeSchema{}, Stats: map[string]interface{}{},
+		Warnings: append([]string(nil), idx.Warnings...), SourceRoot: idx.Project.WorkspaceRoot,
+	}
+	serviceFound := false
 	for _, method := range idx.Methods {
 		if method.Service != service {
 			continue
 		}
+		serviceFound = true
 		if methodFilter != "" && method.Method != methodFilter {
 			continue
 		}
 		desc.Methods = append(desc.Methods, method)
-		for _, typ := range referencedTypes(method.ReturnType) {
+		for _, typ := range referencedMethodTypes(method, method.ReturnType) {
 			if schema, ok := resolveType(idx, typ, method.Package, method.Imports); ok {
 				addDescribedType(idx, desc.Types, schema)
 			}
 		}
 		for _, p := range method.Parameters {
-			for _, typ := range referencedTypes(p.Type) {
+			for _, typ := range referencedMethodTypes(method, p.Type) {
 				if schema, ok := resolveType(idx, typ, method.Package, method.Imports); ok {
 					addDescribedType(idx, desc.Types, schema)
 				}
@@ -236,10 +250,14 @@ func Describe(idx *Index, service string, methodFilter string) (Description, err
 		}
 	}
 	if len(desc.Methods) == 0 {
+		if serviceFound && methodFilter != "" {
+			return desc, fmt.Errorf("method %q not found in service %q", methodFilter, service)
+		}
 		return desc, fmt.Errorf("service %q not found", service)
 	}
 	desc.Stats["methodCount"] = len(desc.Methods)
 	desc.Stats["typeCount"] = len(desc.Types)
+	desc.Stats["warningCount"] = len(desc.Warnings)
 	return desc, nil
 }
 
@@ -317,7 +335,7 @@ func referencedTypes(typ string) []string {
 		}
 		token := string(current)
 		current = nil
-		if token == "" || seen[token] || isBuiltin(token) {
+		if token == "" || token == "extends" || token == "super" || seen[token] || isBuiltin(token) {
 			return
 		}
 		seen[token] = true
@@ -331,6 +349,21 @@ func referencedTypes(typ string) []string {
 		}
 	}
 	flush()
+	return out
+}
+
+func referencedMethodTypes(method Method, typ string) []string {
+	excluded := make(map[string]bool, len(method.TypeParams))
+	for _, name := range method.TypeParams {
+		excluded[name] = true
+	}
+	refs := referencedTypes(typ)
+	out := refs[:0]
+	for _, ref := range refs {
+		if !excluded[ref] {
+			out = append(out, ref)
+		}
+	}
 	return out
 }
 

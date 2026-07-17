@@ -60,7 +60,7 @@ public class UserDTO {
 	}
 	results := Search(idx, "查询用户", 5, false)
 	if len(results) != 1 {
-		t.Fatalf("results = %#v", results)
+		t.Fatalf("results = %#v; methods = %#v; warnings = %#v", results, idx.Methods, idx.Warnings)
 	}
 	desc, err := Describe(idx, "com.example.user.UserService", "getUser")
 	if err != nil {
@@ -71,6 +71,51 @@ public class UserDTO {
 	}
 	if typ, ok := desc.Types["com.example.user.UserDTO"]; !ok || len(typ.Fields) != 2 {
 		t.Fatalf("missing DTO fields: %#v", desc.Types)
+	}
+}
+
+func TestDescribeDistinguishesMissingMethodAndFiltersPseudoTypes(t *testing.T) {
+	idx := &Index{
+		Project: Project{WorkspaceRoot: "/workspace"},
+		Methods: []Method{{
+			Service: "com.x.Facade", Method: "echo", Package: "com.x",
+			ReturnType: "List<? extends UserDTO>",
+			Parameters: []Parameter{{Name: "value", Type: "T"}},
+			TypeParams: []string{"T"},
+		}},
+		Types: map[string]TypeSchema{"com.x.UserDTO": {Type: "com.x.UserDTO", Kind: "class"}},
+	}
+	desc, err := Describe(idx, "com.x.Facade", "echo")
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if _, ok := desc.Types["extends"]; ok {
+		t.Fatalf("wildcard keyword leaked into types: %#v", desc.Types)
+	}
+	if _, ok := desc.Types["T"]; ok {
+		t.Fatalf("method type variable leaked into types: %#v", desc.Types)
+	}
+	if _, ok := desc.Types["com.x.UserDTO"]; !ok {
+		t.Fatalf("UserDTO missing from types: %#v", desc.Types)
+	}
+	if _, err := Describe(idx, "com.x.Facade", "missing"); err == nil || !strings.Contains(err.Error(), "method \"missing\" not found") {
+		t.Fatalf("err = %v, want method-not-found error", err)
+	}
+}
+
+func TestDescribeIncludesIndexWarnings(t *testing.T) {
+	idx := &Index{
+		Project:  Project{WorkspaceRoot: "/workspace"},
+		Methods:  []Method{{Service: "com.x.Facade", Method: "ok"}},
+		Types:    map[string]TypeSchema{},
+		Warnings: []string{"skip Broken.java: parse error"},
+	}
+	desc, err := Describe(idx, "com.x.Facade", "ok")
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if len(desc.Warnings) != 1 || desc.SourceRoot != "/workspace" || desc.Stats["warningCount"] != 1 {
+		t.Fatalf("description observability = %#v", desc)
 	}
 }
 

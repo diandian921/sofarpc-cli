@@ -781,11 +781,10 @@ func skipFieldInitializer(c *cursor) error {
 		tok := c.peek()
 		switch tok.Kind {
 		case TokenSemicolon:
-			if angleDepth == 0 {
-				return nil
-			}
-			c.consume()
-			prevKind = tok.Kind
+			// A field declaration always terminates at a top-level semicolon.
+			// Parenthesized/lambda/anonymous-class bodies are already skipped as
+			// balanced units, so a stale generic heuristic must not consume it.
+			return nil
 		case TokenComma:
 			if angleDepth == 0 {
 				return nil

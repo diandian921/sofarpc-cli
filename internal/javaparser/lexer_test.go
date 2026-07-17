@@ -93,6 +93,38 @@ func TestTokenizeIdentifierAndKeyword(t *testing.T) {
 	}
 }
 
+func TestTokenizeBOMUnicodeIdentifiersAndFormFeed(t *testing.T) {
+	tokens, err := Tokenize([]byte("\xef\xbb\xbfclass\f用户服务 { String 名称; }"))
+	if err != nil {
+		t.Fatalf("Tokenize: %v", err)
+	}
+	var values []string
+	for _, tok := range tokens {
+		if tok.Kind == TokenIdent || tok.Kind == TokenKeyword {
+			values = append(values, tok.Value)
+		}
+	}
+	want := []string{"class", "用户服务", "String", "名称"}
+	if !equalStrings(values, want) {
+		t.Fatalf("identifiers = %#v, want %#v", values, want)
+	}
+	if tokens[1].Col != 7 {
+		t.Fatalf("Unicode identifier col = %d, want rune-based column 7", tokens[1].Col)
+	}
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestTokenizeLiterals(t *testing.T) {
 	cases := []struct {
 		src  string

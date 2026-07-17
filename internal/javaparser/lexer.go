@@ -1,8 +1,11 @@
 package javaparser
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 type lexer struct {
@@ -14,6 +17,9 @@ type lexer struct {
 
 func Tokenize(src []byte) ([]Token, error) {
 	l := &lexer{src: src, pos: 0, line: 1, col: 1}
+	if bytes.HasPrefix(src, []byte{0xef, 0xbb, 0xbf}) {
+		l.pos = 3
+	}
 	var out []Token
 	for {
 		l.skipWhitespace()
@@ -34,7 +40,7 @@ func (l *lexer) skipWhitespace() {
 	for l.pos < len(l.src) {
 		c := l.src[l.pos]
 		switch c {
-		case ' ', '\t', '\r':
+		case ' ', '\t', '\r', '\f':
 			l.advance()
 		case '\n':
 			l.pos++
@@ -48,7 +54,11 @@ func (l *lexer) skipWhitespace() {
 
 func (l *lexer) advance() {
 	if l.pos < len(l.src) {
-		l.pos++
+		_, size := utf8.DecodeRune(l.src[l.pos:])
+		if size == 0 {
+			size = 1
+		}
+		l.pos += size
 		l.col++
 	}
 }
@@ -71,7 +81,8 @@ func (l *lexer) next() (Token, error) {
 		return l.readBlockOrJavadoc(startLine, startCol, startOff)
 	}
 
-	if isIdentStart(c) {
+	r, _ := utf8.DecodeRune(l.src[l.pos:])
+	if isIdentStart(r) {
 		return l.readIdent(startLine, startCol, startOff), nil
 	}
 
@@ -123,17 +134,21 @@ func (l *lexer) next() (Token, error) {
 	return Token{Kind: TokenOther, Value: string(c), Line: startLine, Col: startCol, Off: startOff}, nil
 }
 
-func isIdentStart(c byte) bool {
-	return c == '_' || c == '$' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+func isIdentStart(r rune) bool {
+	return r == '_' || r == '$' || unicode.IsLetter(r) || unicode.In(r, unicode.Nl, unicode.Sc, unicode.Pc)
 }
 
-func isIdentPart(c byte) bool {
-	return isIdentStart(c) || (c >= '0' && c <= '9')
+func isIdentPart(r rune) bool {
+	return isIdentStart(r) || unicode.IsDigit(r) || unicode.In(r, unicode.Mn, unicode.Mc, unicode.Cf)
 }
 
 func (l *lexer) readIdent(line, col, off int) Token {
 	start := l.pos
-	for l.pos < len(l.src) && isIdentPart(l.src[l.pos]) {
+	for l.pos < len(l.src) {
+		r, _ := utf8.DecodeRune(l.src[l.pos:])
+		if !isIdentPart(r) {
+			break
+		}
 		l.advance()
 	}
 	value := string(l.src[start:l.pos])

@@ -3,6 +3,7 @@ package schema
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/diandian921/sofarpc-mcp/internal/javaparser"
@@ -663,7 +664,7 @@ func mustWriteFile(t *testing.T, path, body string) {
 	}
 }
 
-func TestBuildIndexSilentlySkipsMalformedFiles(t *testing.T) {
+func TestBuildIndexSurfacesMalformedFileWarnings(t *testing.T) {
 	tmp := t.TempDir()
 	mustWriteFile(t, filepath.Join(tmp, "src/main/java/com/x/Good.java"), `package com.x;
 public class Good { public String name; }`)
@@ -680,6 +681,26 @@ public class Broken {
 		t.Errorf("Good.java should still be indexed: %+v", idx.Types)
 	}
 	if _, ok := idx.Types["com.x.Broken"]; ok {
-		t.Errorf("Broken.java should be silently skipped (no schema), got %+v", idx.Types["com.x.Broken"])
+		t.Errorf("Broken.java should be skipped (no schema), got %+v", idx.Types["com.x.Broken"])
+	}
+	if len(idx.Warnings) != 1 || !strings.Contains(idx.Warnings[0], "Broken.java") {
+		t.Fatalf("warnings = %#v, want Broken.java parse warning", idx.Warnings)
+	}
+}
+
+func TestBuildIndexKeepsFieldAfterComparisonInitializer(t *testing.T) {
+	tmp := t.TempDir()
+	mustWriteFile(t, filepath.Join(tmp, "src/main/java/com/x/CompareDTO.java"), `package com.x;
+public class CompareDTO {
+	boolean small = size < limit;
+	String name;
+}`)
+	idx, err := BuildIndex(Project{Name: "compare", WorkspaceRoot: tmp})
+	if err != nil {
+		t.Fatalf("BuildIndex: %v", err)
+	}
+	typ := idx.Types["com.x.CompareDTO"]
+	if len(typ.Fields) != 2 || typ.Fields[1].Name != "name" {
+		t.Fatalf("fields = %#v, want comparison field and trailing name", typ.Fields)
 	}
 }
