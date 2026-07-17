@@ -641,6 +641,29 @@ func TestParseTypeBodyEmpty(t *testing.T) {
 	}
 }
 
+func TestParseNestedAnnotationDeclarationUsesStrictKeyword(t *testing.T) {
+	src := `class Outer {
+		public @interface Marker {}
+	}`
+	cu, err := Parse([]byte(src), "T.java")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	nested := cu.Types[0].NestedTypes
+	if len(nested) != 1 || nested[0].Kind != TypeKindAnnotation || nested[0].Name != "Marker" {
+		t.Fatalf("nested annotation = %+v", nested)
+	}
+}
+
+func TestParseMalformedNestedAtKeywordIsNotAnnotationDeclaration(t *testing.T) {
+	for _, keyword := range []string{"class", "record"} {
+		src := "class Outer { public @" + keyword + " Nope {} }"
+		if _, err := Parse([]byte(src), "T.java"); err == nil {
+			t.Errorf("@%s must not be consumed as an annotation declaration", keyword)
+		}
+	}
+}
+
 func TestParseTypeBodyEnumStubSkips(t *testing.T) {
 	cu, err := Parse([]byte("enum Color { RED, GREEN, BLUE; public String code() { return name(); } }"), "T.java")
 	if err != nil {

@@ -106,111 +106,7 @@ func parseTypeDecl(c *cursor) (TypeDecl, error) {
 	if err != nil {
 		return TypeDecl{}, err
 	}
-
-	startPos := c.pos()
-	tok := c.peek()
-
-	// 识别 type kind
-	var kind TypeKind
-	switch {
-	case tok.Kind == TokenKeyword && tok.Value == "class":
-		kind = TypeKindClass
-		c.consume()
-	case tok.Kind == TokenKeyword && tok.Value == "interface":
-		kind = TypeKindInterface
-		c.consume()
-	case tok.Kind == TokenKeyword && tok.Value == "enum":
-		kind = TypeKindEnum
-		c.consume()
-	case tok.Kind == TokenKeyword && tok.Value == "record":
-		kind = TypeKindRecord
-		c.consume()
-	case tok.Kind == TokenAt && c.peekN(1).Kind == TokenKeyword && c.peekN(1).Value == "interface":
-		kind = TypeKindAnnotation
-		c.consume() // @
-		c.consume() // interface
-	default:
-		return TypeDecl{}, parseError(startPos, "expected type keyword (class/interface/enum/record/@interface), got %s %q", tok.Kind, tok.Value)
-	}
-
-	nameTok, err := expectIdentLike(c, "type name")
-	if err != nil {
-		return TypeDecl{}, err
-	}
-
-	decl := TypeDecl{
-		Kind:        kind,
-		Modifiers:   pre.Modifiers,
-		Annotations: pre.Annotations,
-		Javadoc:     pre.Javadoc,
-		Name:        nameTok.Value,
-		Pos:         startPos,
-	}
-
-	// declared type params
-	tparams, err := parseTypeParams(c)
-	if err != nil {
-		return TypeDecl{}, err
-	}
-	decl.TypeParams = tparams
-
-	// record header(必须紧跟 type params 之后,在 extends/implements 之前)
-	if kind == TypeKindRecord {
-		if c.peek().Kind != TokenLParen {
-			return TypeDecl{}, parseError(c.pos(), "record %s missing header parameter list", decl.Name)
-		}
-		comps, err := parseRecordHeader(c)
-		if err != nil {
-			return TypeDecl{}, err
-		}
-		decl.RecordComponents = comps
-	}
-
-	// extends / implements / permits
-	for {
-		tok := c.peek()
-		if tok.Kind != TokenKeyword {
-			break
-		}
-		switch tok.Value {
-		case "extends":
-			c.consume()
-			refs, err := parseTypeRefList(c)
-			if err != nil {
-				return TypeDecl{}, err
-			}
-			decl.Extends = refs
-		case "implements":
-			c.consume()
-			refs, err := parseTypeRefList(c)
-			if err != nil {
-				return TypeDecl{}, err
-			}
-			decl.Implements = refs
-		case "permits":
-			c.consume()
-			refs, err := parseTypeRefList(c)
-			if err != nil {
-				return TypeDecl{}, err
-			}
-			decl.Permits = refs
-		default:
-			goto bodyStart
-		}
-	}
-bodyStart:
-
-	// Enter body
-	if _, err := c.expect(TokenLBrace, "{"); err != nil {
-		return TypeDecl{}, err
-	}
-	if err := parseTypeBody(c, &decl); err != nil {
-		return TypeDecl{}, err
-	}
-	if _, err := c.expect(TokenRBrace, "}"); err != nil {
-		return TypeDecl{}, err
-	}
-	return decl, nil
+	return parseTypeDeclWithPreamble(c, pre)
 }
 
 // parseTypeRefList 解析逗号分隔的 TypeRef 序列(用于 extends/implements/permits/throws)。
@@ -381,8 +277,8 @@ func peekIsNestedTypeStart(c *cursor) bool {
 	return false
 }
 
-// parseTypeDeclWithPreamble 复用 parseTypeDecl 流程,但 preamble 已经在外部消费。
-// 实现:把 pre 写进 decl 字段,然后从 type keyword 开始走 parseTypeDecl body 部分。
+// parseTypeDeclWithPreamble 是顶层和嵌套 type declaration 的共享解析主体。
+// 调用时 preamble 已消费,当前位置必须是严格的 type keyword。
 func parseTypeDeclWithPreamble(c *cursor, pre preamble) (TypeDecl, error) {
 	startPos := c.pos()
 	tok := c.peek()
@@ -400,12 +296,12 @@ func parseTypeDeclWithPreamble(c *cursor, pre preamble) (TypeDecl, error) {
 	case tok.Kind == TokenKeyword && tok.Value == "record":
 		kind = TypeKindRecord
 		c.consume()
-	case tok.Kind == TokenAt:
+	case tok.Kind == TokenAt && c.peekN(1).Kind == TokenKeyword && c.peekN(1).Value == "interface":
 		kind = TypeKindAnnotation
 		c.consume()
 		c.consume()
 	default:
-		return TypeDecl{}, parseError(startPos, "expected nested type keyword, got %s %q", tok.Kind, tok.Value)
+		return TypeDecl{}, parseError(startPos, "expected type keyword (class/interface/enum/record/@interface), got %s %q", tok.Kind, tok.Value)
 	}
 	nameTok, err := expectIdentLike(c, "type name")
 	if err != nil {
@@ -426,7 +322,7 @@ func parseTypeDeclWithPreamble(c *cursor, pre preamble) (TypeDecl, error) {
 	decl.TypeParams = tparams
 	if kind == TypeKindRecord {
 		if c.peek().Kind != TokenLParen {
-			return TypeDecl{}, parseError(c.pos(), "record %s missing header", decl.Name)
+			return TypeDecl{}, parseError(c.pos(), "record %s missing header parameter list", decl.Name)
 		}
 		comps, err := parseRecordHeader(c)
 		if err != nil {
