@@ -16,7 +16,7 @@ func registerConfigErrorRoutingTools(srv *mcpsdk.Server) {
 	AddConfigList(srv, true, io.Discard)
 	AddResolve(srv, appSvc, io.Discard)
 	AddInvokePlan(srv, appSvc, io.Discard)
-	AddDescribe(srv, io.Discard)
+	AddDescribe(srv, appSvc, io.Discard)
 }
 
 func TestOrdinaryToolsShareConfigErrorRouting(t *testing.T) {

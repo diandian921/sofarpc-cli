@@ -14,9 +14,9 @@ import (
 )
 
 // AddDoctor registers sofarpc_doctor on the SDK server. SDK-native replacement for
-// DoctorTool; writeEnabled reflects the server's config-write flag. Reads local
-// config/source only, so it needs no app.Service. Handler body mirrors DoctorTool.Run.
-func AddDoctor(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
+// DoctorTool; writeEnabled reflects the server's config-write flag. Config and
+// source use the same app.Service instance as the ordinary runtime.
+func AddDoctor(srv *mcpsdk.Server, appSvc *app.Service, writeEnabled bool, stderr io.Writer) {
 	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_doctor",
 		Title:        "SofaRPC Doctor",
@@ -34,7 +34,7 @@ func AddDoctor(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
 			details["status"] = status
 			checks = append(checks, details)
 		}
-		cfg, err := loadConfig()
+		cfg, err := appSvc.LoadConfig(ctx)
 		if err != nil {
 			addCheck("config", "failed", map[string]interface{}{"error": err.Error()})
 			return doctorResultSDK(checks)
@@ -63,7 +63,7 @@ func AddDoctor(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
 			addCheck("project", "failed", map[string]interface{}{"error": err.Error()})
 		} else {
 			addCheck("project", "ok", map[string]interface{}{"project": projectSelection.Name, "workspaceRoot": projectSelection.Project.WorkspaceRoot, "servicePrefixes": projectSelection.Project.ServicePrefixes})
-			idx, idxErr := schema.LoadOrBuildIndex(schema.Project{Name: projectSelection.Name, WorkspaceRoot: projectSelection.Project.WorkspaceRoot, ServicePrefixes: projectSelection.Project.ServicePrefixes})
+			idx, idxErr := appSvc.LoadSourceIndex(ctx, projectSelection.Name, projectSelection.Project)
 			if idxErr != nil {
 				addCheck("source_schema", "failed", map[string]interface{}{"error": idxErr.Error()})
 			} else {

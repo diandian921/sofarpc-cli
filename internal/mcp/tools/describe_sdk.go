@@ -14,9 +14,9 @@ import (
 
 // AddDescribe registers sofarpc_describe on the SDK server. SDK-native replacement
 // for DescribeTool; reports progress because the first call may build the source
-// index over the whole workspace. Reads local config/source only, so it needs no
-// app.Service. Handler body mirrors DescribeTool.Run.
-func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
+// index over the whole workspace. Config and source are loaded through the same
+// app.Service instance as resolve/invoke, preserving injected data sources.
+func AddDescribe(srv *mcpsdk.Server, appSvc *app.Service, stderr io.Writer) {
 	srv.AddTool(&mcpsdk.Tool{
 		Name:         "sofarpc_describe",
 		Title:        "SofaRPC Describe",
@@ -29,7 +29,7 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 			return app.RenderFailureAdvised(app.CodeBadRequest, "query or service is required", nil,
 				"", "Pass query=<keywords> to search services, or service=<FQN> (optionally with method) to describe one, then call sofarpc_describe again."), ""
 		}
-		cfg, err := loadConfig()
+		cfg, err := appSvc.LoadConfig(ctx)
 		if err != nil {
 			return failureResult(err, app.CodeInternalError), ""
 		}
@@ -38,11 +38,7 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 			return failureResult(err, app.CodeBadRequest), ""
 		}
 		notifyProgress(ctx, req, "building source index", 0)
-		idx, err := schema.LoadOrBuildIndex(schema.Project{
-			Name:            projectSelection.Name,
-			WorkspaceRoot:   projectSelection.Project.WorkspaceRoot,
-			ServicePrefixes: projectSelection.Project.ServicePrefixes,
-		})
+		idx, err := appSvc.LoadSourceIndex(ctx, projectSelection.Name, projectSelection.Project)
 		if err != nil {
 			return failureResult(err, app.CodeInternalError), ""
 		}

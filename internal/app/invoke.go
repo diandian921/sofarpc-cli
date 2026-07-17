@@ -367,7 +367,11 @@ func acceptsWholeDTO(paramType string, method schema.Method, types map[string]sc
 }
 
 func (s *Service) resolveMethodDescription(ctx context.Context, projectName string, project appconfig.Project, service, method string, paramTypes []string) (schema.Method, schema.Description, error) {
-	desc, err := s.sourceIndex().Describe(ctx, projectName, project, service, method)
+	idx, err := s.LoadSourceIndex(ctx, projectName, project)
+	if err != nil {
+		return schema.Method{}, schema.Description{}, err
+	}
+	desc, err := schema.Describe(idx, service, method)
 	if err != nil {
 		return schema.Method{}, schema.Description{}, err
 	}

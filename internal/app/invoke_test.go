@@ -21,11 +21,19 @@ func (s fakeStore) Load() (appconfig.Config, error) {
 }
 
 type fakeSource struct {
-	desc schema.Description
+	idx *schema.Index
 }
 
-func (s fakeSource) Describe(ctx context.Context, projectName string, project appconfig.Project, service, method string) (schema.Description, error) {
-	return s.desc, nil
+func (s fakeSource) Load(ctx context.Context, projectName string, project appconfig.Project) (*schema.Index, error) {
+	return s.idx, nil
+}
+
+func fakeSourceFor(desc schema.Description) fakeSource {
+	return fakeSource{idx: &schema.Index{
+		Methods:  desc.Methods,
+		Types:    desc.Types,
+		Warnings: desc.Warnings,
+	}}
 }
 
 func TestRPCParamTypeForMethodExpandsImportedDTO(t *testing.T) {
@@ -153,6 +161,7 @@ func TestPlanNamedArgumentsUsesSourceIndexPort(t *testing.T) {
 	}
 	desc := schema.Description{
 		Methods: []schema.Method{{
+			Service:    "com.example.api.UserFacade",
 			Package:    "com.example.api",
 			Imports:    map[string]string{"UserRequest": "com.example.model.UserRequest"},
 			Method:     "query",
@@ -167,7 +176,7 @@ func TestPlanNamedArgumentsUsesSourceIndexPort(t *testing.T) {
 		},
 	}
 	service := New(fakeStore{cfg: cfg})
-	service.Source = fakeSource{desc: desc}
+	service.Source = fakeSourceFor(desc)
 	plan, err := service.PlanInvocation(context.Background(), InvocationInput{
 		Server:         "user-test",
 		Service:        "com.example.api.UserFacade",
@@ -205,7 +214,7 @@ func TestPlanSingleScalarRejectsMisspelledNamedArgument(t *testing.T) {
 		Parameters: []schema.Parameter{{Name: "id", Type: "String"}},
 	}}}
 	service := New(fakeStore{cfg: cfg})
-	service.Source = fakeSource{desc: desc}
+	service.Source = fakeSourceFor(desc)
 	_, err := service.PlanInvocation(context.Background(), InvocationInput{
 		Server: "user-test", Service: "com.example.UserFacade", Method: "getUser",
 		NamedArguments: map[string]interface{}{"userId": "u1"},
@@ -235,7 +244,7 @@ func TestPlanOrderedSchemaMatchNormalizesShortParamTypes(t *testing.T) {
 		}},
 	}
 	service := New(fakeStore{cfg: cfg})
-	service.Source = fakeSource{desc: desc}
+	service.Source = fakeSourceFor(desc)
 	plan, err := service.PlanInvocation(context.Background(), InvocationInput{
 		Server: "user-test", Service: method.Service, Method: method.Method,
 		ParamTypes: []string{"UserRequest"}, OrderedArguments: []interface{}{map[string]interface{}{}}, HasOrderedArguments: true,
@@ -407,6 +416,7 @@ func TestPlanRejectsJavaUtilDateStringBeforeInvoke(t *testing.T) {
 	}
 	desc := schema.Description{
 		Methods: []schema.Method{{
+			Service: "com.example.api.AcHotspotBgFacade",
 			Package: "com.example.api",
 			Imports: map[string]string{
 				"AcHotspotBgRequest": "com.example.dto.AcHotspotBgRequest",
@@ -426,7 +436,7 @@ func TestPlanRejectsJavaUtilDateStringBeforeInvoke(t *testing.T) {
 		},
 	}
 	service := New(fakeStore{cfg: cfg})
-	service.Source = fakeSource{desc: desc}
+	service.Source = fakeSourceFor(desc)
 
 	_, err := service.PlanInvocation(context.Background(), InvocationInput{
 		Server:  "user-test",

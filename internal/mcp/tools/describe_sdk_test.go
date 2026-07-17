@@ -37,7 +37,7 @@ func seedFacadeProject(t *testing.T, n int) {
 }
 
 func registerDescribe(srv *mcpsdk.Server) {
-	AddDescribe(srv, io.Discard)
+	AddDescribe(srv, app.New(nil), io.Discard)
 }
 
 func describeCandidates(t *testing.T, env resultEnvelope) []any {

@@ -42,7 +42,7 @@ func seedProjectWithSource(t *testing.T) {
 }
 
 func registerDoctor(srv *mcpsdk.Server) {
-	AddDoctor(srv, true, io.Discard)
+	AddDoctor(srv, app.New(nil), true, io.Discard)
 }
 
 // checkStatuses flattens data.checks into name -> status for assertions.

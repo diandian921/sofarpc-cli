@@ -15,7 +15,7 @@ type ConfigStore interface {
 }
 
 type SourceIndex interface {
-	Describe(ctx context.Context, projectName string, project appconfig.Project, service, method string) (schema.Description, error)
+	Load(ctx context.Context, projectName string, project appconfig.Project) (*schema.Index, error)
 }
 
 type DefaultConfigStore struct{}
@@ -30,9 +30,9 @@ func (DefaultConfigStore) Load() (appconfig.Config, error) {
 
 type LocalSourceIndex struct{}
 
-func (LocalSourceIndex) Describe(ctx context.Context, projectName string, project appconfig.Project, service, method string) (schema.Description, error) {
+func (LocalSourceIndex) Load(ctx context.Context, projectName string, project appconfig.Project) (*schema.Index, error) {
 	if err := ctx.Err(); err != nil {
-		return schema.Description{}, err
+		return nil, err
 	}
 	idx, err := schema.LoadOrBuildIndex(schema.Project{
 		Name:            projectName,
@@ -40,12 +40,12 @@ func (LocalSourceIndex) Describe(ctx context.Context, projectName string, projec
 		ServicePrefixes: project.ServicePrefixes,
 	})
 	if err != nil {
-		return schema.Description{}, err
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
-		return schema.Description{}, err
+		return nil, err
 	}
-	return schema.Describe(idx, service, method)
+	return idx, nil
 }
 
 type Service struct {
@@ -67,11 +67,35 @@ func (s *Service) loadConfig() (appconfig.Config, error) {
 	return s.Store.Load()
 }
 
+// LoadConfig reads the configuration through this Service's injected store.
+// Tools that share a Service must use this seam instead of reopening the global
+// default path, otherwise one MCP server can observe two different data sources.
+func (s *Service) LoadConfig(ctx context.Context) (appconfig.Config, error) {
+	if err := ctx.Err(); err != nil {
+		return appconfig.Config{}, err
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return appconfig.Config{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return appconfig.Config{}, err
+	}
+	return cfg, nil
+}
+
 func (s *Service) sourceIndex() SourceIndex {
 	if s == nil || s.Source == nil {
 		return LocalSourceIndex{}
 	}
 	return s.Source
+}
+
+// LoadSourceIndex loads a project's source index through this Service's
+// injected adapter. The returned schema.Index is the shared observation seam
+// used by invoke, describe, and doctor.
+func (s *Service) LoadSourceIndex(ctx context.Context, projectName string, project appconfig.Project) (*schema.Index, error) {
+	return s.sourceIndex().Load(ctx, projectName, project)
 }
 
 type ProjectRef struct {
