@@ -7,6 +7,29 @@ import (
 	"github.com/diandian921/sofarpc-mcp/internal/appconfig"
 )
 
+type ProjectSelector struct {
+	Project string
+	Server  string
+}
+
+type ProjectSelection struct {
+	Name    string
+	Project appconfig.Project
+}
+
+type ServerSelector struct {
+	Project  string
+	Profile  string
+	Server   string
+	Required bool
+}
+
+type ServerSelection struct {
+	Name   string
+	Server appconfig.Server
+	Found  bool
+}
+
 func (s *Service) Resolve(ctx context.Context, input ResolveInput) (ResolveResult, error) {
 	_ = ctx
 	if input.Address != "" {
@@ -34,77 +57,82 @@ func (s *Service) Resolve(ctx context.Context, input ResolveInput) (ResolveResul
 	if err != nil {
 		return ResolveResult{}, err
 	}
-	serverName, server, hasServer, err := resolveServer(cfg, input.Project, input.Profile, input.Server, false)
+	serverSelection, err := SelectServer(cfg, ServerSelector{
+		Project: input.Project, Profile: input.Profile, Server: input.Server,
+	})
 	if err != nil {
 		return ResolveResult{}, err
 	}
-	if hasServer {
-		projectName, project, err := resolveProject(cfg, server.Project, serverName)
+	if serverSelection.Found {
+		projectSelection, err := SelectProject(cfg, ProjectSelector{
+			Project: serverSelection.Server.Project,
+			Server:  serverSelection.Name,
+		})
 		if err != nil {
 			return ResolveResult{}, err
 		}
 		timeoutMS := input.TimeoutMS
 		if timeoutMS <= 0 {
-			timeoutMS = server.TimeoutMS
+			timeoutMS = serverSelection.Server.TimeoutMS
 		}
-		endpoint := endpointFromServer(serverName, server, timeoutMS)
+		endpoint := endpointFromServer(serverSelection.Name, serverSelection.Server, timeoutMS)
 		return ResolveResult{
-			Project:     ProjectRef{Name: projectName, Info: project},
-			Profile:     server.Profile,
-			Server:      serverName,
+			Project:     ProjectRef{Name: projectSelection.Name, Info: projectSelection.Project},
+			Profile:     serverSelection.Server.Profile,
+			Server:      serverSelection.Name,
 			Endpoint:    &endpoint,
 			Network:     "not_probed",
-			Diagnostics: resolutionDiagnostics(projectName, serverName, endpoint),
+			Diagnostics: resolutionDiagnostics(projectSelection.Name, serverSelection.Name, endpoint),
 		}, nil
 	}
-	projectName, project, err := resolveProject(cfg, input.Project, "")
+	projectSelection, err := SelectProject(cfg, ProjectSelector{Project: input.Project})
 	if err != nil {
 		return ResolveResult{}, err
 	}
 	return ResolveResult{
-		Project: ProjectRef{Name: projectName, Info: project},
-		Servers: boundServers(cfg, projectName),
+		Project: ProjectRef{Name: projectSelection.Name, Info: projectSelection.Project},
+		Servers: boundServers(cfg, projectSelection.Name),
 		Network: "not_probed",
 		Diagnostics: Diagnostics{Resolution: map[string]interface{}{
-			"project": projectName,
+			"project": projectSelection.Name,
 			"profile": input.Profile,
 			"server":  "",
 		}},
 	}, nil
 }
 
-func resolveServer(cfg appconfig.Config, project, profile, explicit string, required bool) (string, appconfig.Server, bool, error) {
-	if explicit != "" {
-		server, ok := cfg.Servers[explicit]
+func SelectServer(cfg appconfig.Config, selector ServerSelector) (ServerSelection, error) {
+	if selector.Server != "" {
+		server, ok := cfg.Servers[selector.Server]
 		if !ok {
-			return "", appconfig.Server{}, false, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q not found", explicit), Details: map[string]interface{}{"server": explicit}}
+			return ServerSelection{}, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q not found", selector.Server), Details: map[string]interface{}{"server": selector.Server}}
 		}
-		if project != "" && server.Project != project {
-			return "", appconfig.Server{}, false, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q is bound to project %q, not %q", explicit, server.Project, project), Details: map[string]interface{}{"server": explicit, "project": project, "actualProject": server.Project}}
+		if selector.Project != "" && server.Project != selector.Project {
+			return ServerSelection{}, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q is bound to project %q, not %q", selector.Server, server.Project, selector.Project), Details: map[string]interface{}{"server": selector.Server, "project": selector.Project, "actualProject": server.Project}}
 		}
-		if profile != "" && server.Profile != profile {
-			return "", appconfig.Server{}, false, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q is bound to profile %q, not %q", explicit, server.Profile, profile), Details: map[string]interface{}{"server": explicit, "profile": profile, "actualProfile": server.Profile}}
+		if selector.Profile != "" && server.Profile != selector.Profile {
+			return ServerSelection{}, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q is bound to profile %q, not %q", selector.Server, server.Profile, selector.Profile), Details: map[string]interface{}{"server": selector.Server, "profile": selector.Profile, "actualProfile": server.Profile}}
 		}
-		return explicit, server, true, nil
+		return ServerSelection{Name: selector.Server, Server: server, Found: true}, nil
 	}
 
-	if profile != "" {
-		if project == "" {
-			return "", appconfig.Server{}, false, &DomainError{Kind: ErrProjectNotFound, Message: "project is required when profile is specified", Details: map[string]interface{}{"profile": profile}}
+	if selector.Profile != "" {
+		if selector.Project == "" {
+			return ServerSelection{}, &DomainError{Kind: ErrProjectNotFound, Message: "project is required when profile is specified", Details: map[string]interface{}{"profile": selector.Profile}}
 		}
-		name := appconfig.ServerNameForProfile(project, profile)
+		name := appconfig.ServerNameForProfile(selector.Project, selector.Profile)
 		server, ok := cfg.Servers[name]
 		if !ok {
-			return "", appconfig.Server{}, false, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("profile %q for project %q not found", profile, project), Details: map[string]interface{}{"project": project, "profile": profile, "candidates": serverCandidates(cfg, serverNamesForProject(cfg, project))}}
+			return ServerSelection{}, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("profile %q for project %q not found", selector.Profile, selector.Project), Details: map[string]interface{}{"project": selector.Project, "profile": selector.Profile, "candidates": serverCandidates(cfg, serverNamesForProject(cfg, selector.Project))}}
 		}
-		return name, server, true, nil
+		return ServerSelection{Name: name, Server: server, Found: true}, nil
 	}
 
-	if project != "" {
-		if p, ok := cfg.Projects[project]; ok && p.ActiveProfile != "" {
-			name := appconfig.ServerNameForProfile(project, p.ActiveProfile)
+	if selector.Project != "" {
+		if p, ok := cfg.Projects[selector.Project]; ok && p.ActiveProfile != "" {
+			name := appconfig.ServerNameForProfile(selector.Project, p.ActiveProfile)
 			if server, ok := cfg.Servers[name]; ok {
-				return name, server, true, nil
+				return ServerSelection{Name: name, Server: server, Found: true}, nil
 			}
 		}
 	}
@@ -112,22 +140,22 @@ func resolveServer(cfg appconfig.Config, project, profile, explicit string, requ
 	var names []string
 	for _, name := range cfg.ServerNames() {
 		server := cfg.Servers[name]
-		if project == "" || server.Project == project {
+		if selector.Project == "" || server.Project == selector.Project {
 			names = append(names, name)
 		}
 	}
 	if len(names) == 1 {
 		name := names[0]
-		return name, cfg.Servers[name], true, nil
+		return ServerSelection{Name: name, Server: cfg.Servers[name], Found: true}, nil
 	}
-	if !required {
-		return "", appconfig.Server{}, false, nil
+	if !selector.Required {
+		return ServerSelection{}, nil
 	}
 	candidates := serverCandidates(cfg, names)
-	if project != "" {
-		return "", appconfig.Server{}, false, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("server is required because project %q has %d configured servers", project, len(names)), Details: map[string]interface{}{"project": project, "serverCount": len(names), "candidates": candidates}}
+	if selector.Project != "" {
+		return ServerSelection{}, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("server is required because project %q has %d configured servers", selector.Project, len(names)), Details: map[string]interface{}{"project": selector.Project, "serverCount": len(names), "candidates": candidates}}
 	}
-	return "", appconfig.Server{}, false, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("server is required because %d servers are configured", len(names)), Details: map[string]interface{}{"serverCount": len(names), "candidates": candidates}}
+	return ServerSelection{}, &DomainError{Kind: ErrEndpointNotFound, Message: fmt.Sprintf("server is required because %d servers are configured", len(names)), Details: map[string]interface{}{"serverCount": len(names), "candidates": candidates}}
 }
 
 func serverNamesForProject(cfg appconfig.Config, project string) []string {
@@ -158,40 +186,40 @@ func serverCandidates(cfg appconfig.Config, names []string) []map[string]interfa
 	return out
 }
 
-func resolveProject(cfg appconfig.Config, explicit, serverName string) (string, appconfig.Project, error) {
-	if explicit != "" {
-		if serverName != "" {
-			server, ok := cfg.Servers[serverName]
+func SelectProject(cfg appconfig.Config, selector ProjectSelector) (ProjectSelection, error) {
+	if selector.Project != "" {
+		if selector.Server != "" {
+			server, ok := cfg.Servers[selector.Server]
 			if !ok {
-				return "", appconfig.Project{}, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q not found", serverName), Details: map[string]interface{}{"server": serverName}}
+				return ProjectSelection{}, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q not found", selector.Server), Details: map[string]interface{}{"server": selector.Server}}
 			}
-			if server.Project != explicit {
-				return "", appconfig.Project{}, &DomainError{Kind: ErrProjectNotFound, Message: fmt.Sprintf("server %q is bound to project %q, not %q", serverName, server.Project, explicit), Details: map[string]interface{}{"server": serverName, "project": explicit, "actualProject": server.Project}}
+			if server.Project != selector.Project {
+				return ProjectSelection{}, &DomainError{Kind: ErrProjectNotFound, Message: fmt.Sprintf("server %q is bound to project %q, not %q", selector.Server, server.Project, selector.Project), Details: map[string]interface{}{"server": selector.Server, "project": selector.Project, "actualProject": server.Project}}
 			}
 		}
-		project, ok := cfg.Projects[explicit]
+		project, ok := cfg.Projects[selector.Project]
 		if !ok {
-			return "", appconfig.Project{}, &DomainError{Kind: ErrProjectNotFound, Message: fmt.Sprintf("project %q not found", explicit), Details: map[string]interface{}{"project": explicit}}
+			return ProjectSelection{}, &DomainError{Kind: ErrProjectNotFound, Message: fmt.Sprintf("project %q not found", selector.Project), Details: map[string]interface{}{"project": selector.Project}}
 		}
-		return explicit, project, nil
+		return ProjectSelection{Name: selector.Project, Project: project}, nil
 	}
-	if serverName != "" {
-		server, ok := cfg.Servers[serverName]
+	if selector.Server != "" {
+		server, ok := cfg.Servers[selector.Server]
 		if !ok {
-			return "", appconfig.Project{}, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q not found", serverName), Details: map[string]interface{}{"server": serverName}}
+			return ProjectSelection{}, &DomainError{Kind: ErrServerNotFound, Message: fmt.Sprintf("server %q not found", selector.Server), Details: map[string]interface{}{"server": selector.Server}}
 		}
 		project, ok := cfg.Projects[server.Project]
 		if !ok {
-			return "", appconfig.Project{}, &DomainError{Kind: ErrProjectNotFound, Message: fmt.Sprintf("server %q references missing project %q", serverName, server.Project), Details: map[string]interface{}{"server": serverName, "project": server.Project}}
+			return ProjectSelection{}, &DomainError{Kind: ErrProjectNotFound, Message: fmt.Sprintf("server %q references missing project %q", selector.Server, server.Project), Details: map[string]interface{}{"server": selector.Server, "project": server.Project}}
 		}
-		return server.Project, project, nil
+		return ProjectSelection{Name: server.Project, Project: project}, nil
 	}
 	if len(cfg.Projects) == 1 {
 		for name, project := range cfg.Projects {
-			return name, project, nil
+			return ProjectSelection{Name: name, Project: project}, nil
 		}
 	}
-	return "", appconfig.Project{}, &DomainError{Kind: ErrProjectNotFound, Message: "project is required"}
+	return ProjectSelection{}, &DomainError{Kind: ErrProjectNotFound, Message: "project is required"}
 }
 
 func endpointFromServer(name string, server appconfig.Server, timeoutMS int) Endpoint {

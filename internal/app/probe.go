@@ -44,20 +44,22 @@ func (s *Service) ProbeEndpoint(ctx context.Context, input ProbeInput) ProbeResu
 		if err != nil {
 			return probeFailure(input, CodeInternalError, err, timeoutMS, endpointSource)
 		}
-		name, server, hasServer, err := resolveServer(cfg, input.Project, input.Profile, input.Server, true)
+		selection, err := SelectServer(cfg, ServerSelector{
+			Project: input.Project, Profile: input.Profile, Server: input.Server, Required: true,
+		})
 		if err != nil {
 			return probeFailure(input, CodeConnectFailed, err, timeoutMS, "configured-server")
 		}
-		if !hasServer {
+		if !selection.Found {
 			return probeFailure(input, CodeConnectFailed, errServerRequired(), timeoutMS, "configured-server")
 		}
-		serverName = name
-		projectName = server.Project
-		profileName = server.Profile
-		address = server.Address
+		serverName = selection.Name
+		projectName = selection.Server.Project
+		profileName = selection.Server.Profile
+		address = selection.Server.Address
 		timeoutMS = input.TimeoutMS
 		if timeoutMS <= 0 {
-			timeoutMS = server.TimeoutMS
+			timeoutMS = selection.Server.TimeoutMS
 		}
 		endpointSource = "configured-server"
 	}

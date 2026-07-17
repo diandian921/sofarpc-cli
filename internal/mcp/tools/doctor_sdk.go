@@ -43,27 +43,27 @@ func AddDoctor(srv *mcpsdk.Server, writeEnabled bool, stderr io.Writer) {
 		addCheck("config", "ok", map[string]interface{}{"configPath": path, "projectCount": len(cfg.Projects), "serverCount": len(cfg.Servers), "writeEnabled": writeEnabled})
 
 		notifyProgress(ctx, req, "checking project source schema", 0)
-		serverName, srv, hasServer, err := resolveServer(cfg, a.Project, a.Profile, a.Server, false)
+		serverSelection, err := app.SelectServer(cfg, app.ServerSelector{
+			Project: a.Project, Profile: a.Profile, Server: a.Server,
+		})
 		if err != nil {
 			addCheck("server", "failed", map[string]interface{}{"error": err.Error()})
-		} else if hasServer {
-			addCheck("server", "ok", map[string]interface{}{"server": serverName, "endpoint": endpointData(srv, srv.TimeoutMS)})
+		} else if serverSelection.Found {
+			addCheck("server", "ok", map[string]interface{}{"server": serverSelection.Name, "endpoint": endpointData(serverSelection.Server, serverSelection.Server.TimeoutMS)})
 		} else {
 			addCheck("server", "skipped", map[string]interface{}{"reason": "no single server resolved"})
 		}
 
-		projectName := ""
-		var project appconfig.Project
-		if hasServer {
-			projectName, project, err = resolveProject(cfg, a.Project, serverName)
-		} else {
-			projectName, project, err = resolveProject(cfg, a.Project, "")
+		projectSelector := app.ProjectSelector{Project: a.Project}
+		if serverSelection.Found {
+			projectSelector.Server = serverSelection.Name
 		}
+		projectSelection, err := app.SelectProject(cfg, projectSelector)
 		if err != nil {
 			addCheck("project", "failed", map[string]interface{}{"error": err.Error()})
 		} else {
-			addCheck("project", "ok", map[string]interface{}{"project": projectName, "workspaceRoot": project.WorkspaceRoot, "servicePrefixes": project.ServicePrefixes})
-			idx, idxErr := schema.LoadOrBuildIndex(schema.Project{Name: projectName, WorkspaceRoot: project.WorkspaceRoot, ServicePrefixes: project.ServicePrefixes})
+			addCheck("project", "ok", map[string]interface{}{"project": projectSelection.Name, "workspaceRoot": projectSelection.Project.WorkspaceRoot, "servicePrefixes": projectSelection.Project.ServicePrefixes})
+			idx, idxErr := schema.LoadOrBuildIndex(schema.Project{Name: projectSelection.Name, WorkspaceRoot: projectSelection.Project.WorkspaceRoot, ServicePrefixes: projectSelection.Project.ServicePrefixes})
 			if idxErr != nil {
 				addCheck("source_schema", "failed", map[string]interface{}{"error": idxErr.Error()})
 			} else {

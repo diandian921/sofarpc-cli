@@ -30,31 +30,36 @@ func (s *Service) PlanInvocation(ctx context.Context, input InvocationInput) (In
 	if err != nil {
 		return InvocationPlan{}, err
 	}
-	serverName, server, hasServer, err := resolveServer(cfg, input.Project, input.Profile, input.Server, true)
+	serverSelection, err := SelectServer(cfg, ServerSelector{
+		Project: input.Project, Profile: input.Profile, Server: input.Server, Required: true,
+	})
 	if err != nil {
 		return InvocationPlan{}, err
 	}
-	if !hasServer {
+	if !serverSelection.Found {
 		return InvocationPlan{}, fmt.Errorf("server is required")
 	}
-	projectName, project, err := resolveProject(cfg, input.Project, serverName)
+	projectSelection, err := SelectProject(cfg, ProjectSelector{
+		Project: input.Project,
+		Server:  serverSelection.Name,
+	})
 	if err != nil {
 		return InvocationPlan{}, err
 	}
-	args, paramTypes, warnings, err := s.planArguments(ctx, projectName, project, input.Service, input.Method, input)
+	args, paramTypes, warnings, err := s.planArguments(ctx, projectSelection.Name, projectSelection.Project, input.Service, input.Method, input)
 	if err != nil {
 		return InvocationPlan{}, err
 	}
 	timeoutMS := input.TimeoutMS
 	if timeoutMS <= 0 {
-		timeoutMS = server.TimeoutMS
+		timeoutMS = serverSelection.Server.TimeoutMS
 	}
-	endpoint := endpointFromServer(serverName, server, timeoutMS)
+	endpoint := endpointFromServer(serverSelection.Name, serverSelection.Server, timeoutMS)
 	endpoint.Attachments = mergeStringMaps(endpoint.Attachments, input.Attachments)
 	return InvocationPlan{
-		Project:    ProjectRef{Name: projectName, Info: project},
-		Profile:    server.Profile,
-		Server:     serverName,
+		Project:    ProjectRef{Name: projectSelection.Name, Info: projectSelection.Project},
+		Profile:    serverSelection.Server.Profile,
+		Server:     serverSelection.Name,
 		Endpoint:   endpoint,
 		Service:    input.Service,
 		Method:     MethodSignature{Name: input.Method, ParamTypes: paramTypes},
@@ -70,9 +75,9 @@ func (s *Service) PlanInvocation(ctx context.Context, input InvocationInput) (In
 				"planMs": time.Since(start).Milliseconds(),
 			},
 			Resolution: map[string]interface{}{
-				"project":        projectName,
-				"profile":        server.Profile,
-				"server":         serverName,
+				"project":        projectSelection.Name,
+				"profile":        serverSelection.Server.Profile,
+				"server":         serverSelection.Name,
 				"service":        input.Service,
 				"method":         input.Method,
 				"endpointSource": "configured-server",

@@ -33,21 +33,21 @@ func AddDescribe(srv *mcpsdk.Server, stderr io.Writer) {
 		if err != nil {
 			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
 		}
-		projectName, project, err := resolveProject(cfg, a.Project, a.Server)
+		projectSelection, err := app.SelectProject(cfg, app.ProjectSelector{Project: a.Project, Server: a.Server})
 		if err != nil {
 			return app.RenderFailure(app.CodeBadRequest, err.Error(), nil), ""
 		}
 		notifyProgress(ctx, req, "building source index", 0)
 		idx, err := schema.LoadOrBuildIndex(schema.Project{
-			Name:            projectName,
-			WorkspaceRoot:   project.WorkspaceRoot,
-			ServicePrefixes: project.ServicePrefixes,
+			Name:            projectSelection.Name,
+			WorkspaceRoot:   projectSelection.Project.WorkspaceRoot,
+			ServicePrefixes: projectSelection.Project.ServicePrefixes,
 		})
 		if err != nil {
 			return app.RenderFailure(app.CodeInternalError, err.Error(), nil), ""
 		}
 		notifyProgress(ctx, req, "source index ready", 0.5)
-		data := map[string]interface{}{"project": projectName}
+		data := map[string]interface{}{"project": projectSelection.Name}
 		var summary []string
 		notifyProgress(ctx, req, "searching source", 0.8)
 		if a.Query != "" {

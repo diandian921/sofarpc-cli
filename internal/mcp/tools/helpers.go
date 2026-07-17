@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/diandian921/sofarpc-mcp/internal/app"
@@ -27,99 +26,6 @@ func configPaths() (string, string, error) {
 		return "", "", err
 	}
 	return path, lock, nil
-}
-
-// resolveProject picks the project to describe given an explicit project name
-// and/or a bound server, mirroring the inference the facade used to do inline.
-func resolveProject(cfg appconfig.Config, explicit, serverName string) (string, appconfig.Project, error) {
-	if explicit != "" {
-		if serverName != "" {
-			server, ok := cfg.Servers[serverName]
-			if !ok {
-				return "", appconfig.Project{}, fmt.Errorf("server %q not found", serverName)
-			}
-			if server.Project != explicit {
-				return "", appconfig.Project{}, fmt.Errorf("server %q is bound to project %q, not %q", serverName, server.Project, explicit)
-			}
-		}
-		project, ok := cfg.Projects[explicit]
-		if !ok {
-			return "", appconfig.Project{}, fmt.Errorf("project %q not found", explicit)
-		}
-		return explicit, project, nil
-	}
-	if serverName != "" {
-		server, ok := cfg.Servers[serverName]
-		if !ok {
-			return "", appconfig.Project{}, fmt.Errorf("server %q not found", serverName)
-		}
-		project, ok := cfg.Projects[server.Project]
-		if !ok {
-			return "", appconfig.Project{}, fmt.Errorf("server %q references missing project %q", serverName, server.Project)
-		}
-		return server.Project, project, nil
-	}
-	if len(cfg.Projects) == 1 {
-		for name, project := range cfg.Projects {
-			return name, project, nil
-		}
-	}
-	return "", appconfig.Project{}, fmt.Errorf("project is required")
-}
-
-// resolveServer picks a single server given an explicit name and/or project
-// filter. When required is false an ambiguous match returns hasServer=false.
-func resolveServer(cfg appconfig.Config, project, profile, explicit string, required bool) (string, appconfig.Server, bool, error) {
-	if explicit != "" {
-		server, ok := cfg.Servers[explicit]
-		if !ok {
-			return "", appconfig.Server{}, false, fmt.Errorf("server %q not found", explicit)
-		}
-		if project != "" && server.Project != project {
-			return "", appconfig.Server{}, false, fmt.Errorf("server %q is bound to project %q, not %q", explicit, server.Project, project)
-		}
-		if profile != "" && server.Profile != profile {
-			return "", appconfig.Server{}, false, fmt.Errorf("server %q is bound to profile %q, not %q", explicit, server.Profile, profile)
-		}
-		return explicit, server, true, nil
-	}
-	if profile != "" {
-		if project == "" {
-			return "", appconfig.Server{}, false, fmt.Errorf("project is required when profile is specified")
-		}
-		name := appconfig.ServerNameForProfile(project, profile)
-		server, ok := cfg.Servers[name]
-		if !ok {
-			return "", appconfig.Server{}, false, fmt.Errorf("profile %q for project %q not found", profile, project)
-		}
-		return name, server, true, nil
-	}
-	if project != "" {
-		if p, ok := cfg.Projects[project]; ok && p.ActiveProfile != "" {
-			name := appconfig.ServerNameForProfile(project, p.ActiveProfile)
-			if server, ok := cfg.Servers[name]; ok {
-				return name, server, true, nil
-			}
-		}
-	}
-	var names []string
-	for _, name := range cfg.ServerNames() {
-		server := cfg.Servers[name]
-		if project == "" || server.Project == project {
-			names = append(names, name)
-		}
-	}
-	if len(names) == 1 {
-		name := names[0]
-		return name, cfg.Servers[name], true, nil
-	}
-	if !required {
-		return "", appconfig.Server{}, false, nil
-	}
-	if project != "" {
-		return "", appconfig.Server{}, false, fmt.Errorf("server is required because project %q has %d configured servers", project, len(names))
-	}
-	return "", appconfig.Server{}, false, fmt.Errorf("server is required because %d servers are configured", len(names))
 }
 
 func endpointData(server appconfig.Server, timeoutMS int) map[string]interface{} {
