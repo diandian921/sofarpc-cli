@@ -24,6 +24,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+          # Key the module cache on both go.sum files so the oracletest
+          # submodule's dependencies participate in cache invalidation.
+          cache-dependency-path: |
+            go.sum
+            oracletest/go.sum
       - name: gofmt
         shell: bash
         run: |
@@ -54,6 +59,9 @@ jobs:
       # The BOLT oracle checks the hand-written BOLT framing against the
       # official sofa-bolt-go library. Pure Go, isolated in its own module so
       # the sofa-bolt-go tree stays out of the main go.mod.
+      - name: Vet (oracletest)
+        run: go vet -tags bolt_oracle ./...
+        working-directory: oracletest
       - name: BOLT codec oracle (sofa-bolt-go)
         run: go test -race -tags bolt_oracle ./...
         working-directory: oracletest

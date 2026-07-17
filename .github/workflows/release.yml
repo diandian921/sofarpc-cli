@@ -26,9 +26,15 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Gate — pure-Go suite + BOLT oracle
+      - name: Gate — gofmt + vet + pure-Go suite + BOLT oracle
         run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "gofmt required for:"; echo "$files"; exit 1
+          fi
+          go vet ./...
           go test -race ./...
+          go -C oracletest vet -tags bolt_oracle ./...
           go -C oracletest test -race -tags bolt_oracle ./...
       - name: Package release archives
         run: bash scripts/package.sh

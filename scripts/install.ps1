@@ -11,6 +11,12 @@
 # contains cmd/sofarpc/.
 $ErrorActionPreference = "Stop"
 
+# Windows PowerShell 5.1 negotiates TLS 1.0 by default, which GitHub rejects.
+try {
+  [Net.ServicePointManager]::SecurityProtocol = `
+    [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch {}
+
 $Repo = "diandian921/sofarpc-mcp"
 
 function Show-Usage {
@@ -33,13 +39,21 @@ while ($i -lt $args.Count) {
   switch ($args[$i]) {
     "-h"        { Show-Usage; exit 0 }
     "--help"    { Show-Usage; exit 0 }
-    "-Version"  { $i++; $Version = $args[$i] }
-    "--version" { $i++; $Version = $args[$i] }
+    { $_ -eq "-Version" -or $_ -eq "--version" } {
+      $i++
+      if ($i -ge $args.Count) {
+        [Console]::Error.WriteLine("-Version requires a tag value")
+        exit 2
+      }
+      $Version = $args[$i]
+    }
     "claude"    { $TargetHost = "claude" }
     "codex"     { $TargetHost = "codex"  }
     "all"       { $TargetHost = "all"    }
     default {
-      Write-Error "unknown argument $($args[$i])"
+      # Write-Error would throw under $ErrorActionPreference=Stop, skipping the
+      # usage text and exit code; write to stderr directly instead.
+      [Console]::Error.WriteLine("unknown argument $($args[$i])")
       Show-Usage
       exit 2
     }

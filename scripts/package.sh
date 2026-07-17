@@ -36,7 +36,9 @@ for platform in $PLATFORMS; do
     mkdir -p "$WORK_DIR"
 
     echo "[build] $GOOS_VALUE/$GOARCH_VALUE"
-    (cd "$REPO_ROOT" && GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
+    # CGO_ENABLED=0 for statically linked release binaries (consistent with
+    # build-mcpb.sh); a glibc-linked build would not run on musl/Nix hosts.
+    (cd "$REPO_ROOT" && CGO_ENABLED=0 GOOS="$GOOS_VALUE" GOARCH="$GOARCH_VALUE" \
         go build -ldflags "-X main.BuildVersion=$VERSION" -o "$WORK_DIR/sofarpc$EXT" ./cmd/sofarpc)
 
     cp "$REPO_ROOT/README.md" "$WORK_DIR/README.md"
