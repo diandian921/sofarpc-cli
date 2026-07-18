@@ -216,7 +216,7 @@ Schema cache 存储在 `~/.sofarpc/cache/schema/` 下，并通过源码内容 fi
 
 ## 运行时边界
 
-纯 Go 运行时覆盖 direct BOLT generic invocation，以及 DTO 风格请求/响应常用的 Hessian2 value shapes。声明的 Java 参数类型和 DTO field 类型会用于数值编码，因此 `Integer`、`Long`、`Double` 这类值不依赖 Go JSON number 的形态。当前 Java 兼容性状态见 `docs/compatibility-matrix.md`。
+纯 Go 运行时覆盖 direct BOLT generic invocation，以及 DTO 风格请求/响应常用的 Hessian2 value shapes。声明的 Java 参数类型和 DTO field 类型会用于数值编码，因此 `Integer`、`Long`、`Double` 这类值不依赖 Go JSON number 的形态。当前 Java 兼容性状态可通过只读 resource `sofarpc://compatibility` 查看。
 
 已知限制：
 
@@ -281,10 +281,3 @@ Hessian oracle 不进入 CI（alipay Hessian jar 是内部 artifact，不在 pub
 go test ./internal/direct -tags hessian_oracle    # Go<->Java Hessian contract + golden bytes == real Java
 go -C oracletest test -tags bolt_oracle ./...     # BOLT framing vs official sofa-bolt-go
 ```
-
-## 设计文档
-
-- [当前有效决策（单一事实源）](docs/decisions.md)
-- [Pure-Go runtime](docs/pure-go-runtime.md)
-- [Compatibility matrix](docs/compatibility-matrix.md)
-- [Single-binary install target](docs/single-binary-install-target.md)

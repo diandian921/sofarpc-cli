@@ -232,7 +232,7 @@ Schema cache is stored under `~/.sofarpc/cache/schema/` and invalidated by sourc
 
 ## Runtime Boundaries
 
-The pure-Go runtime covers direct BOLT generic invocation and the common Hessian2 value shapes used by DTO-style requests and responses. Declared Java argument and DTO field types are used for numeric encoding, so values such as `Integer`, `Long`, and `Double` do not depend on Go's JSON number shape. The current Java compatibility status is tracked in `docs/compatibility-matrix.md`.
+The pure-Go runtime covers direct BOLT generic invocation and the common Hessian2 value shapes used by DTO-style requests and responses. Declared Java argument and DTO field types are used for numeric encoding, so values such as `Integer`, `Long`, and `Double` do not depend on Go's JSON number shape. The current Java compatibility status is available through the read-only `sofarpc://compatibility` resource.
 
 Known limits:
 
@@ -309,10 +309,3 @@ directly:
 go test ./internal/direct -tags hessian_oracle    # Go<->Java Hessian contract + golden bytes == real Java
 go -C oracletest test -tags bolt_oracle ./...     # BOLT framing vs official sofa-bolt-go
 ```
-
-## Design Docs
-
-- [Current decisions (single source of truth)](docs/decisions.md)
-- [Pure-Go runtime](docs/pure-go-runtime.md)
-- [Compatibility matrix](docs/compatibility-matrix.md)
-- [Single-binary install target](docs/single-binary-install-target.md)
