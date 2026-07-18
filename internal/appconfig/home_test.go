@@ -3,6 +3,7 @@ package appconfig
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -30,7 +31,11 @@ func TestHomeExplicitEnvWins(t *testing.T) {
 func TestHomeDefaultWhenUnset(t *testing.T) {
 	t.Setenv(EnvHome, "")
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", home)
+	} else {
+		t.Setenv("HOME", home)
+	}
 
 	got, err := Home()
 	if err != nil {

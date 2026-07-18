@@ -121,7 +121,7 @@ func TestDescribeIncludesIndexWarnings(t *testing.T) {
 
 func TestLoadOrBuildIndexWritesCache(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	t.Setenv("SOFARPC_HOME", home)
 	root := t.TempDir()
 	src := filepath.Join(root, "src", "main", "java", "com", "example")
 	mkdir(t, src)
@@ -151,7 +151,7 @@ public interface UserService {
 
 func TestLoadOrBuildIndexIgnoresOldCacheVersion(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	t.Setenv("SOFARPC_HOME", home)
 	root := t.TempDir()
 	src := filepath.Join(root, "src", "main", "java", "com", "example")
 	mkdir(t, src)
@@ -223,7 +223,7 @@ func TestSourceFingerprintUsesFileContent(t *testing.T) {
 
 func TestLoadOrBuildIndexPreservesMethodImports(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	t.Setenv("SOFARPC_HOME", home)
 	root := t.TempDir()
 	src := filepath.Join(root, "src", "main", "java", "com", "example", "api")
 	model := filepath.Join(root, "src", "main", "java", "com", "example", "model")

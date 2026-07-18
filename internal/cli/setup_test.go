@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -71,7 +72,7 @@ func TestSetupPreflightRunsSelftest(t *testing.T) {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmdPath := filepath.Join(bin, "sofarpc")
+	cmdPath := filepath.Join(bin, testBinaryName("sofarpc"))
 	if err := os.WriteFile(cmdPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func TestSetupCodexAddsWhenAbsent(t *testing.T) {
 				return "", "not found", 1, nil
 			}
 			// Subsequent get: post-add verification, entry now present.
-			return `{"command":"` + filepath.Join(root, "bin", "sofarpc") + `"}`, "", 0, nil
+			return `{"command":` + strconv.Quote(testInstalledBinary(root, "sofarpc")) + `}`, "", 0, nil
 		}
 		return "", "", 0, nil
 	})
@@ -130,14 +131,14 @@ func TestSetupCodexAddsWhenAbsent(t *testing.T) {
 		if isAdd(c) {
 			added = true
 			joined := strings.Join(c.args, " ")
-			want := filepath.Join(root, "bin", "sofarpc")
+			want := testInstalledBinary(root, "sofarpc")
 			if !strings.Contains(joined, want) {
 				t.Fatalf("add must register expanded path %q, got: %s", want, joined)
 			}
 			if !strings.HasSuffix(strings.TrimSpace(joined), " mcp") {
 				t.Fatalf("add must append mcp as the launch arg, got: %s", joined)
 			}
-			if strings.Contains(joined, "~") {
+			if containsUnexpandedHome(c.args) {
 				t.Fatalf("registered command must not contain ~: %s", joined)
 			}
 		}
@@ -157,14 +158,14 @@ func TestSetupCodexAddsWhenAbsent(t *testing.T) {
 
 func TestSetupCodexNoopWhenMatching(t *testing.T) {
 	root := t.TempDir()
-	command := filepath.Join(root, "bin", "sofarpc")
+	command := testInstalledBinary(root, "sofarpc")
 	// SOFARPC_HOME is the temp root (non-default), so a truly-matching entry
 	// must carry the env. Single-binary launch shape: command runs with
 	// args=["mcp"]. Nested under "transport" + env_vars form to prove the
 	// structured walk is not bound to a flat schema.
 	calls := stubHost(t, func(_ string, args []string) (string, string, int, error) {
 		if args[1] == "get" {
-			return `{"transport":{"command":"` + command + `","args":["mcp"],"env_vars":[{"key":"SOFARPC_HOME","value":"` + root + `"}]}}`, "", 0, nil
+			return `{"transport":{"command":` + strconv.Quote(command) + `,"args":["mcp"],"env_vars":[{"key":"SOFARPC_HOME","value":` + strconv.Quote(root) + `}]}}`, "", 0, nil
 		}
 		return "", "", 0, nil
 	})
@@ -378,7 +379,7 @@ func TestSetupMissingHostCLIPrintsManualSnippet(t *testing.T) {
 	if !strings.Contains(errOut, "Register manually") {
 		t.Fatalf("want manual snippet, got: %s", errOut)
 	}
-	if !strings.Contains(errOut, "--env SOFARPC_HOME="+root) {
+	if !strings.Contains(errOut, "SOFARPC_HOME=") || !strings.Contains(errOut, root) {
 		t.Fatalf("manual snippet must include SOFARPC_HOME env, got: %s", errOut)
 	}
 	if strings.Contains(errOut, "also set env") {
@@ -401,11 +402,24 @@ func TestSetupMissingHostCLIQuotesManualSnippet(t *testing.T) {
 	if !strings.Contains(errOut, "'SOFARPC_HOME="+root+"'") {
 		t.Fatalf("manual snippet must quote SOFARPC_HOME with spaces, got: %s", errOut)
 	}
-	if !strings.Contains(errOut, "'"+filepath.Join(root, "bin", "sofarpc")+"'") {
+	if !strings.Contains(errOut, "'"+testInstalledBinary(root, "sofarpc")+"'") {
 		t.Fatalf("manual snippet must quote command path with spaces, got: %s", errOut)
 	}
 }
 
 type execNotFound struct{}
+
+func containsUnexpandedHome(args []string) bool {
+	for _, arg := range args {
+		value := arg
+		if i := strings.IndexByte(value, '='); i >= 0 {
+			value = value[i+1:]
+		}
+		if value == "~" || strings.HasPrefix(value, "~/") || strings.HasPrefix(value, `~\`) {
+			return true
+		}
+	}
+	return false
+}
 
 func (execNotFound) Error() string { return "exec: \"codex\": executable file not found in $PATH" }

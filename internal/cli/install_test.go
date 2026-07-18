@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -33,7 +32,7 @@ func TestInstallNoHostJustSelfInstalls(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d stderr=%s", code, errOut)
 	}
-	if _, err := os.Stat(filepath.Join(root, "bin", "sofarpc")); err != nil {
+	if _, err := os.Stat(testInstalledBinary(root, "sofarpc")); err != nil {
 		t.Fatalf("self-install must run when no host given: %v", err)
 	}
 	for _, c := range *calls {
@@ -52,7 +51,7 @@ func TestInstallWithHostChainsSetup(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d stderr=%s", code, errOut)
 	}
-	if _, err := os.Stat(filepath.Join(root, "bin", "sofarpc")); err != nil {
+	if _, err := os.Stat(testInstalledBinary(root, "sofarpc")); err != nil {
 		t.Fatalf("install must self-install first: %v", err)
 	}
 	var addedCodex bool
@@ -95,7 +94,7 @@ func TestInstallRejectsUnknownHost(t *testing.T) {
 	if !strings.Contains(errOut, "unknown host") {
 		t.Fatalf("want unknown host error, got: %s", errOut)
 	}
-	if _, err := os.Stat(filepath.Join(root, "bin", "sofarpc")); err == nil {
+	if _, err := os.Stat(testInstalledBinary(root, "sofarpc")); err == nil {
 		t.Fatal("must not self-install when host is invalid")
 	}
 	for _, c := range *calls {

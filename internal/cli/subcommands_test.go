@@ -17,13 +17,8 @@ func tempHome(t *testing.T) (string, func()) {
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		t.Fatalf("mkdir .sofarpc: %v", err)
 	}
-	prevHome := os.Getenv("HOME")
-	if err := os.Setenv("HOME", dir); err != nil {
-		t.Fatalf("setenv HOME: %v", err)
-	}
-	return base, func() {
-		_ = os.Setenv("HOME", prevHome)
-	}
+	t.Setenv("SOFARPC_HOME", base)
+	return base, func() {}
 }
 
 func startTCPListener(t *testing.T) net.Listener {

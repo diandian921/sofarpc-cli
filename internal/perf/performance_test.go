@@ -89,7 +89,7 @@ func runSchemaBuildGoldenModern(t *testing.T) {
 
 func runSchemaWarmCacheLoad(t *testing.T) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("SOFARPC_HOME", t.TempDir())
 	project := modernGoldenProject()
 	if _, err := schema.LoadOrBuildIndex(project); err != nil {
 		t.Fatalf("cold LoadOrBuildIndex: %v", err)
