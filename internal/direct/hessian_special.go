@@ -15,8 +15,7 @@ import (
 // and reconstructs via readResolve) and BigInteger's signum/mag object. The app
 // layer hands these down as a neutral javavalue.Scalar(javaType, canonicalString)
 // and this codec-level code turns them into the object tree, mirroring how Date
-// and BigDecimal are already handled in writeJavaScalar. See
-// docs/special-type-encoding-pushdown-design.md.
+// and BigDecimal are already handled in writeJavaScalar.
 //
 // The builders produce a javavalue.Object and the caller writes it through
 // writeTypedValue, so the object goes through the same field-sorting path as any

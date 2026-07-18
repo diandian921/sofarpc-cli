@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
   <title id="title">SofaRPC MCP README overview</title>
-  <desc id="desc">A hand-drawn README overview for SofaRPC MCP, showing what it is, what agents can do with it, how to install it, and how calls flow through the MCP server to the pure Go SofaRPC runtime.</desc>
+  <desc id="desc">A hand-drawn README overview for SofaRPC MCP, showing the agent workflow through the stdio MCP tools and app.Service into the pure-Go BOLT and Hessian2 runtime.</desc>
   <defs>
     <filter id="paper" x="-8%" y="-8%" width="116%" height="116%">
       <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="8" result="noise"/>
@@ -93,7 +93,7 @@
   <g transform="translate(376 182) rotate(-0.4)" filter="url(#softShadow)">
     <rect class="box inkStroke" x="0" y="0" width="846" height="278" rx="10" filter="url(#rough)"/>
     <text class="h2 ink" x="28" y="42">Architecture in one picture</text>
-    <text class="small muted" x="30" y="70">Plain JSON goes in; a Java-aware InvocationPlan and direct SofaRPC request come out.</text>
+    <text class="small muted" x="30" y="70">Agent JSON -&gt; MCP tools -&gt; app.Service -&gt; direct BOLT/Hessian2 request.</text>
 
     <g transform="translate(30 114)">
       <rect class="blue thinStroke" x="0" y="0" width="118" height="76" rx="9"/>
@@ -111,25 +111,25 @@
 
     <g transform="translate(464 92)">
       <rect class="yellow thinStroke" x="0" y="0" width="158" height="120" rx="9"/>
-      <text class="h3 ink" x="18" y="34">InvocationPlan</text>
-      <text class="small muted" x="18" y="60">endpoint</text>
-      <text class="small muted" x="18" y="82">param types</text>
-      <text class="small muted" x="18" y="104">ordered args</text>
+      <text class="h3 ink" x="18" y="34">app.Service</text>
+      <text class="small muted" x="18" y="60">InvocationPlan</text>
+      <text class="small muted" x="18" y="82">config + schema</text>
+      <text class="small muted" x="18" y="104">plan -&gt; execute</text>
     </g>
     <path class="arrow" d="M634 152 C657 152 674 152 698 152"/>
 
     <g transform="translate(710 108)">
       <rect class="pink thinStroke" x="0" y="0" width="106" height="88" rx="9"/>
       <text class="h3 ink" x="18" y="32">Provider</text>
-      <text class="small muted" x="18" y="60">BOLT</text>
+      <text class="small muted" x="8" y="60">BOLT / Hessian2</text>
     </g>
   </g>
 
   <g transform="translate(420 500) rotate(0.6)" filter="url(#softShadow)">
     <rect class="blue inkStroke" x="0" y="0" width="360" height="112" rx="10" filter="url(#rough)"/>
     <text class="h2 ink" x="24" y="40">Local source schema</text>
-    <text class="body muted" x="24" y="72">Scans src/main/java only.</text>
-    <text class="small muted" x="24" y="96">No dependency download or class loading.</text>
+    <text class="body muted" x="24" y="72">Scans src/main/java.</text>
+    <text class="small muted" x="24" y="96">Also nested */src/main/java; no class loading.</text>
   </g>
   <path class="dash" d="M620 500 C632 464 654 426 740 386"/>
 

@@ -17,13 +17,13 @@ type compatEntry struct {
 }
 
 // compatibilitySummary is a curated, machine-readable digest of the pure-Go
-// BOLT/Hessian2 type support (the prose source of truth is docs/compatibility-matrix.md).
+// BOLT/Hessian2 type support, kept as the machine-readable source of truth.
 // It is safe to expose as a resource: no config, no secrets, just the runtime's
 // Java/Hessian capability matrix. Built from structs so it is always valid JSON.
 var compatibilitySummary = func() json.RawMessage {
 	doc := map[string]interface{}{
 		"runtime":   "pure Go direct BOLT/Hessian2",
-		"reference": "docs/compatibility-matrix.md",
+		"reference": "README.md#runtime-boundaries",
 		"types": []compatEntry{
 			{"Integer / Long / Double", "supported", "Numeric request encoding uses the declared Java types, so values do not depend on Go JSON number shape."},
 			{"String", "supported", "UTF-16 length with Java-compatible CESU-8 bytes; non-BMP characters supported."},

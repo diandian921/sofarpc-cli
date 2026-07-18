@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Cross-compile the release matrix and emit OS-appropriate archives plus a
 # single SHA256SUMS. tar.gz for macOS/Linux (preserves the executable bit);
-# zip for Windows (native). Each archive carries only the single sofarpc
-# binary and README.md — the tarball user just runs `./sofarpc install <host>`
-# directly. The network bootstrap (scripts/install.{sh,ps1}) is served from
-# raw.githubusercontent.com and not shipped inside archives.
+# zip for Windows (native). Each archive carries the single sofarpc binary,
+# README.md, and its README hero SVG — the user just runs
+# `./sofarpc install <host>` directly. The network bootstrap
+# (scripts/install.{sh,ps1}) is served from raw.githubusercontent.com and not
+# shipped inside archives.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,6 +55,8 @@ for platform in $PLATFORMS; do
         go build -ldflags "-X main.BuildVersion=$VERSION" -o "$WORK_DIR/sofarpc$EXT" ./cmd/sofarpc)
 
     cp "$REPO_ROOT/README.md" "$WORK_DIR/README.md"
+    mkdir -p "$WORK_DIR/docs"
+    cp "$REPO_ROOT/docs/readme-hero.svg" "$WORK_DIR/docs/readme-hero.svg"
 
     base="sofarpc-$VERSION-$GOOS_VALUE-$GOARCH_VALUE"
     if [ "$GOOS_VALUE" = "windows" ]; then

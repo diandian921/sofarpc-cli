@@ -19,8 +19,9 @@ A single binary `sofarpc` does everything: setup/diagnostic commands (`sofarpc p
     schema/
 ```
 
-`config.json` and cache are never overwritten; upgrade just replaces the
-binaries at the same canonical path.
+Installation and upgrades do not overwrite `config.json` or the schema cache;
+they only replace the binary at the same canonical path. The runtime may
+refresh or remove stale schema-cache entries as source indexes are used.
 
 ## Install
 
@@ -37,9 +38,9 @@ curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/script
 ```
 
 Pin a release with `--version vX.Y.Z`. Without a host argument it installs
-the binary only and prints the next step. `@latest` requires a published
-plain `vX.Y.Z` tag on a root-module commit; the bootstrap resolves it via
-the GitHub redirect.
+the binary only and prints the next step. Without `--version`, the bootstrap
+follows GitHub's `releases/latest` redirect; the Go install alternative uses
+an explicit release tag.
 
 <details>
 <summary>Alternative: with Go</summary>
@@ -78,7 +79,8 @@ Build release archives for the full platform matrix:
 ./scripts/package.sh
 ```
 
-Each archive contains the `sofarpc` binary and `README.md`; a single
+Each archive contains the platform `sofarpc` binary, `README.md`, and the
+`docs/readme-hero.svg` architecture image; a single
 `SHA256SUMS` file covers all archives. Requirements: Go 1.25+ when building
 from source (the MCP layer uses the official `modelcontextprotocol/go-sdk`).
 
@@ -146,7 +148,9 @@ or named arguments when local source can resolve the method signature:
 }
 ```
 
-Use `sofarpc_invoke_plan` to inspect the endpoint, parameter types, ordered arguments, and protocol payload without sending a SofaRPC request.
+Use `sofarpc_invoke_plan` to inspect the resolved endpoint, Java parameter
+types, typed ordered arguments, and planning warnings without sending a
+SofaRPC request. It does not emit wire-level BOLT/Hessian2 bytes.
 
 Set `rawResult=true` when debugging serialization or response shape problems. The response then includes both the normal flattened `result` and the decoded Java object shape as `rawResult`.
 
@@ -253,7 +257,7 @@ The JSON-RPC protocol layer is the official `modelcontextprotocol/go-sdk` (stdio
 
 Declared capabilities: `tools` (static list), `prompts`, `resources`, and `logging` (`notifications/message`). The async tools (`sofarpc_invoke`, `sofarpc_invoke_plan`, `sofarpc_probe`, `sofarpc_describe`, `sofarpc_doctor`) honor `notifications/cancelled` (a cancelled request receives no final response). Of these, `sofarpc_invoke`, `sofarpc_doctor`, and `sofarpc_describe` emit `notifications/progress` when the client supplies a `progressToken` (accepted only as a JSON string or integer).
 
-Every tool declares a per-tool `outputSchema` that describes the shape of its own `data` (not just the shared envelope), and returns its result both as `structuredContent` and as that same JSON serialized into a `text` content block, so a client that does not read structured content still receives the full result. The one-line human summary is carried in `_meta.summary`, alongside `requestId` and `elapsedMs`.
+Every tool declares a per-tool `outputSchema` that describes the shape of its own `data` (not just the shared envelope). Small results are mirrored as the same JSON in a `text` content block; for results larger than 32 KiB, the full envelope remains in `structuredContent` and the text block becomes a pointer. `_meta.elapsedMs` is always present; `_meta.summary` and `requestId` are included when available.
 
 Input and output schemas are advisory host/LLM hints. Argument and business validation run in the handler and surface as the `app.Result` envelope (`isError` plus a recovery `nextTool` / `recovery`), never as a JSON-RPC protocol error; an unknown argument is rejected as an invalid-arguments envelope. `sofarpc_invoke` accepts only the advertised `paramTypes` / `orderedArguments` names — the former `types` / `args` aliases were removed.
 

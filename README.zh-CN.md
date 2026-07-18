@@ -19,7 +19,7 @@
     schema/
 ```
 
-`config.json` 和 cache 永远不会被覆盖；升级只会替换同一标准路径下的二进制文件。
+安装和升级不会覆盖 `config.json` 或 schema cache，只会在同一标准路径下替换二进制文件。运行时使用源码索引时，可能会刷新或清理过期的 schema cache 条目。
 
 ## 安装
 
@@ -35,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/script
 & ([scriptblock]::Create((iwr -useb https://raw.githubusercontent.com/diandian921/sofarpc-mcp/main/scripts/install.ps1))) codex
 ```
 
-使用 `--version vX.Y.Z` 可以固定版本。如果不传 host 参数，只安装二进制并打印下一步。`@latest` 依赖一个发布在 root module commit 上、格式为普通 `vX.Y.Z` 的 tag；bootstrap 会通过 GitHub redirect 解析它。
+使用 `--version vX.Y.Z` 可以固定版本。如果不传 host 参数，只安装二进制并打印下一步。不传 `--version` 时，bootstrap 会跟随 GitHub 的 `releases/latest` redirect；下面的 Go 安装方式使用显式 release tag。
 
 <details>
 <summary>替代方式：使用 Go</summary>
@@ -72,7 +72,7 @@ cd sofarpc-vX.Y.Z-windows-amd64
 ./scripts/package.sh
 ```
 
-每个 archive 都包含 `sofarpc` 二进制和 `README.md`；所有 archive 共用一个 `SHA256SUMS` 文件。从源码构建需要 Go 1.25+(MCP 层使用官方 `modelcontextprotocol/go-sdk`)。
+每个 archive 都包含对应平台的 `sofarpc` 二进制、`README.md` 和 `docs/readme-hero.svg` 架构图；所有 archive 共用一个 `SHA256SUMS` 文件。从源码构建需要 Go 1.25+（MCP 层使用官方 `modelcontextprotocol/go-sdk`）。
 
 ## MCP 配置
 
@@ -133,7 +133,7 @@ MCP 暴露面刻意保持小而面向工作流：
 }
 ```
 
-使用 `sofarpc_invoke_plan` 可以在不发送 SofaRPC 请求的情况下检查 endpoint、参数类型、有序参数和协议 payload。
+使用 `sofarpc_invoke_plan` 可以在不发送 SofaRPC 请求的情况下检查解析后的 endpoint、Java 参数类型、带类型的有序参数和规划 warning；它不会输出 BOLT/Hessian2 的 wire-level 字节。
 
 调试序列化或响应结构问题时设置 `rawResult=true`。响应中会同时包含常规扁平化的 `result`，以及解码后的 Java object 结构 `rawResult`。
 
@@ -237,7 +237,7 @@ JSON-RPC 协议层使用官方 `modelcontextprotocol/go-sdk`(stdio 传输、生�
 
 声明的 capabilities：`tools`（静态列表）、`prompts`、`resources` 和 `logging`（`notifications/message`）。异步工具（`sofarpc_invoke`、`sofarpc_invoke_plan`、`sofarpc_probe`、`sofarpc_describe`、`sofarpc_doctor`）支持 `notifications/cancelled`（被取消的请求不会返回最终响应）。其中 `sofarpc_invoke`、`sofarpc_doctor` 和 `sofarpc_describe` 会在 client 提供 `progressToken` 时发出 `notifications/progress`（只接受 JSON string 或 integer）。
 
-每个工具声明**各自的** `outputSchema`，描述其 `data` 的真实结构（而非仅统一信封），并把结果同时作为 `structuredContent` 和序列化进 `text` content block 返回。input/output schema 是面向 host/LLM 的提示：参数与业务校验在 handler 中完成，并以 `app.Result` 信封（`isError` + 恢复用 `nextTool` / `recovery`）返回，绝不退化成 JSON-RPC protocol error；未知参数会以 invalid-arguments 信封拒绝。`sofarpc_invoke` 只接受声明的 `paramTypes` / `orderedArguments`（原 `types` / `args` 别名已移除）。
+每个工具声明**各自的** `outputSchema`，描述其 `data` 的真实结构（而非仅统一信封）。较小的结果会以同一份 JSON 镜像到 `text` content block；超过 32 KiB 时，完整信封仍在 `structuredContent` 中，text block 会改为提示。input/output schema 是面向 host/LLM 的提示：参数与业务校验在 handler 中完成，并以 `app.Result` 信封（`isError` + 恢复用 `nextTool` / `recovery`）返回，绝不退化成 JSON-RPC protocol error；未知参数会以 invalid-arguments 信封拒绝。`sofarpc_invoke` 只接受声明的 `paramTypes` / `orderedArguments`（原 `types` / `args` 别名已移除）。
 
 `prompts` capability 声明了一个用户可选的工作流 `sofarpc.invoke_workflow`（host 把它作为 slash command 或模板展示，**绝不自动执行**）。给定 `intent`（以及可选的 `server`/`project`/`service`/`method`/`serviceQuery`），它渲染出推荐的 resolve → describe → invoke_plan → invoke 流程和失败恢复契约。
 

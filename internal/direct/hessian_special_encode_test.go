@@ -15,7 +15,7 @@ import (
 //     signum-mag object tree), and
 //   - the neutral scalar form the app layer now emits, which the direct writer
 //     shapes into the same object (see hessian_special.go and
-//     docs/special-type-encoding-pushdown-design.md).
+//     the direct writer's special-type shaping path).
 //
 // Both must encode to the identical hex, so the encoding pushdown is verified
 // byte-for-byte in normal CI (no JVM). The hex is Go's own deterministic output

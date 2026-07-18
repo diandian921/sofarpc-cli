@@ -16,7 +16,7 @@ const DefaultDirName = ".sofarpc"
 // every path the CLI and MCP server depend on derives from it, so callers
 // never hardcode ~/.sofarpc.
 //
-// Resolution order (per docs/install-and-host-setup-first-principles.md):
+// Resolution order:
 //  1. explicit SOFARPC_HOME if set;
 //  2. else, if the running executable sits in a bin/ whose parent contains
 //     config.json, that parent (the canonical-install case);
