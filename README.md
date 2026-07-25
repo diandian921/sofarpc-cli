@@ -253,9 +253,9 @@ The JSON-RPC protocol layer is the official `modelcontextprotocol/go-sdk` (stdio
 
 ## MCP Compliance
 
-`sofarpc mcp` negotiates the MCP protocol version at `initialize`, advertising (newest first): `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`. An unknown requested version degrades to the newest supported version. Requests before the `initialize` / `notifications/initialized` handshake are rejected with `-32002`.
+`sofarpc mcp` negotiates the MCP protocol version at `initialize`, advertising (newest first): `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05`. A requested version outside that list — older, newer, or malformed — degrades to the newest supported version instead of failing the handshake. Requests that arrive before the `initialize` / `notifications/initialized` handshake are refused with a JSON-RPC error before any handler runs, carrying no result. No specific error code is promised for that refusal: the SDK currently sends `0`, which is not a code MCP assigns to this condition.
 
-Declared capabilities: `tools` (static list), `prompts`, `resources`, and `logging` (`notifications/message`). The async tools (`sofarpc_invoke`, `sofarpc_invoke_plan`, `sofarpc_probe`, `sofarpc_describe`, `sofarpc_doctor`) honor `notifications/cancelled` (a cancelled request receives no final response). Of these, `sofarpc_invoke`, `sofarpc_doctor`, and `sofarpc_describe` emit `notifications/progress` when the client supplies a `progressToken` (accepted only as a JSON string or integer).
+Declared capabilities: `tools` (static list), `prompts`, `resources`, and `logging`. The `logging` entry is the go-sdk default rather than a feature of this server — no `notifications/message` is ever sent — and SEP-2577 deprecates the capability as of `2026-07-28`, so it will be dropped explicitly rather than left to the default. The async tools (`sofarpc_invoke`, `sofarpc_invoke_plan`, `sofarpc_probe`, `sofarpc_describe`, `sofarpc_doctor`) honor `notifications/cancelled` (a cancelled request receives no final response). Of these, `sofarpc_invoke`, `sofarpc_doctor`, and `sofarpc_describe` emit `notifications/progress` when the client supplies a `progressToken` (accepted only as a JSON string or integer).
 
 Every tool declares a per-tool `outputSchema` that describes the shape of its own `data` (not just the shared envelope). Small results are mirrored as the same JSON in a `text` content block; for results larger than 32 KiB, the full envelope remains in `structuredContent` and the text block becomes a pointer. `_meta.elapsedMs` is always present; `_meta.summary` and `requestId` are included when available.
 
@@ -267,7 +267,16 @@ The `resources` capability exposes one read-only resource, `sofarpc://compatibil
 
 The config-write tools (`sofarpc_config_save_*`) accept `dryRun: true` to validate and preview an entry without writing `config.json`. Attachment values are stored verbatim in the local config (treat them as credentials) and are always redacted in tool/resource output. Start the server with `--disable-config-write` to drop all four config-write tools.
 
-Not supported (intentionally not advertised): `roots`, `sampling`, `elicitation`.
+Not supported (intentionally not advertised): `roots`, `sampling`, `elicitation`. SEP-2577 deprecates `roots` and `sampling` as of `2026-07-28`, so this omission now matches the direction of the spec; `elicitation` stays out because every tool takes its whole input as arguments.
+
+### Protocol revision 2026-07-28
+
+That revision removes the `initialize` handshake: a conforming client sends no handshake at all and instead carries its protocol version and capabilities in `_meta` on every request. This build does not speak it, which shows up in two different ways:
+
+- A handshake-free `2026-07-28` client is **refused**, exactly like a malformed one. `sofarpc mcp` is unusable for it and no client-side retry helps.
+- A client that still sends `initialize` and asks for `2026-07-28` is served `2025-11-25` instead. The handshake succeeds, so that downgrade is silent — under `2026-07-28`, `initialize` is by definition the legacy path and cannot negotiate the new revision.
+
+Support arrives with the go-sdk release that implements the revision. Building against the go-sdk pre-release shows the stdio transport, the tool surface, and the result envelope are unaffected; the two things that do change are the above refusal (it becomes a served request) and how server `instructions` reach the client — under `2026-07-28` they come from the `server/discover` RPC (SEP-2575), so a client that only calls `tools/list` never sees them. The per-tool `description` text carries the same constraints for that reason.
 
 ## Troubleshooting
 

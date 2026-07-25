@@ -233,9 +233,9 @@ JSON-RPC 协议层使用官方 `modelcontextprotocol/go-sdk`(stdio 传输、生�
 
 ## MCP 兼容性
 
-`sofarpc mcp` 在 `initialize` 阶段协商 MCP protocol version，按新到旧声明：`2025-11-25`、`2025-06-18`、`2025-03-26`、`2024-11-05`。未知请求版本会降级到最新支持版本。在 `initialize` / `notifications/initialized` 握手前的请求会以 `-32002` 拒绝。
+`sofarpc mcp` 在 `initialize` 阶段协商 MCP protocol version，按新到旧声明：`2025-11-25`、`2025-06-18`、`2025-03-26`、`2024-11-05`。不在该列表内的请求版本（更旧、更新或格式非法）会降级到最新支持版本，而不是让握手失败。在 `initialize` / `notifications/initialized` 握手前到达的请求，会在任何 handler 运行之前以 JSON-RPC error 拒绝，且不携带 result。该拒绝不承诺具体 error code：SDK 目前发送 `0`，而 MCP 并未为这一情形指定该码。
 
-声明的 capabilities：`tools`（静态列表）、`prompts`、`resources` 和 `logging`（`notifications/message`）。异步工具（`sofarpc_invoke`、`sofarpc_invoke_plan`、`sofarpc_probe`、`sofarpc_describe`、`sofarpc_doctor`）支持 `notifications/cancelled`（被取消的请求不会返回最终响应）。其中 `sofarpc_invoke`、`sofarpc_doctor` 和 `sofarpc_describe` 会在 client 提供 `progressToken` 时发出 `notifications/progress`（只接受 JSON string 或 integer）。
+声明的 capabilities：`tools`（静态列表）、`prompts`、`resources` 和 `logging`。其中 `logging` 只是 go-sdk 的默认值，并非本服务的功能 —— 本服务从不发送 `notifications/message`；SEP-2577 已在 `2026-07-28` 将该 capability 标记废弃，因此后续会显式关闭它，而不是继续沿用默认值。异步工具（`sofarpc_invoke`、`sofarpc_invoke_plan`、`sofarpc_probe`、`sofarpc_describe`、`sofarpc_doctor`）支持 `notifications/cancelled`（被取消的请求不会返回最终响应）。其中 `sofarpc_invoke`、`sofarpc_doctor` 和 `sofarpc_describe` 会在 client 提供 `progressToken` 时发出 `notifications/progress`（只接受 JSON string 或 integer）。
 
 每个工具声明**各自的** `outputSchema`，描述其 `data` 的真实结构（而非仅统一信封）。较小的结果会以同一份 JSON 镜像到 `text` content block；超过 32 KiB 时，完整信封仍在 `structuredContent` 中，text block 会改为提示。input/output schema 是面向 host/LLM 的提示：参数与业务校验在 handler 中完成，并以 `app.Result` 信封（`isError` + 恢复用 `nextTool` / `recovery`）返回，绝不退化成 JSON-RPC protocol error；未知参数会以 invalid-arguments 信封拒绝。`sofarpc_invoke` 只接受声明的 `paramTypes` / `orderedArguments`（原 `types` / `args` 别名已移除）。
 
@@ -245,7 +245,16 @@ JSON-RPC 协议层使用官方 `modelcontextprotocol/go-sdk`(stdio 传输、生�
 
 写配置工具(`sofarpc_config_save_*`)支持 `dryRun: true`:校验并预览条目,但不写 `config.json`。attachment 的值原样存进本地 config(请按凭据对待),在工具 / resource 输出里始终脱敏。用 `--disable-config-write` 启动可去掉这四个写配置工具。
 
-不支持（也有意不声明）：`roots`、`sampling`、`elicitation`。
+不支持（也有意不声明）：`roots`、`sampling`、`elicitation`。SEP-2577 已在 `2026-07-28` 废弃 `roots` 和 `sampling`，因此这一取舍现在与规范演进方向一致；`elicitation` 之所以不做，是因为每个工具的全部输入都通过参数传入。
+
+### 协议版本 2026-07-28
+
+该版本移除了 `initialize` 握手：符合规范的 client 完全不发握手，而是在每个请求的 `_meta` 中携带自己的 protocol version 和 capabilities。当前构建不支持它，表现为两种不同情况：
+
+- 不带握手的 `2026-07-28` client 会被**拒绝**，和格式非法的请求一样。`sofarpc mcp` 对它完全不可用，client 侧重试也没有意义。
+- 仍然发送 `initialize` 并请求 `2026-07-28` 的 client，会被服务成 `2025-11-25`。握手本身是成功的，所以这个降级是静默的 —— 在 `2026-07-28` 下，`initialize` 按定义就是 legacy 路径，无法协商出新版本。
+
+支持将随实现该版本的 go-sdk 发布一起到来。针对 go-sdk 预发布版构建验证的结果是：stdio 传输、工具面和结果信封都不受影响；真正会变的是上述拒绝行为（变为正常服务），以及 server `instructions` 的送达方式 —— 在 `2026-07-28` 下它由 `server/discover`（SEP-2575）返回，只调用 `tools/list` 的 client 不会看到它。每个工具的 `description` 里重复了同样的约束，原因正在于此。
 
 ## 故障排查
 
