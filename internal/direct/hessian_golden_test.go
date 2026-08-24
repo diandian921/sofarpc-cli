@@ -116,6 +116,21 @@ func TestHessianJavaGoldenDecode(t *testing.T) {
 				t.Fatalf("mixed = %#v", mixed)
 			}
 		},
+		"shared-list": func(t *testing.T, got interface{}) {
+			fields := goldenObjectFields(t, got, "HessianContractHelper$SharedListResponse")
+			first := goldenListItems(t, fields["first"])
+			if len(first) != 1 {
+				t.Fatalf("first = %#v", first)
+			}
+			amount := goldenObjectFields(t, first[0], "java.math.BigDecimal")
+			if amount["value"] != "7.25" {
+				t.Fatalf("amount = %#v", amount)
+			}
+			second, ok := fields["second"].([]interface{})
+			if !ok || reflect.ValueOf(second).Pointer() != reflect.ValueOf(first).Pointer() {
+				t.Fatalf("second = %#v, want the same list as first", fields["second"])
+			}
+		},
 		"date": func(t *testing.T, got interface{}) {
 			if got != int64(0) {
 				t.Fatalf("date = %#v, want epoch millis", got)
@@ -186,6 +201,16 @@ func TestHessianGoldenCircularReferenceResolves(t *testing.T) {
 	if reflect.ValueOf(a2).Pointer() != reflect.ValueOf(topMap).Pointer() {
 		t.Fatalf("b.next is not the same object as top — back-reference not resolved")
 	}
+}
+
+func TestHessianGoldenSelfReferentialListResolves(t *testing.T) {
+	got := readGoldenHessian(t, hessianSelfListGoldenHex)
+	items, ok := got.([]interface{})
+	if !ok || len(items) != 1 {
+		t.Fatalf("got %#v, want one-item list", got)
+	}
+	assertSameListIdentity(t, items, items[0])
+	assertGoldenPresentationJSON(t, got, `[{"$circularRef":true}]`)
 }
 
 // TestHessianGoldenBigIntegerFlattensToNumber pins the formerly-known gap as

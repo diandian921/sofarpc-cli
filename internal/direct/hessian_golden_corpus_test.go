@@ -68,6 +68,11 @@ var hessianJavaGoldenCases = []hessianGoldenCase{
 		wantPresentationJSON: `{"attributes":{"mpCode":433905635109773312,"nullable":null,"ratio":2},"history":[{"amount":0.00,"success":false,"tags":["H"]}],"mixed":[null,"x",9],"primary":{"amount":1.23,"success":true,"tags":["P"]}}`,
 	},
 	{
+		name:                 "shared-list",
+		hex:                  "4fb84865737369616e436f6e747261637448656c706572245368617265644c697374526573706f6e736592056669727374067365636f6e646f90566e014fa46a6176612e6d6174682e426967446563696d616c910576616c75656f9104372e32357a4a01",
+		wantPresentationJSON: `{"first":[7.25],"second":[7.25]}`,
+	},
+	{
 		name:                 "date",
 		hex:                  "640000000000000000",
 		wantPresentationJSON: `0`,
@@ -101,3 +106,8 @@ const hessianBigIntegerGoldenHex = "4fa46a6176612e6d6174682e426967496e7465676572
 // cannot be rendered to JSON. TestHessianGoldenCircularReferenceResolves pins that
 // our reader resolves the Hessian back-reference into a shared object.
 const hessianCircularGoldenHex = "4faa4865737369616e436f6e747261637448656c706572244e6f646592046e616d65046e6578746f9001616f9001624a00"
+
+// hessianSelfListGoldenHex is an ArrayList whose only element is a reference to
+// the list itself. It is separate from the presentation corpus because the raw
+// graph is cyclic.
+const hessianSelfListGoldenHex = "566e014a007a"

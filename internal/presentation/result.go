@@ -151,11 +151,11 @@ func jsonSafe(v interface{}, seen map[jsonVisit]bool, depth int) interface{} {
 	}
 }
 
-// flatten renders a decoded value for presentation. seen tracks the map nodes on
-// the current path: the reader resolves Hessian back-references into shared maps,
-// so a cyclic object graph would otherwise recurse until the stack overflows.
-// Re-entering a node on the path returns a $circularRef marker instead; depth is
-// a last-resort cap.
+// flatten renders a decoded value for presentation. seen tracks map and slice
+// nodes on the current path: the reader resolves Hessian back-references into
+// shared containers, so a cyclic graph would otherwise recurse until the stack
+// overflows. Re-entering a node on the path returns a $circularRef marker
+// instead; depth is a last-resort cap.
 func flatten(v interface{}, seen map[uintptr]bool, depth int) interface{} {
 	if depth > flattenMaxDepth {
 		return map[string]interface{}{"$truncated": "max depth exceeded"}
@@ -199,6 +199,14 @@ func flatten(v interface{}, seen map[uintptr]bool, depth int) interface{} {
 		}
 		return out
 	case []interface{}:
+		ptr := reflect.ValueOf(x).Pointer()
+		if ptr != 0 && seen[ptr] {
+			return map[string]interface{}{"$circularRef": true}
+		}
+		if ptr != 0 {
+			seen[ptr] = true
+			defer delete(seen, ptr)
+		}
 		out := make([]interface{}, len(x))
 		for i, v := range x {
 			out[i] = flatten(v, seen, depth+1)

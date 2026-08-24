@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"unicode/utf16"
 )
@@ -39,6 +40,19 @@ type decodedResponse struct {
 type classDef struct {
 	Name   string
 	Fields []string
+}
+
+// pendingListRef is a stable identity token for an untyped, variable-length
+// list while its items are still being decoded. A Go slice header is copied
+// when stored in an interface and append can replace its backing array, so the
+// final []interface{} cannot safely occupy the Hessian reference table until
+// the list is complete. References encountered inside the list temporarily
+// point at this token and are resolved to the final slice before list returns.
+type pendingListRef struct{}
+
+type referenceVisit struct {
+	kind byte
+	ptr  uintptr
 }
 
 type reader struct {
@@ -202,49 +216,67 @@ func (r *reader) list() (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	var items []interface{}
 	if n >= 0 {
 		if err := r.reserveContainerItems("list", n, 1); err != nil {
 			return nil, err
 		}
-		items = make([]interface{}, 0, n)
+		items := make([]interface{}, n)
+		var out interface{} = items
+		if typ != "" {
+			out = map[string]interface{}{"type": typ, "items": items}
+		}
+		r.addRef(out)
 		for i := 0; i < n; i++ {
 			v, err := r.readValue()
 			if err != nil {
 				return nil, err
 			}
-			items = append(items, v)
+			items[i] = v
 		}
 		if b, ok := r.peek(); ok && b == 'z' {
 			r.offset++
 		}
-	} else {
-		for {
-			b, ok := r.peek()
-			if !ok {
-				return nil, fmt.Errorf("unterminated list")
-			}
-			if b == 'z' {
-				r.offset++
-				break
-			}
-			if err := r.reserveContainerItems("list", 1, 1); err != nil {
-				return nil, err
-			}
-			v, err := r.readValue()
-			if err != nil {
-				return nil, err
-			}
-			items = append(items, v)
-		}
+		return out, nil
 	}
+
+	var (
+		items      []interface{}
+		out        interface{}
+		pending    *pendingListRef
+		pendingRef = len(r.refs)
+	)
 	if typ == "" {
-		r.addRef(items)
-		return items, nil
+		pending = &pendingListRef{}
+		out = pending
+	} else {
+		out = map[string]interface{}{"type": typ, "items": items}
 	}
-	obj := map[string]interface{}{"type": typ, "items": items}
-	r.addRef(obj)
-	return obj, nil
+	r.addRef(out)
+	for {
+		b, ok := r.peek()
+		if !ok {
+			return nil, fmt.Errorf("unterminated list")
+		}
+		if b == 'z' {
+			r.offset++
+			break
+		}
+		if err := r.reserveContainerItems("list", 1, 1); err != nil {
+			return nil, err
+		}
+		v, err := r.readValue()
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, v)
+	}
+	if typ != "" {
+		out.(map[string]interface{})["items"] = items
+		return out, nil
+	}
+	r.refs[pendingRef] = items
+	resolvePendingListRefs(items, pending, items, make(map[referenceVisit]bool))
+	return items, nil
 }
 
 func (r *reader) fixedList() (interface{}, error) {
@@ -262,17 +294,57 @@ func (r *reader) fixedList() (interface{}, error) {
 	if err := r.reserveContainerItems("fixed list", n, 1); err != nil {
 		return nil, err
 	}
-	items := make([]interface{}, 0, n)
+	items := make([]interface{}, n)
+	obj := map[string]interface{}{"type": r.types[ref], "items": items}
+	r.addRef(obj)
 	for i := 0; i < n; i++ {
 		v, err := r.readValue()
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, v)
+		items[i] = v
 	}
-	obj := map[string]interface{}{"type": r.types[ref], "items": items}
-	r.addRef(obj)
 	return obj, nil
+}
+
+// resolvePendingListRefs replaces references to a completed variable-length
+// untyped list inside the graph decoded as its contents. Only values reachable
+// from the list can reference it before completion, so resolving this subtree
+// removes the temporary identity token without a whole-response post-pass.
+func resolvePendingListRefs(v interface{}, pending *pendingListRef, replacement []interface{}, seen map[referenceVisit]bool) interface{} {
+	switch x := v.(type) {
+	case *pendingListRef:
+		if x == pending {
+			return replacement
+		}
+		return x
+	case []interface{}:
+		ptr := reflect.ValueOf(x).Pointer()
+		visit := referenceVisit{kind: 's', ptr: ptr}
+		if ptr != 0 {
+			if seen[visit] {
+				return x
+			}
+			seen[visit] = true
+		}
+		for i, item := range x {
+			x[i] = resolvePendingListRefs(item, pending, replacement, seen)
+		}
+		return x
+	case map[string]interface{}:
+		ptr := reflect.ValueOf(x).Pointer()
+		visit := referenceVisit{kind: 'm', ptr: ptr}
+		if seen[visit] {
+			return x
+		}
+		seen[visit] = true
+		for key, value := range x {
+			x[key] = resolvePendingListRefs(value, pending, replacement, seen)
+		}
+		return x
+	default:
+		return v
+	}
 }
 
 func (r *reader) mapValue() (interface{}, error) {

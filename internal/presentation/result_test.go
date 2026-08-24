@@ -118,6 +118,17 @@ func TestFlattenCyclicObjectGraphTerminates(t *testing.T) {
 	}
 }
 
+func TestFlattenCyclicListTerminates(t *testing.T) {
+	list := make([]interface{}, 1)
+	list[0] = list
+
+	out := Flatten(list).([]interface{})
+	cut, ok := out[0].(map[string]interface{})
+	if !ok || cut["$circularRef"] != true {
+		t.Fatalf("self list = %#v, want circular marker", out[0])
+	}
+}
+
 func TestJSONSafePreservesRawShapeAndCutsCycles(t *testing.T) {
 	raw := map[string]interface{}{"type": "Node", "fields": map[string]interface{}{"name": "root"}}
 	raw["fields"].(map[string]interface{})["self"] = raw

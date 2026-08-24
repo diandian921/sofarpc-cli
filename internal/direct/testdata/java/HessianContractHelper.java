@@ -109,6 +109,19 @@ public final class HessianContractHelper {
         }
     }
 
+    public static final class SharedListResponse implements Serializable {
+        public List<Object> first;
+        public Object second;
+
+        public SharedListResponse() {
+        }
+
+        public SharedListResponse(List<Object> first, Object second) {
+            this.first = first;
+            this.second = second;
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
             throw new IllegalArgumentException("missing mode");
@@ -223,6 +236,14 @@ public final class HessianContractHelper {
                 a.next = b;
                 b.next = a;
                 return a;
+            case "shared-list":
+                ArrayList<Object> shared = new ArrayList<Object>();
+                shared.add(new BigDecimal("7.25"));
+                return new SharedListResponse(shared, shared);
+            case "self-list":
+                ArrayList<Object> self = new ArrayList<Object>();
+                self.add(self);
+                return self;
             case "local-date":
                 return LocalDate.of(2024, 1, 15);
             case "local-date-time":

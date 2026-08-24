@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -386,6 +387,37 @@ func TestHessianJavaContractJavaEncodedValuesReadableByGo(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "shared-list",
+			check: func(t *testing.T, got interface{}) {
+				fields := objectFields(t, got, "HessianContractHelper$SharedListResponse")
+				first := listItems(t, fields["first"])
+				if len(first) != 1 {
+					t.Fatalf("first = %#v", first)
+				}
+				amount := objectFields(t, first[0], "java.math.BigDecimal")
+				if amount["value"] != "7.25" {
+					t.Fatalf("amount = %#v", amount)
+				}
+				second, ok := fields["second"].([]interface{})
+				if !ok || reflect.ValueOf(second).Pointer() != reflect.ValueOf(first).Pointer() {
+					t.Fatalf("second = %#v, want the same list as first", fields["second"])
+				}
+			},
+		},
+		{
+			name: "self-list",
+			check: func(t *testing.T, got interface{}) {
+				items := listItems(t, got)
+				if len(items) != 1 {
+					t.Fatalf("items = %#v", items)
+				}
+				backRef, ok := items[0].([]interface{})
+				if !ok || reflect.ValueOf(backRef).Pointer() != reflect.ValueOf(items).Pointer() {
+					t.Fatalf("self reference = %#v, want the same list", items[0])
+				}
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -425,6 +457,12 @@ func TestHessianJavaContractGoldenBytesMatchJavaOracle(t *testing.T) {
 		got := contract.run(t, "encode", "circular")
 		if got != hessianCircularGoldenHex {
 			t.Fatalf("circular golden hex drifted from Java oracle\njava:   %s\ngolden: %s", got, hessianCircularGoldenHex)
+		}
+	})
+	t.Run("self-list", func(t *testing.T) {
+		got := contract.run(t, "encode", "self-list")
+		if got != hessianSelfListGoldenHex {
+			t.Fatalf("self-list golden hex drifted from Java oracle\njava:   %s\ngolden: %s", got, hessianSelfListGoldenHex)
 		}
 	})
 }
